@@ -9,7 +9,7 @@
   <extension point="org.eclipse.ui.handlers">
     <handler
       commandId="org.xander.edt.storagebridge.ui.inspectProject"
-      class="org.xander.edt.storagebridge.ui.InspectProjectHandler"/>
+      class="org.xander.edt.storagebridge.ui.BridgeExtensionFactory:org.xander.edt.storagebridge.ui.InspectProjectHandler"/>
   </extension>
   <extension point="org.eclipse.ui.menus">
     <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">

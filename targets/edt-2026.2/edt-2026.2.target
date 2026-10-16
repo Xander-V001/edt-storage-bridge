@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?pde version="3.8"?>
+<!--
+  Official 1C EDT 2026.2 target input:
+  https://github.com/1C-Company/dt-example-plugins/blob/master/targets/default/default.target
+  Adapted here to the minimum product/API dependencies plus required Eclipse platform
+  and Orbit/ECF targets. NOT YET RESOLVED by a Tycho build.
+-->
+<target name="1C:EDT 2026.2 - EDT Storage Bridge" sequenceNumber="1">
+  <locations>
+    <location includeAllPlatforms="false" includeConfigurePhase="true"
+              includeMode="slicer" includeSource="false" type="InstallableUnit">
+      <repository id="edt_2026_2" location="https://edt.1c.ru/downloads/releases/ruby/2026.2/"/>
+      <unit id="com._1c.g5.v8.dt.rcp" version="0.0.0"/>
+      <unit id="com._1c.g5.v8.dt.feature.feature.group" version="0.0.0"/>
+      <unit id="com._1c.g5.v8.dt.thirdparty.feature.group" version="0.0.0"/>
+    </location>
+    <location includeAllPlatforms="false" includeConfigurePhase="true"
+              includeMode="slicer" includeSource="false" type="InstallableUnit">
+      <repository location="https://download.eclipse.org/releases/2025-12/"/>
+      <unit id="org.eclipse.sdk.feature.group" version="0.0.0"/>
+      <unit id="org.eclipse.platform.feature.group" version="0.0.0"/>
+      <unit id="org.eclipse.pde.feature.group" version="0.0.0"/>
+      <unit id="org.eclipse.orbit.xml-apis-ext" version="0.0.0"/>
+      <unit id="org.osgi.service.http.whiteboard" version="0.0.0"/>
+      <unit id="org.eclipse.equinox.http.service.api" version="0.0.0"/>
+    </location>
+    <location includeAllPlatforms="false" includeConfigurePhase="true"
+              includeMode="slicer" includeSource="false" type="InstallableUnit">
+      <repository location="https://download.eclipse.org/tools/orbit/simrel/orbit-aggregation/release/4.38.0/"/>
+      <unit id="org.mockito.mockito-core" version="0.0.0"/>
+      <unit id="org.objenesis" version="0.0.0"/>
+      <unit id="org.hamcrest" version="0.0.0"/>
+      <unit id="org.hamcrest.core" version="0.0.0"/>
+      <unit id="net.bytebuddy.byte-buddy" version="0.0.0"/>
+      <unit id="net.bytebuddy.byte-buddy-agent" version="0.0.0"/>
+      <unit id="org.apache.commons.commons-codec" version="0.0.0"/>
+      <unit id="org.apache.commons.commons-logging" version="0.0.0"/>
+      <unit id="org.apache.xmlgraphics" version="0.0.0"/>
+      <unit id="com.github.weisj.jsvg" version="0.0.0"/>
+      <unit id="org.tukaani.xz" version="1.11.0"/>
+      <unit id="jakarta.activation-api" version="1.2.2"/>
+      <unit id="jakarta.servlet-api" version="6.1.0"/>
+      <unit id="jakarta.xml.bind-api" version="2.3.3"/>
+      <unit id="org.mortbay.jasper.mortbay-apache-el" version="9.0.111"/>
+      <unit id="org.mortbay.jasper.mortbay-apache-jsp" version="9.0.111"/>
+      <unit id="org.eclipse.orbit.maven.org.apache.batik.feature.group" version="4.38.0"/>
+    </location>
+    <location includeAllPlatforms="false" includeConfigurePhase="true"
+              includeMode="slicer" includeSource="false" type="InstallableUnit">
+      <repository location="https://download.eclipse.org/rt/ecf/3.15.7/site.p2/"/>
+      <unit id="org.eclipse.ecf.core.feature.feature.group" version="0.0.0"/>
+      <unit id="org.eclipse.ecf.filetransfer.httpclientjava.feature.feature.group" version="0.0.0"/>
+    </location>
+  </locations>
+</target>

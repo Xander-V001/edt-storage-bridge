@@ -1,32 +1,32 @@
-# Build and installation
+# Build / IDE setup (target: 1C:EDT 2026.2)
 
-## Prototype prerequisites
+**Never trigger a build automatically.** A build must be explicitly requested by the user and manually launched via the GitHub Actions `workflow_dispatch` workflow.
 
-- JDK 21 for Maven/Tycho build (generated bundles target Java 17).
-- Maven 3.9+.
-- Internet access to public Eclipse p2 site (2024-06).
+## Proposed toolchain — NOT YET VERIFIED
 
-The CI build is **public Eclipse baseline only**, without proprietary 1C:EDT API bundles. This is intentional: the official EDT p2 target may require partner/ITS authentication. Build success here is **not** proof of compatibility with every EDT version.
+- **JDK 25 with JavaFX** (official EDT plugin sample uses Zulu 25 JDK FX).
+- **Eclipse 2025-12** and **1C:EDT 2026.2** p2 artifacts.
+- **Maven 3.9.9** and **Tycho 5.0.2**.
+- The target source is `targets/edt-2026.2/edt-2026.2.target`.
+
+1C p2 repositories may require credentials from its registered user portal. Never commit credentials, Maven settings with passwords or mirrors serving proprietary binaries. Verify authentication in the official target editor before an approved CI build.
+
+## Development in Eclipse PDE
+
+Import modules in `plugins/`, `targets/`, `tests/`, `features/`, `repository/` as existing projects, activate `targets/edt-2026.2/edt-2026.2.target`, and resolve the target. Use the product-compatible Java 25 installation. Do not use the obsolete Eclipse 2024-06 target — it is not a 2026.2 runtime.
+
+## Authorized build command (reference only; DO NOT execute without explicit request)
 
 ```bash
 mvn -B -ntp clean verify
 ```
 
-Artifacts: `repository/org.xander.edt.storagebridge.p2/target/` (p2 ZIP). The CI workflow also publishes a build artifact on success.
+The CI workflow uses the same Maven command on manual dispatch. On success it publishes a short-retention p2 ZIP. It removes older artifacts using the manual artifact policy.
 
-## Development workspace
+## Runtime check (after build and user approval)
 
-Import projects from `plugins/`, `features/`, `repository/` and `targets/` into an Eclipse PDE workspace and activate `targets/eclipse-baseline/eclipse-baseline.target`.
+Install p2 ZIP into a **disposable test installation of EDT 2026.2**. Run `EDT Storage Bridge → Inspect selected project` for an EDT configuration project and verify only model availability is read.
 
-## Installing in 1C:EDT (after CI validation)
+**Important:** the old p2 ZIP created before the 2026.2 migration is not an EDT 2026.2 verified release. It must not be represented as such.
 
-1. Unpack the produced p2 ZIP or choose **Archive…** in **Help → Install New Software…**.
-2. Select **EDT Storage Bridge** and complete the normal p2 installation.
-3. Restart EDT and open **EDT Storage Bridge → Inspect selected project**.
-4. Select a workspace project; the dialog must show project name and location.
-
-This is a read-only prototype. It does not communicate with 1C repositories. An official hosted update-site URL will be provided only after publishing and testing one.
-
-## Later: EDT API target
-
-Add an explicit, version-pinned EDT target and credentials in the build environment (not in source control), run verification for each supported EDT release, then enable EDT-specific adapters. No fake dependencies or local binary uploads to Git.
+No integration with the configuration repository is yet implemented.

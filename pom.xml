@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.xander-v001</groupId>
   <artifactId>edt-storage-bridge-parent</artifactId>
@@ -11,11 +11,12 @@
   <properties>
     <tycho.version>5.0.2</tycho.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>25</maven.compiler.release>
   </properties>
   <modules>
-    <module>targets/eclipse-baseline</module>
+    <module>targets/edt-2026.2</module>
     <module>plugins/org.xander.edt.storagebridge.core</module>
+    <module>plugins/org.xander.edt.storagebridge.edt</module>
     <module>plugins/org.xander.edt.storagebridge.ui</module>
     <module>tests/org.xander.edt.storagebridge.core.tests</module>
     <module>features/org.xander.edt.storagebridge.feature</module>
@@ -37,11 +38,30 @@
           <target>
             <artifact>
               <groupId>io.github.xander-v001</groupId>
-              <artifactId>eclipse-baseline-target</artifactId>
+              <artifactId>edt-2026.2-target</artifactId>
               <version>${project.version}</version>
             </artifact>
           </target>
-          <executionEnvironment>JavaSE-17</executionEnvironment>
+          <executionEnvironment>JavaSE-25</executionEnvironment>
+          <dependency-resolution>
+            <extraRequirements>
+              <requirement>
+                <type>eclipse-plugin</type>
+                <id>org.apache.felix.scr</id>
+                <versionRange>0.0.0</versionRange>
+              </requirement>
+              <requirement>
+                <type>eclipse-plugin</type>
+                <id>org.apache.aries.spifly.dynamic.bundle</id>
+                <versionRange>1.3.7</versionRange>
+              </requirement>
+              <requirement>
+                <type>eclipse-plugin</type>
+                <id>org.eclipse.swt.svg</id>
+                <versionRange>0.0.0</versionRange>
+              </requirement>
+            </extraRequirements>
+          </dependency-resolution>
         </configuration>
       </plugin>
       <plugin>

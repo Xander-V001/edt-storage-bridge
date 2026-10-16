@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<feature
-  id="org.xander.edt.storagebridge.feature"
+<feature id="org.xander.edt.storagebridge.feature"
   label="EDT Storage Bridge"
   version="0.1.0.qualifier"
   provider-name="Xander-V001">
-  <description>Safe integration foundation for 1C:EDT and classic 1C configuration repositories.</description>
+  <description>Read-only 1C:EDT 2026.2 integration foundation for classic 1C configuration repositories.</description>
   <copyright>Copyright (c) 2026 Xander-V001. All rights reserved.</copyright>
   <license>This is an internal development preview. Redistribution is not authorized.</license>
   <plugin id="org.xander.edt.storagebridge.core"
+    download-size="0" install-size="0" version="0.0.0" unpack="false"/>
+  <plugin id="org.xander.edt.storagebridge.edt"
     download-size="0" install-size="0" version="0.0.0" unpack="false"/>
   <plugin id="org.xander.edt.storagebridge.ui"
     download-size="0" install-size="0" version="0.0.0" unpack="false"/>

@@ -1,29 +1,29 @@
-# Roadmap
+# Roadmap (target 1C:EDT 2026.2)
 
-## Phase 0 — bootstrapping
-- [x] GitHub repository and baseline documentation
-- [x] Modular Eclipse bundles with a read-only project inspection command (source)
-- [x] Tycho / feature / p2 repository / CI definitions (source)
-- [x] GitHub Actions Tycho build green; p2 ZIP produced and uploaded (2026-10-16); 3 JUnit tests passed
-- [ ] Manual smoke test with 1C:EDT 2026.1.x
+## Phase 0 — baseline (historical Eclipse-only proof)
+- [x] Repository and modular plugin foundation
+- [x] Maven Tycho/p2 ZIP and 3 JUnit tests passed against **Eclipse 2024-06**, not EDT
+- [x] Manual-only CI and artifact retention policy
 
-## Phase 1 — verification
-- [ ] Pin EDT API target against installed EDT (and p2 credentials if required)
-- [ ] Identify canonical import/export and staging APIs
-- [ ] Build isolated test base and test configuration repository
-- [ ] Read-only connection test and repository revision detection
-- [ ] Failure-mode matrix and error classification
+## Phase 1 — real EDT 2026.2 integration
+- [x] Choose EDT 2026.2, Eclipse 2025-12 and Java 25
+- [x] Write the new 2026.2 target, public EDT API adapter and Guice integration
+- [ ] **Manual build requested by user** and target resolves
+- [ ] New p2 archive installed and read-only probe smoke-tested in EDT 2026.2
+- [ ] Confirm specific installed EDT patch/build
+- [ ] Read-only connection to a disposable 1C configuration repository
+- [ ] Capture real revision/status response and error cases
 
 ## Phase 2 — safe receive
-- [ ] Object-level change plan and conflict detection
-- [ ] Reversible staging + receive + verification + checkpoint
+- [ ] Object-level plan and conflict detection
+- [ ] Reversible staging, receive, verification and checkpoint
 
 ## Phase 3 — safe commit
-- [ ] Validate selected objects, locks and current revision
-- [ ] Apply, repository commit, read-after-write verification
-- [ ] Recovery / reconciliation for uncertain outcomes
+- [ ] Validate objects, locks and current repository revision
+- [ ] Commit to test storage with read-after-write verification
+- [ ] Recovery for incomplete/uncertain operations
 
 ## Phase 4 — quality and distribution
-- [ ] Performance benchmarks with representative configurations
-- [ ] Parallelization only when 1C operations are demonstrably safe
-- [ ] Installer/update site, release signing policy, backwards compatibility
+- [ ] Representative performance benchmarks
+- [ ] Parallelism only where actually safe
+- [ ] Signed/versioned p2 update site and backwards compatibility policy

@@ -9,15 +9,19 @@ These rules are binding for all development in this repository and chat.
 4. Cleanup is scoped to artifacts named `edt-storage-bridge-p2` and `tycho-test-reports`; never delete unrelated project artifacts or GitHub releases.
 5. Keep GitHub Actions time usage minimal. Avoid duplicate jobs or matrix builds until explicitly approved.
 
+## Target platform
+6. **Primary and only development target: 1C:EDT 2026.2**, using Eclipse 2025-12 and Java 25. Do not target EDT 2026.1 or older without the user's explicit request.
+7. Before any 2026.2 release, prove target resolution, compilation and installation with a user-approved manual build; old Eclipse baseline success does not count.
+
 ## Safety
-6. Never use the user's VPS to build, test, host, or run this project without explicit permission.
-7. Never write to a working 1C infobase or configuration repository for development/testing. Only isolated disposable test data may be used with explicit agreement.
-8. No credentials, session tokens or local machine secrets in commits, build logs, or artifacts.
-9. Never label a plugin as tested in a 1C:EDT application until it has actually been installed and smoke-tested in that version.
-10. Treat repository state, staging base state, EDT project state, and Git state as separate; verify results before advancing checkpoints.
+8. Never use the user's VPS to build, test, host, or run this project without explicit permission.
+9. Never write to a working 1C infobase or configuration repository for development/testing. Only isolated disposable test data may be used with explicit agreement.
+10. No credentials, session tokens or local machine secrets in commits, build logs, or artifacts.
+11. Never label a plugin as tested in a 1C:EDT application until it has actually been installed and smoke-tested in that version.
+12. Treat repository state, staging base state, EDT project state, and Git state as separate; verify results before advancing checkpoints.
 
 ## Code and workflow
-11. Prefer supported, versioned EDT/Eclipse APIs. No reflection/internal Eclipse/EDT shortcuts without a documented necessity and test plan.
-12. Keep exchange business logic independent from Eclipse UI and Git.
-13. Document changed behavior, expected invariants and known gaps in `docs/`. New API integrations require read-only proof before implementation of write operations.
-14. Development can be committed without running a build; clearly state that new changes remain unverified until the user requests a build.
+13. Prefer supported, versioned EDT/Eclipse APIs. No reflection/internal Eclipse/EDT shortcuts without a documented necessity and test plan.
+14. Keep exchange business logic independent from Eclipse UI and Git.
+15. Document changed behavior, expected invariants and known gaps in `docs/`. New API integrations require read-only proof before implementation of write operations.
+16. Development can be committed without running a build; clearly state that new changes remain unverified until the user requests a build.
