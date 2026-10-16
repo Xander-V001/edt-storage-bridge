@@ -170,7 +170,9 @@ public final class ReceiveChangesCoordinator {
                     updateAttempted.set(true);
                     journal.markUpdateAttempted();
                     new RepositoryUpdateRunner().receive(
-                        new RepositoryUpdateRequest(executable, transport, TIMEOUT),
+                        new RepositoryUpdateRequest(executable, transport, TIMEOUT,
+                            settings.address(), settings.username(),
+                            settings.password()),
                         canceled);
                     journal.markUpdateCompleted();
                 } else {
