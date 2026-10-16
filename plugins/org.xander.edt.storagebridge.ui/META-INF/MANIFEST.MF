@@ -16,8 +16,11 @@ Require-Bundle: org.eclipse.core.commands,
  org.eclipse.ui,
  org.eclipse.ui.workbench,
  org.eclipse.jface,
+ org.eclipse.equinox.preferences,
+ org.eclipse.equinox.security,
  org.xander.edt.storagebridge.core,
  org.xander.edt.storagebridge.edt
 Import-Package: com._1c.g5.wiring,
  com.google.inject,
- org.osgi.framework
+ org.osgi.framework,
+ org.osgi.service.prefs

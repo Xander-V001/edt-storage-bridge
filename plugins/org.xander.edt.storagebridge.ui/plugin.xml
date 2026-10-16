@@ -2,23 +2,40 @@
 <?eclipse version="3.4"?>
 <plugin>
   <extension point="org.eclipse.ui.commands">
-    <command
-      id="org.xander.edt.storagebridge.ui.inspectProject"
+    <command id="org.xander.edt.storagebridge.ui.inspectProject"
       name="%command.inspect"/>
+    <command id="org.xander.edt.storagebridge.ui.openStorageSettings"
+      name="%command.storage"/>
   </extension>
   <extension point="org.eclipse.ui.handlers">
     <handler
       commandId="org.xander.edt.storagebridge.ui.inspectProject"
       class="org.xander.edt.storagebridge.ui.BridgeExtensionFactory:org.xander.edt.storagebridge.ui.InspectProjectHandler"/>
+    <handler
+      commandId="org.xander.edt.storagebridge.ui.openStorageSettings"
+      class="org.xander.edt.storagebridge.ui.OpenStorageSettingsHandler"/>
   </extension>
   <extension point="org.eclipse.ui.menus">
     <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
       <menu id="org.xander.edt.storagebridge.ui.menu" label="%menu.bridge">
+        <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.inspectProject" style="push"/>
       </menu>
     </menuContribution>
-    <menuContribution locationURI="popup:org.eclipse.ui.navigator.ProjectExplorer?after=additions">
-      <command commandId="org.xander.edt.storagebridge.ui.inspectProject" style="push"/>
+
+    <!-- Work in EDT Navigator and other Eclipse project context menus. -->
+    <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
+      <menu id="org.xander.edt.storagebridge.ui.project.popup" label="%menu.storage">
+        <visibleWhen checkEnabled="false">
+          <with variable="selection">
+            <iterate operator="and" ifEmpty="false">
+              <adapt type="org.eclipse.core.resources.IProject"/>
+            </iterate>
+          </with>
+        </visibleWhen>
+        <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings"
+                 label="%command.settings" style="push"/>
+      </menu>
     </menuContribution>
   </extension>
 </plugin>
