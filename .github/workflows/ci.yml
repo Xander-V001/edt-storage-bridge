@@ -24,6 +24,7 @@ jobs:
         uses: s4u/setup-maven-action@v1.20.0
         with:
           maven-version: '3.9.9'
+          java-version: '21'
       - name: Validate Maven and Java
         run: |
           java -version
