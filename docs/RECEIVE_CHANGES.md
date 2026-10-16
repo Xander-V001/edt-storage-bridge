@@ -1,6 +1,6 @@
 # Storage receive — actual actors, current implementation
 
-Status: **NOT FUNCTIONAL in EDT; source-only; build and runtime unverified.**
+Status: **NOT FUNCTIONAL/ACCEPTED in EDT**. CI #24 compiled an older revision, but the first installed receive failed; fixes after #24 are source-only and NOT compiled/runtime-verified.
 
 There are exactly three actors:
 1. Classical 1C configuration storage (shared by developers).
@@ -10,8 +10,8 @@ There are exactly three actors:
 ## Verified platform primitives
 
 - `/ConfigurationRepositoryUpdateCfg` updates the *repository-bound intermediary* from classical storage. The platform supports `-Objects` for selective receive; it supports `-force` to confirm additions/deletions. No `-revised` by default.
-- `/DumpConfigToFiles <directory> -listFile <objects.txt> -Format Hierarchical` exports **only** the explicit metadata objects from that intermediary. Object list format is 1C full metadata names, one name per line. This is not full XML export.
-- The platform additionally supports `-update` using `ConfigDumpInfo.xml` for incremental updates of an existing export, but **this mode is not yet implemented in our bridge**.
+- `/DumpConfigToFiles <directory> -listFile <objects.txt>` exports **only** the explicit metadata objects from that intermediary. Object list format is 1C full metadata names, one name per line. This is not full XML export.
+- `ChangedObjectsProbe` now uses `-update -getChanges -configDumpInfoForChanges` to determine only changed objects relative to a stored version file; this command has not yet been proven on a disposable 1C installation.
 
 Official documentation:
 - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/
@@ -93,3 +93,19 @@ Corrections after build #24 (NOT YET BUILT OR RUNTIME-VERIFIED):
 **Safety gate:** Until the actual infobase's post-failure state and stored
 baseline have been verified, do not retry receiving on a working infobase.
 No new GitHub Actions build was dispatched by these source-only changes.
+
+
+## 2026-10-17: safe-retry and authentication corrections (SOURCE ONLY)
+
+- **Crash/retry guard:** `ReceiveAttemptLedger` persists `SNAPSHOT_READY -> UPDATE_ATTEMPTED -> UPDATE_COMPLETED -> CHANGES_JOURNALED` outside Git. The `UPDATE_ATTEMPTED` marker is flushed **before** invoking native Designer; a failed/uncertain update is blocked on the next invocation, instead of being silently re-run. Only `UPDATE_COMPLETED` may resume read-only changes detection; fully journaled changes may finish cleanup. An unmarked snapshot from the installed #24 cannot be assumed safe and requires manual assessment.
+- **Source identity:** `ReceiveBaselineJournal` now binds its snapshot to a fingerprint of the specified connected intermediary. `ReceivePendingStore` similarly binds pending object names and refuses a changed intermediary or ambiguous legacy pending list. These are guards against interpreting old changes as coming from a different database.
+- **Repository authentication:** previously saved repository address/name/password were ignored by the update command. `RepositoryUpdateRequest` and `RepositoryUpdateCommand` now pass `/ConfigurationRepositoryF`, `/ConfigurationRepositoryN`, and optional `/ConfigurationRepositoryP`. The command is never printed in our diagnostic log. **Security:** native Designer credentials passed via command-line arguments may be visible to privileged local OS users. The confirmation dialog explicitly warns about this. IB authentication (`/N`, `/P`) is not yet implemented; separate testing/decision needed.
+- **Scope:** no automatic EDT-connected infobase selection, no automatic Git reset/checkout, no automatic clearing of object-level pending status; the native two-way compare remains unverified.
+- **Tests:** added restart/uncertain-state tests and repository-command authentication tests. No user-unapproved GitHub Actions build was dispatched.
+
+### Work still required before real use
+
+1. Prove an existing repository-bound intermediary matches the configured repository (read-only preflight). The current command-line authentication fields do not themselves demonstrate this relationship.
+2. Verify the new CLI combinations and actual 1C returns on disposable data; include errors, cancellation and missing IB login credentials.
+3. Validate partial XML-to-EDT conversion and native EDT compare/merge in EDT 2026.2.1.3 with Document1/Document2, child forms/templates and committed Git divergence.
+4. Do not retry using the installed #24 on working data. The new source fixes are **uncompiled**, do not constitute a usable release or prove safe runtime behavior.
