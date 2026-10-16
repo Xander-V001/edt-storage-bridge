@@ -89,11 +89,22 @@ public final class EdtDeltaComparisonService {
                 || !Files.isDirectory(projectRoot)) {
             throw new IllegalArgumentException("Invalid source or Git directory");
         }
-        if (output.equals(projectRoot) || output.startsWith(projectRoot)
-                || output.startsWith(root) || output.equals(root)
-                || output.equals(xml) || output.startsWith(xml)) {
+        // Resolve the *parent* first: a symbolic link in the output path
+        // must never redirect an external staging write into the Git checkout.
+        Path parent = output.getParent();
+        if (parent == null || !Files.isDirectory(parent)) {
             throw new IllegalArgumentException(
-                "Converted EDT delta must stay outside the project, Git and input XML");
+                "Staging parent directory must exist outside Git");
+        }
+        Path realParent = parent.toRealPath();
+        if (realParent.startsWith(projectRoot) || realParent.startsWith(root)
+                || realParent.startsWith(xml)
+                || xml.startsWith(realParent.resolve(output.getFileName()))) {
+            throw new IllegalArgumentException(
+                "Staging destination must be independent of EDT, Git and input XML");
+        }
+        if (Files.isSymbolicLink(output)) {
+            throw new IllegalArgumentException("Symlink destination not allowed");
         }
         if (Files.exists(output)) {
             try (Stream<Path> children = Files.list(output)) {
@@ -103,7 +114,12 @@ public final class EdtDeltaComparisonService {
                 }
             }
         } else {
-            Files.createDirectories(output);
+            Files.createDirectory(output);
+        }
+        Path canonicalOutput = output.toRealPath();
+        if (canonicalOutput.startsWith(projectRoot)
+                || canonicalOutput.startsWith(root) || canonicalOutput.startsWith(xml)) {
+            throw new IllegalArgumentException("Unsafe staging location");
         }
 
         // This FOUR-argument overload writes to an external directory.
@@ -136,8 +152,8 @@ public final class EdtDeltaComparisonService {
             "Изменения из хранилища 1С");
         editor.setRunInitialComparison(true);
         editor.setMergeConfirmationMessage(
-            "Применить только отмеченные изменения? "
-            + "Непринятые объекты, включая локально изменённые, останутся без изменений.");
+            "Будут изменены выбранные объекты текущего проекта EDT. "
+            + "Проверьте конфликты и список объектов перед подтверждением.");
         return editor;
     }
 
