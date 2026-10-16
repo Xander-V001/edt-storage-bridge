@@ -28,6 +28,7 @@ import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.eclipse.ui.dialogs.ListSelectionDialog;
+import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
@@ -115,7 +116,27 @@ public final class ReceiveChangesCoordinator {
                 settings.infobaseAddress());
             var detect = new ChangeDetectionRequest(executable, transport, TIMEOUT);
 
+            Phase storedPhase = journal.phase();
+            if (storedPhase == Phase.CHANGES_JOURNALED) {
+                // Pending object names were already flushed. Only complete
+                // interrupted cleanup; do not run native Designer again.
+                journal.finishAlreadyJournaled();
+                storedPhase = Phase.NONE;
+            }
             boolean recovery = journal.exists();
+            if (recovery && storedPhase != Phase.UPDATE_COMPLETED) {
+                throw new IOException(
+                    "Предыдущая попытка получения не завершена, результат "
+                    + "обновления базы неизвестен. Повторный запуск заблокирован.");
+            }
+            if (!recovery && storedPhase != Phase.NONE) {
+                throw new IOException(
+                    "Найден незавершённый журнал обновления без исходного "
+                    + "снимка. Повторный запуск заблокирован.");
+            }
+            if (recovery) {
+                updateAttempted.set(true);
+            }
             phase.set("Подтверждение получения из хранилища");
             if (!recovery && !MessageDialog.openConfirm(shell,
                     "Получить изменения из хранилища 1С",
@@ -144,9 +165,11 @@ public final class ReceiveChangesCoordinator {
                     phase.set("Обновление конфигурации базы-посредника");
                     monitor.subTask("Получение последней версии в существующую базу");
                     updateAttempted.set(true);
+                    journal.markUpdateAttempted();
                     new RepositoryUpdateRunner().receive(
                         new RepositoryUpdateRequest(executable, transport, TIMEOUT),
                         canceled);
+                    journal.markUpdateCompleted();
                 } else {
                     // A previous process may have crashed after updating the IB.
                     // Detect against the durable old snapshot instead of
@@ -371,6 +394,8 @@ public final class ReceiveChangesCoordinator {
                     || reason.equals("Designer version snapshot failed")
                     || reason.equals("1C could not produce a verified changes list")
                     || reason.equals("No trusted ConfigDumpInfo.xml baseline is available")
+                    || reason.startsWith("Предыдущая попытка получения не завершена")
+                    || reason.startsWith("Найден незавершённый журнал обновления")
                     || reason.equals("Получение отменено до изменения базы")
                     || reason.matches("Конфигуратор завершился с кодом [0-9]+\\. Состояние ИБ требует проверки\\."))) {
                 return reason;
