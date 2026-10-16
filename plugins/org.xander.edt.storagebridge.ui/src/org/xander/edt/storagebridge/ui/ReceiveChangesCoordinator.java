@@ -116,6 +116,8 @@ public final class ReceiveChangesCoordinator {
                     ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER,
                 settings.infobaseAddress());
             var detect = new ChangeDetectionRequest(executable, transport, TIMEOUT);
+            String intermediaryIdentity = settings.infobaseType().name()
+                + ":" + settings.infobaseAddress().trim();
 
             Phase storedPhase = journal.phase();
             if (storedPhase == Phase.CHANGES_JOURNALED) {
@@ -189,7 +191,8 @@ public final class ReceiveChangesCoordinator {
                 // templates, etc. A later receive must not forget their names.
                 phase.set("Сохранение списка необработанных объектов");
                 ReceivePendingStore.add(
-                    project, settings.address(), branch, changedNames);
+                    project, settings.address(), branch, intermediaryIdentity,
+                    changedNames);
                 journal.acknowledgeJournaledChanges();
                 monitor.worked(1);
                 return changedNames;
@@ -197,7 +200,7 @@ public final class ReceiveChangesCoordinator {
 
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
-                project, settings.address(), branch);
+                project, settings.address(), branch, intermediaryIdentity);
             if (pending.isEmpty()) {
                 MessageDialog.openInformation(shell, "Работа с хранилищем",
                     "Изменений относительно сохранённого состояния базы-посредника "
@@ -304,7 +307,7 @@ public final class ReceiveChangesCoordinator {
                             GitReceiveGuard.requireSameBranchAndHead(project, git);
                             VerifiedReceiveContent.clearMatchingSelected(
                                 project, settings.address(), branch,
-                                selected, selectedPendingNames,
+                                intermediaryIdentity, selected, selectedPendingNames,
                                 retainedConverted.resolve("edt"));
                         } catch (Exception ex) {
                             BridgeActivator.getDefault().getLog().warn(
