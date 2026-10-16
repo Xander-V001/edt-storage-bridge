@@ -1,16 +1,15 @@
 # EDT Storage Bridge
 
-> **ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД РАБОТОЙ:** [Исходная задача и разбор ошибок разработки](docs/LESSONS_LEARNED.md). Требование закреплено также в [AGENTS.md](AGENTS.md). Код цепочки получения и выборочного сравнения EDT собран в исходниках, но **ещё не прошёл сборку и испытания**, поэтому НЕ является готовым плагином.
+> **ПЕРЕД РАБОТОЙ:** [Исходная задача и разбор ошибок разработки](docs/LESSONS_LEARNED.md) · [План приёмки](docs/RECEIVE_ACCEPTANCE_PLAN.md) · [AGENTS.md](AGENTS.md). **Сборка #24 прошла, но первое получение в EDT завершилось ошибкой. Изменения после #24 пока не собраны и не проверены в EDT. Плагин нельзя считать рабочим.**
 
 Independently developed extension for **1C:EDT 2026.2** and classic 1C configuration repositories.
 
-## Status
+## Status (2026-10-17)
 
-- Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
-- The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
-- New read-only history and **two-stage receive command** have been added **after that build**. These changes are UNCOMPILED and have not been tested in EDT.
-- **Receive UI is now wired in SOURCE ONLY, NOT BUILT OR TESTED**; do not install/operate on live bases until the intended manual build and disposable smoke tests. The prior assumption that the repository-bound intermediary infobase was registered/linked to EDT was false; its EDT synchronization adapter has been removed.
-- Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
+- Manual CI [#24](https://github.com/Xander-V001/edt-storage-bridge/actions/runs/38975593867) successfully compiled the EDT 2026.2 bundles, passed 25 OSGi tests, and produced the p2 installation archive.
+- First real receive in the installed EDT 2026.2.1.3 failed with `IOException`; the old handler dropped the failing stage and diagnostic details. End-to-end receive is **not functional/verified**.
+- Since build #24, the code includes stage diagnostics, corrected incremental dump flags, durable retry guards, intermediary identity binding, and optional repository authentication. These edits **have not been compiled or smoke-tested**.
+- Existing intermediary infobase bound to classical repository is separate from all EDT-connected infobases. Production testing is prohibited. Working branch `feature/edt-2026.2-integration`; PR #6 remains unmerged.
 
 ## Planned user flow
 
@@ -21,7 +20,7 @@ Right-click a project in EDT Navigator → **Работа с хранилище�
 - **optional** path to the installed platform executable (`1cv8.exe`);
 - observed remote revision and verified locally applied revision (both unknown until real verification).
 
-Saving settings never launches Designer. A separate **Получить изменения** button now has a confirmed, explicitly approved read/update/stage/compare flow in source. It is **UNBUILT and must not be used with live data**.
+Saving settings never launches Designer. A separate **Получить изменения** button now has a confirmed, explicitly approved read/update/stage/compare flow in source. Its latest corrections are **UNBUILT and must not be used with live data**.
 
 ## Integration strategy
 
@@ -40,6 +39,6 @@ Prefer platform-supported operations through an existing connected infobase when
 5. Export only the selected objects with `-listFile`, convert to an isolated EDT source folder with the official `IImportService`, derive native top-level object FQNs and open the **existing EDT compare/merge editor**.
 6. On editor close, clear a pending object only if all its staged EDT source files exactly match the resulting project. Otherwise leave it pending. **Never advance an invented repository-wide applied revision**.
 
-**Open technical and verification limits:** This first interactive mode is TWO-WAY: it protects unselected locally committed objects by leaving them entirely outside the comparison scope, but does not claim a repository/Git three-way common ancestor. The separate three-way adapter requires a verified Git/storage baseline not yet provisioned. Repository version history parsing, objects deleted from storage, pre-existing storage/EDT divergence (if the connected IB was already updated independently), and unsupported object-type mappings require additional proof. Compile and runtime smoke tests on EDT 2026.2 have NOT been performed. The current branch has **no newly verified p2 release**.
+**Open technical and verification limits:** This first interactive mode is TWO-WAY: it protects unselected locally committed objects by leaving them entirely outside the comparison scope, but does not claim a repository/Git three-way common ancestor. The separate three-way adapter requires a verified Git/storage baseline not yet provisioned. Repository version history parsing, objects deleted from storage, pre-existing storage/EDT divergence (if the connected IB was already updated independently), and unsupported object-type mappings require additional proof. The code compiled successfully in CI #24, but the runtime receive failed in EDT 2026.2.1.3. Edits after #24 have not yet been built; there is no verified working p2 release.
 
 See [Detailed implementation](docs/RECEIVE_CHANGES.md).
