@@ -150,10 +150,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             formatVersion(saved == null ? -1 : saved.appliedVersion()));
 
         Label note = new Label(content, SWT.WRAP);
-        note.setText("Чтение текущей версии, получение и помещение изменений "
-            + "будут доступны после подключения механизма обмена. "
-            + "Сейчас окно сохраняет только настройки; "
-            + "версии вручную не увеличиваются.");
+        note.setText("Кнопка «Получить изменения» запускает обновление подключённой ИБ, "
+            + "затем штатный импорт EDT. Требуется чистая Git-ветка и заранее "
+            + "подтверждённая связь проекта с этой же ИБ в EDT. "
+            + "Версия хранилища пока автоматически не фиксируется.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
@@ -180,11 +180,30 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         return version >= 1 ? Long.toString(version) : "Не определена";
     }
 
+    private static final int RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
+
     @Override
     protected void okPressed() {
+        if (saveSettings()) {
+            super.okPressed();
+        }
+    }
+
+    @Override
+    protected void buttonPressed(int buttonId) {
+        if (buttonId == RECEIVE_BUTTON_ID) {
+            if (saveSettings()) {
+                ReceiveChangesController.start(project, getShell());
+            }
+            return;
+        }
+        super.buttonPressed(buttonId);
+    }
+
+    private boolean saveSettings() {
         if (saved == null) {
             setErrorMessage("Настройки не были загружены. Сохранение запрещено.");
-            return;
+            return false;
         }
         try {
             StorageProjectSettings.save(project, address.getText(),
@@ -192,18 +211,21 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                 infobaseType.getSelectionIndex() == 1
                     ? InfobaseType.SERVER : InfobaseType.FILE,
                 infobaseAddress.getText(), platformExecutable.getText());
-            super.okPressed();
+            setErrorMessage(null);
+            return true;
         } catch (IllegalArgumentException ex) {
             setErrorMessage(ex.getMessage());
         } catch (StorageException | IOException | BackingStoreException | RuntimeException ex) {
-            // Do not output exception message: a third-party provider may include secrets.
+            // Avoid leaking text from third-party secrets or providers.
             setErrorMessage("Не удалось сохранить настройки. Проверьте доступ к "
                 + "Secure Storage и настройкам рабочей области.");
         }
+        return false;
     }
 
     @Override
     protected void createButtonsForButtonBar(Composite parent) {
+        createButton(parent, RECEIVE_BUTTON_ID, "Получить изменения", false);
         createButton(parent, IDialogConstants.OK_ID, "Сохранить", true);
         createButton(parent, IDialogConstants.CANCEL_ID, "Отмена", false);
     }
