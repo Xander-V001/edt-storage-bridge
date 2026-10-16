@@ -1,0 +1,28 @@
+# Maven / Tycho
+target/
+**/target/
+*.log
+*.hprof
+# Eclipse workspace state (keep PDE project descriptors tracked)
+.metadata/
+.settings/
+.recommenders/
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+# Never commit credentials, repository caches or local 1C databases
+settings.xml
+*.1CD
+*.cf
+*.cfu
+*.dt
+*.epf
+*.erf
+*.bak
+*.dump
+.env
+.env.*
+!.env.example

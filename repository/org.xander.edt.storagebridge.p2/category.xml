@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+  <feature id="org.xander.edt.storagebridge.feature">
+    <category name="org.xander.edt.storagebridge.category"/>
+  </feature>
+  <category-def name="org.xander.edt.storagebridge.category"
+    label="EDT Storage Bridge"/>
+</site>
