@@ -137,7 +137,10 @@ public final class ReceiveChangesCoordinator {
                 project, settings.address(), branch);
             if (pending.isEmpty()) {
                 MessageDialog.openInformation(shell, "Работа с хранилищем",
-                    "Новых изменений для выбранного проекта нет.");
+                    "Изменений относительно сохранённого состояния базы-посредника "
+                    + "не обнаружено. Это НЕ доказывает, что проект EDT соответствует "
+                    + "хранилищу: если база-посредник уже была обновлена раньше, "
+                    + "необходимо отдельно восстановить исходную версию обмена.");
                 return;
             }
             Set<String> candidateRoots = topObjects(new ArrayList<>(pending));
