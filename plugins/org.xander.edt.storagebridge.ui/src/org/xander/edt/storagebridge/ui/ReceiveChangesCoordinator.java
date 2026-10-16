@@ -86,6 +86,18 @@ public final class ReceiveChangesCoordinator {
                 throw new IOException("Укажи существующую базу хранилища"
                     + " и исполняемый файл платформы 1С в настройках.");
             }
+            Path executable = Path.of(settings.platformExecutable()).toAbsolutePath();
+            if (!Files.isRegularFile(executable)) {
+                throw new IOException("Указанный исполняемый файл 1С не найден.");
+            }
+            if (settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE) {
+                Path infobase = Path.of(settings.infobaseAddress());
+                if (!Files.isDirectory(infobase)
+                        || !Files.isRegularFile(infobase.resolve("1Cv8.1CD"))) {
+                    throw new IOException(
+                        "В указанном каталоге файловой базы не найден 1Cv8.1CD.");
+                }
+            }
             phase.set("Проверка Git и незакоммиченных изменений");
             GitReceiveGuard.Baseline git = progress(shell, monitor -> {
                 monitor.beginTask("Проверка локальной ветки Git", 1);
@@ -101,7 +113,6 @@ public final class ReceiveChangesCoordinator {
                 settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
                     ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER,
                 settings.infobaseAddress());
-            Path executable = Path.of(settings.platformExecutable()).toAbsolutePath();
             var detect = new ChangeDetectionRequest(executable, transport, TIMEOUT);
 
             boolean recovery = journal.exists();
@@ -353,12 +364,15 @@ public final class ReceiveChangesCoordinator {
                     || reason.startsWith("Не удалось проверить Git.")
                     || reason.equals("Истекло время проверки Git.")
                     || reason.equals("Указанный исполняемый файл 1С не найден.")
+                    || reason.equals("В указанном каталоге файловой базы не найден 1Cv8.1CD.")
+                    || reason.equals("Укажи существующую базу хранилища и исполняемый файл платформы 1С в настройках.")
                     || reason.equals("1C executable not found")
                     || reason.equals("1C did not return a valid versions file")
                     || reason.equals("Designer version snapshot failed")
                     || reason.equals("1C could not produce a verified changes list")
                     || reason.equals("No trusted ConfigDumpInfo.xml baseline is available")
-                    || reason.equals("Получение отменено до изменения базы"))) {
+                    || reason.equals("Получение отменено до изменения базы")
+                    || reason.matches("Конфигуратор завершился с кодом [0-9]+\\. Состояние ИБ требует проверки\\."))) {
                 return reason;
             }
         }
