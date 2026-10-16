@@ -1,5 +1,7 @@
 # EDT Storage Bridge
 
+> **ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД РАБОТОЙ:** [Исходная задача и разбор ошибок разработки](docs/LESSONS_LEARNED.md). Требование закреплено также в [AGENTS.md](AGENTS.md). Главный механизм получения изменений из хранилища **ещё не реализован**; не выдавать за него настройки, XML-экспорт или прототипы.
+
 Independently developed extension for **1C:EDT 2026.2** and classic 1C configuration repositories.
 
 ## Status
