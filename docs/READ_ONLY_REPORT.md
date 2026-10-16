@@ -29,13 +29,13 @@ File/server addresses map only to the documented `/F` and `/S` arguments. There 
 - **Neither the infobase password nor repository password is passed** on the command line; this prototype assumes that the existing connected base has accessible credentials in the local 1C environment. Authentication may fail, and that is reported safely.
 - A separate private temporary directory holds report, service messages, stdout and stderr; cleanup after process exit/failure. Directory permissions are owner-only where POSIX applies.
 - Polling checks cancellation, a bounded timeout (2 seconds to 30 minutes), nonzero exit status, missing/empty report and output-size limit (16 MiB per file). Stop the process on cancellation/timeout.
-- Raw reports are returned as defensive bytes; no conversion of unknown TXT encoding and no invented parsing. `RepositoryRevision` defines a future structured result but is intentionally not populated yet.
+- Raw reports are returned as defensive bytes. The optional `TextReportDecoder` strictly accepts UTF-8 and UTF-8/UTF-16 BOM data; legacy encodings are rejected pending verified real fixtures. No invented parsing. `RepositoryRevision` defines a future structured result but is intentionally not populated yet.
 - Report errors do not include raw service messages, credentials, paths or process arguments. The caller receives a typed error reason and optionally exit code.
 - No checkpoint is updated by the process returning 0. Version extraction needs real report fixtures, validation and object identity checks first.
 
 ## Test coverage added (but not run)
 
-Pure command-builder JUnit tests check /F, /S, latest/range, forbidden write switches, invalid inputs, immutable arguments and bytes. They **never launch** any executable.
+Pure command-builder JUnit tests check /F, /S, latest/range, forbidden write switches, invalid inputs, immutable arguments and bytes. Decoder tests check UTF-8/UTF-16 BOM and malformed input. They **never launch** any executable.
 
 ## Next work
 

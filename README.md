@@ -5,7 +5,8 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 ## Status
 
 - Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
-- **New UI fields have NOT yet been compiled or installed.** No remote repository operations are implemented.
+- The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
+- A new independent read-only report transport and decoding tests have been added **after that build** and are uncompiled. No real repository operations are wired into the UI.
 - Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
 ## Planned user flow

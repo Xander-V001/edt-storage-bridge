@@ -14,6 +14,8 @@
 - [ ] Verify preferences persistence and secure-password behavior across restarts.
 
 ## Stage 2 — safe connection and read-only inspection
+- [x] Read-only 1C Designer history-report module and bounded process runner (source only; not built)
+- [x] TXT UTF-8/UTF-16 BOM decoder and pure tests (added, not run)
 - [ ] Validate configured connected-base identity and compatible repository user **without rebinding**.
 - [ ] Test version/history access using documented Designer report and direct transport.
 - [ ] Select transport with actual evidence: correct results, side effects, performance.
