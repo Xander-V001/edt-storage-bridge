@@ -27,7 +27,8 @@ public class SelectiveDumpCommandTest {
         assertEquals("/DumpConfigToFiles", args.get(5));
         assertEquals("-listFile", args.get(7));
         assertEquals("/private/objects.txt", args.get(8));
-        assertTrue(args.contains("Hierarchical"));
+        assertFalse(args.contains("-Format"));
+        assertFalse(args.contains("Hierarchical"));
         assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
         assertFalse(args.contains("-force"));
         assertFalse(args.contains("/LoadCfg"));
