@@ -171,19 +171,30 @@ public final class EdtSelectiveReviewService {
         return new CompareMergeProcessDescriptor(handle, settings);
     }
 
+    /** Map only recognized classic metadata types to EDT source paths. */
+    public static String edtOwner(String classicalObject) throws IOException {
+        if ("Configuration".equals(classicalObject)) {
+            return "Configuration/Configuration";
+        }
+        if (classicalObject == null) {
+            throw new IOException("Unknown storage metadata object");
+        }
+        String[] parts = classicalObject.split("\\.");
+        if (parts.length < 2) {
+            throw new IOException("Incomplete metadata name: " + classicalObject);
+        }
+        String folder = SOURCE_GROUPS.get(parts[0]);
+        if (folder == null || parts[1].isBlank()) {
+            throw new IOException("Unsupported storage metadata type: " + classicalObject);
+        }
+        return folder + "/" + parts[1];
+    }
+
     private List<String> exactScope(Path edtRoot,
             List<String> selection) throws IOException {
         Set<String> requested = new LinkedHashSet<>();
         for (String entry : selection) {
-            String[] parts = Objects.requireNonNull(entry).split("\\.");
-            if (parts.length < 2) {
-                throw new IOException("Unsupported 1C metadata name: " + entry);
-            }
-            String group = SOURCE_GROUPS.get(parts[0]);
-            if (group == null) {
-                throw new IOException("No verified EDT folder mapping for " + parts[0]);
-            }
-            requested.add(group + "/" + parts[1]);
+            requested.add(edtOwner(entry));
         }
         Set<String> seen = new LinkedHashSet<>();
         Set<String> symlinks = new LinkedHashSet<>();
@@ -226,8 +237,10 @@ public final class EdtSelectiveReviewService {
             }
         }
         if (!seen.containsAll(requested) || symlinks.isEmpty()) {
-            throw new IOException("Partial EDT XML conversion did not include every"
-                + " explicitly selected metadata object: " + requested.removeAll(seen));
+            var missing = new LinkedHashSet<>(requested);
+            missing.removeAll(seen);
+            throw new IOException("Partial EDT conversion missed selected objects: "
+                + missing);
         }
         return new ArrayList<>(symlinks);
     }
