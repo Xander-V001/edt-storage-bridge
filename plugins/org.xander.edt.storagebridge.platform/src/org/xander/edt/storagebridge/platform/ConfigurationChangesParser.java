@@ -23,16 +23,35 @@ public final class ConfigurationChangesParser {
             modifiedObjects = List.copyOf(modifiedObjects);
         }
 
-        /** Top-level MD objects in the platform's Russian qualified naming. */
+        /**
+         * Metadata names for Designer -listFile.
+         *
+         * Independently-developed subordinate objects (for example forms and
+         * templates) are NOT included in a parent object dump. Export both
+         * the parent and the exact separately-developed child when required.
+         * A metadata field such as an attribute is covered by its parent.
+         */
         public List<String> objectsToExport() {
             var names = new LinkedHashSet<String>();
             for (String object : newObjects) {
-                names.add(topObject(object));
+                addExportNames(names, object);
             }
             for (String object : modifiedObjects) {
-                names.add(topObject(object));
+                addExportNames(names, object);
             }
             return List.copyOf(names);
+        }
+
+        private static void addExportNames(Set<String> export, String object) {
+            String root = topObject(object);
+            export.add(root);
+            String[] parts = object.split("\\.");
+            if (parts.length >= 4
+                    && ("Form".equals(parts[2]) || "Template".equals(parts[2])
+                        || "Recalculation".equals(parts[2])
+                        || "Subsystem".equals(parts[2]))) {
+                export.add(root + "." + parts[2] + "." + parts[3]);
+            }
         }
     }
 

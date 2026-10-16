@@ -26,6 +26,19 @@ public class ConfigurationChangesParserTest {
     }
 
     @Test
+    public void independentFormsAndTemplatesAreExplicitlyExported() throws Exception {
+        var changes = ConfigurationChangesParser.parse(
+            "Modified: Document.Doc1.Form.MainForm.Module\\n"
+            + "Modified: Document.Doc1.Template.Print\\n"
+            + "Modified: Document.Doc2.Attribute.SerialNumber\\n");
+        assertEquals(List.of(
+            "Document.Doc1",
+            "Document.Doc1.Form.MainForm",
+            "Document.Doc1.Template.Print",
+            "Document.Doc2"), changes.objectsToExport());
+    }
+
+    @Test
     public void emptyResultMeansNoRemoteChanges() throws Exception {
         assertTrue(ConfigurationChangesParser.parse("").objectsToExport().isEmpty());
     }
