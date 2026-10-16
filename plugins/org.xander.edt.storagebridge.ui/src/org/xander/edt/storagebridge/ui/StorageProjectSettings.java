@@ -28,6 +28,13 @@ public final class StorageProjectSettings {
     private static final String ADDRESS = "repositoryAddress";
     private static final String USER = "repositoryUser";
     private static final String PASSWORD = "repositoryPassword";
+    private static final String INFOBASE_TYPE = "infobaseType";
+    private static final String INFOBASE_ADDRESS = "infobaseAddress";
+    private static final String PLATFORM_EXECUTABLE = "platformExecutable";
+
+    /** Matches documented 1C Designer launch switches /F and /S. */
+    public enum InfobaseType { FILE, SERVER }
+
     private static final String LAST_REMOTE = "lastObservedRemoteVersion";
     private static final String LAST_APPLIED = "lastVerifiedAppliedVersion";
     public static final long UNKNOWN_VERSION = -1L;
@@ -39,14 +46,21 @@ public final class StorageProjectSettings {
         private final String address;
         private final String username;
         private final String password;
+        private final InfobaseType infobaseType;
+        private final String infobaseAddress;
+        private final String platformExecutable;
         private final long observedVersion;
         private final long appliedVersion;
 
         private Snapshot(String address, String username, String password,
-                long observedVersion, long appliedVersion) {
+                InfobaseType infobaseType, String infobaseAddress,
+                String platformExecutable, long observedVersion, long appliedVersion) {
             this.address = address;
             this.username = username;
             this.password = password;
+            this.infobaseType = infobaseType;
+            this.infobaseAddress = infobaseAddress;
+            this.platformExecutable = platformExecutable;
             this.observedVersion = observedVersion;
             this.appliedVersion = appliedVersion;
         }
@@ -54,6 +68,9 @@ public final class StorageProjectSettings {
         public String address() { return address; }
         public String username() { return username; }
         public String password() { return password; }
+        public InfobaseType infobaseType() { return infobaseType; }
+        public String infobaseAddress() { return infobaseAddress; }
+        public String platformExecutable() { return platformExecutable; }
         public long observedVersion() { return observedVersion; }
         public long appliedVersion() { return appliedVersion; }
 
@@ -70,16 +87,24 @@ public final class StorageProjectSettings {
             preferences.get(ADDRESS, ""),
             preferences.get(USER, ""),
             secretNode.get(PASSWORD, ""),
+            readInfobaseType(preferences),
+            preferences.get(INFOBASE_ADDRESS, ""),
+            preferences.get(PLATFORM_EXECUTABLE, ""),
             preferences.getLong(LAST_REMOTE, UNKNOWN_VERSION),
             preferences.getLong(LAST_APPLIED, UNKNOWN_VERSION));
     }
 
     /** Save connection settings; changing storage address invalidates both revisions. */
     public static void save(IProject project, String address, String username,
-            String password) throws StorageException, IOException, BackingStoreException {
+            String password, InfobaseType infobaseType, String infobaseAddress,
+            String platformExecutable)
+            throws StorageException, IOException, BackingStoreException {
         Objects.requireNonNull(address, "address");
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(password, "password");
+        Objects.requireNonNull(infobaseType, "infobaseType");
+        Objects.requireNonNull(infobaseAddress, "infobaseAddress");
+        Objects.requireNonNull(platformExecutable, "platformExecutable");
         String normalizedAddress = address.trim();
         if (normalizedAddress.isBlank()) {
             throw new IllegalArgumentException("Укажите адрес хранилища.");
@@ -94,6 +119,10 @@ public final class StorageProjectSettings {
         boolean changed = !normalizedAddress.equals(preferences.get(ADDRESS, ""));
         preferences.put(ADDRESS, normalizedAddress);
         preferences.put(USER, username.trim());
+        // Optional transport settings. Merely saving them never starts Designer.
+        preferences.put(INFOBASE_TYPE, infobaseType.name());
+        preferences.put(INFOBASE_ADDRESS, infobaseAddress.trim());
+        preferences.put(PLATFORM_EXECUTABLE, platformExecutable.trim());
         if (changed) {
             // A checkpoint from storage A is invalid for storage B.
             preferences.remove(LAST_REMOTE);
@@ -127,6 +156,16 @@ public final class StorageProjectSettings {
         preferences.flush();
     }
 
+    private static InfobaseType readInfobaseType(Preferences preferences) {
+        String value = preferences.get(INFOBASE_TYPE, InfobaseType.FILE.name());
+        try {
+            return InfobaseType.valueOf(value);
+        } catch (IllegalArgumentException ex) {
+            // A corrupt/old preference must not accidentally imply /S.
+            return InfobaseType.FILE;
+        }
+    }
+
     private static void requireVersion(long version) {
         if (version < 1) {
             throw new IllegalArgumentException("Версия хранилища должна быть положительной.");
@@ -134,7 +173,7 @@ public final class StorageProjectSettings {
     }
 
     private static Preferences preferences(IProject project) {
-        return InstanceScope.INSTANCE.getNode(NODE + "/projects/" + projectKey(project));
+        return InstanceScope.INSTANCE.getNode(NODE).node("projects").node(projectKey(project));
     }
 
     private static ISecurePreferences secureNode(IProject project) {
@@ -142,7 +181,7 @@ public final class StorageProjectSettings {
         if (root == null) {
             throw new IllegalStateException("Безопасное хранилище Eclipse недоступно.");
         }
-        return root.node(NODE + "/projects/" + projectKey(project));
+        return root.node(NODE).node("projects").node(projectKey(project));
     }
 
     private static String projectKey(IProject project) {
