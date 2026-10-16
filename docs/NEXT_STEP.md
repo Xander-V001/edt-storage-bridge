@@ -1,38 +1,24 @@
-# Next development step: read-only EDT 2026.2 validation
+# Current milestone — project storage form and direct-read research
 
-**Decision (2026-10-16):** the user works in **1C:EDT 2026.2**. Versions 2026.1.x are no longer the target.
+Target: **1C:EDT 2026.2**.
 
-## Implemented without building
+## Already compiled
+- GitHub Actions #38938763356 — 8 modules succeeded, 3 core tests passed, p2 ZIP produced.
+- Builds require manual `workflow_dispatch`; automatic triggers are forbidden.
+- This build **predates** the storage settings/context-menu source.
 
-- Target platform declared for 1C:EDT 2026.2 / Eclipse 2025-12 / Java 25.
-- Dedicated EDT-specific adapter using the documented `IConfigurationProvider.getConfiguration(IProject)`.
-- Guice/OSGi extension factory, read-only asynchronous project diagnosis.
-- Manual-only CI remains intact and now declares Java 25.
+## Written since last build (NOT compiled)
+- Right-click project → `Работа с хранилищем` → dialog.
+- Address, username and encrypted Eclipse Secure Storage password, scoped to project.
+- Independent persisted last-observed-remote / last-verified-applied checkpoints.
+- No remote test or automatic update is claimed; no 1C repository touched.
 
-## Static audit before validation
+## Next tasks
+1. Manual build **only when the user explicitly requests one**, fix compile/p2 errors.
+2. Smoke-test project context menu in the real EDT 2026.2 Navigator.
+3. Verify UI settings persist between EDT restarts and passwords never appear in project files.
+4. Research supported direct read-only repository API and verify latest version/history against disposable repository.
+5. Update remote observed revision only after a real read-only response; update applied revision only after a validated receive into EDT.
+6. Evaluate 1C Designer-connected staging base only if direct supported write capability is absent or less safe.
 
-- [x] Compare service wiring to 1C public Guice/OSGi contracts.
-- [x] Keep vendor service binding inside the `edt` adapter and delay service lookup to the background Job.
-- [x] Handle UI disposal and stopped plug-in logging without activator dereference.
-- [x] Review Eclipse localization properties and use portable Unicode escapes.
-- [ ] Runtime/compile confirmation — **not executed**, see `docs/AUDIT_PR6.md`.
-
-## Next validation gate (only when explicitly requested)
-
-1. Resolve vendor 2026.2 p2 target; compare resolved bundle versions with installed EDT.
-2. Compile and run existing tests by a single manual workflow dispatch. Inspect exact failure logs, if any, before altering dependencies.
-3. Install the new p2 ZIP into a disposable EDT 2026.2 setup.
-4. Confirm the menu command and project model diagnostic; check EDT Error Log, cancellation and UI responsiveness.
-5. Record the exact tested EDT patch/build and successful output.
-
-Until then all 2026.2 Java changes are **unverified**, not release-ready.
-
-## Then: classic 1C repository read-only discovery (Issue #3)
-
-- Determine supported platform command line with versioned 1C documentation. `/ConfigurationRepositoryReport` appears to produce a text/MXL history report **via a designer/infobase context**; it must not be mistaken for a standalone stateless read API.
-- Determine how to interrogate a disposable repository and intermediary infobase without modifying configuration/repository state.
-- Separate transport credentials, repository version, EDT workspace project, intermediary infobase revision and Git commit.
-- Design a bounded/cancelable subprocess runner, proper stdout/stderr consumption, file permissions and result parser from actual sample output. No speculative parser.
-- Implement status/revision snapshot only after behavior is verified against a disposable fixture.
-
-No automatic builds, production 1C actions or VPS access.
+No production/VPS access or user working repository writes.

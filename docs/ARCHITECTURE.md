@@ -1,34 +1,29 @@
 # Architecture
 
-## Component boundaries
+- **core:** immutable state, validation, future diff/plan engine; no Eclipse UI, Git or 1C transport.
+- **edt:** public EDT Guice/OSGi service adapter; does not access the classic 1C repository.
+- **ui:** project-context command, SWT/JFace form, workspace-scoped preferences, Eclipse Secure Storage, background Jobs.
+- **direct-read repository adapter (planned):** authenticated metadata, current version and changed-object history, strictly read-only.
+- **platform-backed adapter (planned, optional):** isolated connected 1C infobase for Designer-dependent capture/commit operations, only if necessary.
+- **Git adapter (optional):** handles EDT source history separately, never substitutes for repository verification.
 
-- **core**: immutable project/synchronization values, deterministic validation logic. No Eclipse UI, no 1C APIs, no Git.
-- **edt**: thin facade over the **public** 1C:EDT OSGi API. Owns `EdtServiceModule` (OSGi service binding) and `EdtProjectInspector` (read-only `IConfigurationProvider`); this bundle must not know about 1C storage command-line transport.
-- **ui**: Eclipse workbench, menu commands, background Jobs, user-facing diagnostics, Guice extension factory. The handler injects a lazy provider and resolves EDT services only on the background Job thread; it does not import the vendor service interface.
-- **repository adapter (planned)**: 1C platform and repository operations, version-aware subprocess execution and safe read-only discovery first.
-- **Git adapter (planned)**: optional; classic 1C repository operations must not depend on Git.
+## Version invariants
 
-The current feature installs `core`, `edt`, `ui`. None of them writes to configuration repositories. EDT 2026.2 source is not yet compiled or smoke-tested.
+- `remoteObservedVersion`: latest number actually read from the classical repository.
+- `lastVerifiedAppliedVersion`: latest repository snapshot truly reflected in the EDT workspace after verified synchronization.
+- **No guessed increments.** Failure, canceled operation, partial import, Git commit, or successful Designer exit alone must never advance `lastVerifiedAppliedVersion`.
+- Changing repository address invalidates both stored versions.
 
-## Synchronization lifecycle — design contract, not implemented
+## Proposed safe synchronization
 
-1. PREFLIGHT — validate project, paths, platform binary, access, workspace changes and repo connection.
-2. DISCOVER — retrieve repository revision, changed objects, and source/target versions.
-3. PLAN — present differences; stop on unsafe conflicts or unapproved operations.
-4. STAGE — reversible isolated intermediate state; never mutate originals before authorization.
-5. APPLY — execute supported 1C/EDT operations with timeouts, cancellation and structured logs.
-6. VERIFY — read actual target **repository** to confirm committed revision/object changes, not just the intermediary base.
-7. FINALIZE — only after VERIFY, persist successful checkpoint and revision.
+1. Validate current EDT project, repository address/credentials, workspace modifications and storage identity.
+2. Discover remote history/version via read-only transport where supported.
+3. Calculate changed objects and conflicts vs confirmed applied version.
+4. Prepare reversible staged state; only use optional connected infobase if required by a proven supported platform operation.
+5. Import/merge safely into EDT using public APIs, retaining local modifications.
+6. Read target EDT model / repository state to verify success.
+7. Update the confirmed project checkpoint only after verification; retain detailed journal for interrupted/uncertain operations.
 
-Interrupted/failed operations must never advance checkpoints. Do not silently retry operations with uncertain external side effects.
+For sending changes, support and test capture/commit semantics separately, with read-after-write verification of the **actual** classical repository, not only an intermediary DB.
 
-## Rules
-
-- No production infobase or configuration repository writes.
-- No reset, checkout, clean, force-push or overwriting uncommitted EDT/Git data.
-- Credentials never enter logs or stored project settings.
-- Local files, EDT model, Git branch, intermediate infobase and classical repository have distinct identities and revisions.
-- Foreground SWT thread must not block on 1C operations or large model loads.
-- Version incompatibility is an explicit error, not an automatic fallback to unsupported internal APIs.
-
-See `docs/EDT_2026_2.md` and `docs/NEXT_STEP.md`.
+No production base/repository writes, secret leakage, unexplained reflection or automatic builds.

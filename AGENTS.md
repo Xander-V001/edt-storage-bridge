@@ -25,3 +25,9 @@ These rules are binding for all development in this repository and chat.
 14. Keep exchange business logic independent from Eclipse UI and Git.
 15. Document changed behavior, expected invariants and known gaps in `docs/`. New API integrations require read-only proof before implementation of write operations.
 16. Development can be committed without running a build; clearly state that new changes remain unverified until the user requests a build.
+
+## Repository user experience and state
+17. Right-clicking a **project** in EDT should show a direct `Работа с хранилищем` command opening its own dialog. Settings must not be global to all projects.
+18. Persist nonsecret settings in workspace-scoped preferences, not project content or Git. Encrypt the repository password with Eclipse Secure Storage.
+19. Distinguish actual repository current/observed version from the last repository version **verified as applied** to EDT. Neither may be invented; never increment on merely saving settings or running a subprocess.
+20. **Do not require an intermediary 1C infobase for read-only access by default.** Investigate direct supported read access. Use an isolated connected infobase only for operations where a supported mechanism requires it and explain the tradeoffs.
