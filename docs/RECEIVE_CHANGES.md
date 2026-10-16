@@ -34,3 +34,13 @@ Official documentation:
 - Prove the full chain in a disposable fixture and build only after explicit authorization.
 
 **No attached EDT bases are used for storage operations. No production infobase has been touched, and no CI build was launched.**
+
+## Source added after initial selective-export prototype — NOT YET WIRED
+
+- `ChangedObjectsProbe` invokes Designer `/DumpConfigToFiles -getChanges -configDumpInfoForChanges` against an **existing verified** `ConfigDumpInfo.xml`, using the already configured repository-bound base; no EDT base lookup. The separate `ChangeDetectionRequest` does not require object names.
+- `ConfigurationChangesParser` strictly parses recognized New:/Modified: entries into top-level metadata names. **FullDump and unknown/removal/rename records STOP with an error.** No full export fallback. It does not silently declare deletions absent.
+- `EdtDeltaComparisonService` passes partial XML through the **four-parameter** public `IImportService.work(project, xml, externalDestination, monitor)`, prepares `V8ProjectComparisonDataSourceDescriptor`, `FileSystemComparisonDataSourceDescriptor(output, projectName)` and `GitComparisonDataSourceDescriptor` for three-way comparison, and constructs native comparison editor input. It never calls the mutating three-argument import overload. EDT compare editor is **not opened by UI yet**.
+- `GitObjectDivergenceGuard` inspects committed Git diff since an explicitly verified baseline SHA, checks that it is an ancestor of HEAD, and classifies changed EDT files by top-level object. An unknown file blocks unattended safe classification. A clean working tree by itself is insufficient.
+- `EdtPathObjectMapperTest`, `ConfigurationChangesParserTest` were added as source; **neither compiled nor executed**.
+
+**Still missing:** provisioning/validating the initial ConfigDumpInfo baseline and its relation to a classic storage version, invoking current Designer update after permitted preflight, mapping classic 1C MD names to EDT symlinks, selecting the actual EDT importer implementation, opening the EDT editor through compatible runtime API, preserving pending skipped objects and end-to-end conflict test. These components are source-level integration seams, **not a working receive button**. Build and test remain manual only after explicit user request.
