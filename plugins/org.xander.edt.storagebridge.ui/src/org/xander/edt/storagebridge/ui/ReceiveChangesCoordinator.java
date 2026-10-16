@@ -224,12 +224,19 @@ public final class ReceiveChangesCoordinator {
                 throw new IOException("EDT comparison editor failed to initialize");
             }
             final IWorkbenchPage page = editor.getSite().getPage();
-            final IEditorReference editorReference = java.util.Arrays
-                .stream(page.getEditorReferences())
-                .filter(reference -> reference.getEditor(false) == editor)
-                .findFirst()
-                .orElseThrow(() -> new IOException(
-                    "EDT editor reference is not available"));
+            final IEditorReference editorReference;
+            try {
+                editorReference = java.util.Arrays.stream(page.getEditorReferences())
+                    .filter(reference -> reference.getEditor(false) == editor)
+                    .findFirst()
+                    .orElseThrow(() -> new IOException(
+                        "EDT editor reference is not available"));
+            } catch (Exception ex) {
+                // Do not leave an editor pointing to a stage that the outer
+                // finally block must clean up on a failed initialization.
+                page.closeEditor(editor, false);
+                throw ex;
+            }
             final Path retainedConverted = conversionRoot;
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             // Compare is interactive. The editor may stay open after this
@@ -255,8 +262,13 @@ public final class ReceiveChangesCoordinator {
                     }
                 }
             };
-            page.addPartListener(listener);
-            editorOwnsStaging = true;
+            try {
+                page.addPartListener(listener);
+                editorOwnsStaging = true;
+            } catch (RuntimeException ex) {
+                page.closeEditor(editor, false);
+                throw ex;
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             MessageDialog.openInformation(shell, "Работа с хранилищем",
