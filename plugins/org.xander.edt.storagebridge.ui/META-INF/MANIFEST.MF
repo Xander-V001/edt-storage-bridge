@@ -22,10 +22,6 @@ Require-Bundle: org.eclipse.core.commands,
  org.xander.edt.storagebridge.platform,
  org.xander.edt.storagebridge.edt
 Import-Package: com._1c.g5.wiring,
- com._1c.g5.v8.dt.platform.services.core.infobases,
- com._1c.g5.v8.dt.platform.services.core.infobases.sync,
- com._1c.g5.v8.dt.platform.services.model,
  com.google.inject,
- org.eclipse.emf.ecore,
  org.osgi.framework,
  org.osgi.service.prefs
