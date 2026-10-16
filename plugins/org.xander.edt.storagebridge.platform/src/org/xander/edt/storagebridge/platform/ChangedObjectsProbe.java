@@ -39,6 +39,10 @@ public final class ChangedObjectsProbe {
         args.add("/DisableStartupDialogs");
         args.add("/DumpConfigToFiles");
         args.add(inspectionDirectory.toString());
+        // -configDumpInfoForChanges is supported only together with -update
+        // and -getChanges (1C batch Designer contract). The previous command
+        // omitted -update, causing the change probe to fail at runtime.
+        args.add("-update");
         args.add("-getChanges");
         args.add(changeFile.toString());
         args.add("-configDumpInfoForChanges");
