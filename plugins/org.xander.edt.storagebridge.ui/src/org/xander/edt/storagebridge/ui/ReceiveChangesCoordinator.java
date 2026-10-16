@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -76,6 +77,8 @@ public final class ReceiveChangesCoordinator {
         SelectiveDumpRunner.ExportResult export = null;
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
+        AtomicReference<String> phase = new AtomicReference<>("Проверка настроек");
+        AtomicBoolean updateAttempted = new AtomicBoolean(false);
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -83,12 +86,14 @@ public final class ReceiveChangesCoordinator {
                 throw new IOException("Укажи существующую базу хранилища"
                     + " и исполняемый файл платформы 1С в настройках.");
             }
+            phase.set("Проверка Git и незакоммиченных изменений");
             GitReceiveGuard.Baseline git = progress(shell, monitor -> {
                 monitor.beginTask("Проверка локальной ветки Git", 1);
                 var baseline = GitReceiveGuard.requireCleanBranch(project);
                 monitor.worked(1);
                 return baseline;
             });
+            phase.set("Проверка состояния предыдущего получения");
             String branch = git.branch();
             var journal = new ReceiveBaselineJournal(project,
                 settings.address(), branch);
@@ -100,6 +105,7 @@ public final class ReceiveChangesCoordinator {
             var detect = new ChangeDetectionRequest(executable, transport, TIMEOUT);
 
             boolean recovery = journal.exists();
+            phase.set("Подтверждение получения из хранилища");
             if (!recovery && !MessageDialog.openConfirm(shell,
                     "Получить изменения из хранилища 1С",
                     "Будет обновлена только указанная в настройках "
@@ -114,6 +120,7 @@ public final class ReceiveChangesCoordinator {
                 BooleanSupplier canceled = monitor::isCanceled;
                 monitor.beginTask("Получение изменений из хранилища 1С", 3);
                 if (!journal.exists()) {
+                    phase.set("Создание ConfigDumpInfo.xml исходной конфигурации");
                     monitor.subTask("Фиксация состава старой конфигурации без XML-выгрузки");
                     try (var snapshot = new ConfigVersionSnapshotRunner()
                             .capture(detect, canceled)) {
@@ -123,7 +130,9 @@ public final class ReceiveChangesCoordinator {
                     if (canceled.getAsBoolean()) {
                         throw new IOException("Получение отменено до изменения базы");
                     }
+                    phase.set("Обновление конфигурации базы-посредника");
                     monitor.subTask("Получение последней версии в существующую базу");
+                    updateAttempted.set(true);
                     new RepositoryUpdateRunner().receive(
                         new RepositoryUpdateRequest(executable, transport, TIMEOUT),
                         canceled);
@@ -131,9 +140,11 @@ public final class ReceiveChangesCoordinator {
                     // A previous process may have crashed after updating the IB.
                     // Detect against the durable old snapshot instead of
                     // overwriting it and losing pending remote objects.
+                    phase.set("Восстановление незавершённого получения");
                     monitor.subTask("Восстановление прерванного получения");
                 }
                 monitor.worked(1);
+                phase.set("Получение списка изменённых объектов 1С");
                 monitor.subTask("Поиск только изменённых объектов");
                 var detected = new ChangedObjectsProbe().detect(
                     detect, journal.path(), canceled);
@@ -141,6 +152,7 @@ public final class ReceiveChangesCoordinator {
                     new LinkedHashSet<>(detected.objectsToExport());
                 // Store both owning MD objects and separately exported forms,
                 // templates, etc. A later receive must not forget their names.
+                phase.set("Сохранение списка необработанных объектов");
                 ReceivePendingStore.add(
                     project, settings.address(), branch, changedNames);
                 journal.acknowledgeJournaledChanges();
@@ -148,6 +160,7 @@ public final class ReceiveChangesCoordinator {
                 return changedNames;
             });
 
+            phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch);
             if (pending.isEmpty()) {
@@ -159,6 +172,7 @@ public final class ReceiveChangesCoordinator {
                 return;
             }
             Set<String> candidateRoots = topObjects(new ArrayList<>(pending));
+            phase.set("Выбор объектов для сравнения");
             var choices = new ListSelectionDialog(shell,
                 candidateRoots.stream().sorted().toList(),
                 ArrayContentProvider.getInstance(),
@@ -180,6 +194,7 @@ public final class ReceiveChangesCoordinator {
                     "Ни один объект не выбран. Изменения сохранены для следующего раза.");
                 return;
             }
+            phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
 
             // Convert root-level UI selection back to ALL explicit Designer
@@ -191,6 +206,7 @@ public final class ReceiveChangesCoordinator {
                 }
             }
             List<String> selectedList = new ArrayList<>(selectedPendingNames);
+            phase.set("Выборочная выгрузка объектов 1С");
             export = progress(shell, monitor -> {
                 monitor.beginTask("Выгрузка только выбранных объектов", 1);
                 var result = new SelectiveDumpRunner().export(
@@ -200,11 +216,13 @@ public final class ReceiveChangesCoordinator {
                 return result;
             });
             // Converted EDT files, like 1C XML, never go inside active Git.
+            phase.set("Создание временных файлов сравнения EDT");
             conversionRoot = Files.createTempDirectory("edt-storage-edt-delta-");
             Path converted = Files.createDirectory(conversionRoot.resolve("edt"));
             SelectiveDumpRunner.ExportResult selectedExport = export;
             GitReceiveGuard.requireUnchanged(project, git);
 
+            phase.set("Конвертация объектов и подготовка сравнения EDT");
             var nativeDescriptor = progress(shell, monitor -> {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
                 var service = BridgeActivator.getDefault().getInjector()
@@ -218,6 +236,7 @@ public final class ReceiveChangesCoordinator {
 
             var editorService = BridgeActivator.getDefault().getInjector()
                 .getInstance(EdtDeltaComparisonService.class);
+            phase.set("Открытие редактора сравнения EDT");
             IEditorPart editor = editorService.openEditor(nativeDescriptor);
             if (editor == null || editor.getSite() == null
                     || editor.getSite().getPage() == null) {
@@ -272,24 +291,79 @@ public final class ReceiveChangesCoordinator {
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            logFailure(phase.get(), ex);
             MessageDialog.openInformation(shell, "Работа с хранилищем",
-                "Операция прервана. Неполученные объекты сохраняются.");
+                "Операция прервана на этапе: " + phase.get()
+                + ". Если обновление базы уже начиналось, проверьте её состояние.");
         } catch (Exception ex) {
-            // Do not expose connection strings, credentials or raw Designer
-            // output. A failed post-update attempt retains its old snapshot.
+            // No arbitrary exception messages or Designer output are logged:
+            // connection strings and credentials may be embedded in them.
+            logFailure(phase.get(), ex);
+            String databaseState = updateAttempted.get()
+                ? "Команда обновления базы-посредника уже могла выполняться. "
+                  + "Не повторяйте её до проверки состояния базы."
+                : "Команда обновления базы-посредника ещё не запускалась.";
             MessageDialog.openError(shell, "Не удалось получить изменения",
-                "Проверка или подготовка обновления не завершена. "
-                + "Операция не подтверждена как выполненная. "
-                + "Сведения о незавершённых объектах сохранены. "
-                + "Подробности — в журнале ошибок EDT.");
-            BridgeActivator.getDefault().getLog().error(
-                "Storage receive failed: " + ex.getClass().getSimpleName());
+                "Этап: " + phase.get() + ".\n"
+                + safeReason(ex) + "\n"
+                + databaseState + "\n"
+                + "Диагностика с этапом и строками кода записана в журнал EDT.");
         } finally {
             if (!editorOwnsStaging) {
                 cleanupQuietly(export, conversionRoot);
                 ACTIVE.remove(operationKey);
             }
         }
+    }
+
+    /**
+     * Record only exception types and our own stack frames. Java exceptions
+     * from Git, Designer or the filesystem can contain local paths, repository
+     * addresses or credentials in their messages.
+     */
+    private static void logFailure(String phase, Throwable failure) {
+        StringBuilder diagnostic = new StringBuilder("Storage receive failure. Stage: ")
+            .append(phase);
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 5; depth++) {
+            diagnostic.append("; cause[").append(depth).append("]: ")
+                .append(current.getClass().getName());
+            int count = 0;
+            for (StackTraceElement frame : current.getStackTrace()) {
+                if (frame.getClassName().startsWith("org.xander.edt.storagebridge.")
+                        && count++ < 8) {
+                    diagnostic.append("; at ").append(frame.getClassName())
+                        .append(".").append(frame.getMethodName())
+                        .append(":").append(frame.getLineNumber());
+                }
+            }
+            current = current.getCause();
+        }
+        BridgeActivator.getDefault().getLog().error(diagnostic.toString());
+    }
+
+    /** Only explicitly vetted own error messages may appear in the dialog. */
+    private static String safeReason(Throwable failure) {
+        if (failure instanceof IOException) {
+            String reason = failure.getMessage();
+            if (reason != null && (
+                    reason.equals("Проект не находится под управлением локального Git.")
+                    || reason.equals("Git находится в detached HEAD; выберите ветку задачи.")
+                    || reason.startsWith("В Git есть незакоммиченные файлы.")
+                    || reason.startsWith("Не удалось проверить Git.")
+                    || reason.equals("Истекло время проверки Git.")
+                    || reason.equals("Указанный исполняемый файл 1С не найден.")
+                    || reason.equals("1C executable not found")
+                    || reason.equals("1C did not return a valid versions file")
+                    || reason.equals("Designer version snapshot failed")
+                    || reason.equals("1C could not produce a verified changes list")
+                    || reason.equals("No trusted ConfigDumpInfo.xml baseline is available")
+                    || reason.equals("Получение отменено до изменения базы"))) {
+                return reason;
+            }
+        }
+        return "Тип ошибки: " + failure.getClass().getSimpleName()
+            + ". Подробности определяются по этапу в журнале EDT.";
     }
 
     @FunctionalInterface
