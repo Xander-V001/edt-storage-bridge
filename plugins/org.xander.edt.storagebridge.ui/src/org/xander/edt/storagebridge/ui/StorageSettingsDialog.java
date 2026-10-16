@@ -9,6 +9,10 @@ import org.eclipse.jface.dialogs.TitleAreaDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
+import org.eclipse.swt.widgets.DirectoryDialog;
+import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
@@ -16,6 +20,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.osgi.service.prefs.BackingStoreException;
+import org.xander.edt.storagebridge.ui.StorageProjectSettings.InfobaseType;
 
 /**
  * Per-project settings and persisted revision status.
@@ -27,6 +32,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Text address;
     private Text username;
     private Text password;
+    private Combo infobaseType;
+    private Text infobaseAddress;
+    private Text platformExecutable;
     private StorageProjectSettings.Snapshot saved;
 
     public StorageSettingsDialog(Shell shell, IProject project) {
@@ -70,6 +78,65 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             saved == null ? "" : saved.username());
         password = addText(connection, "Пароль:", SWT.BORDER | SWT.PASSWORD,
             saved == null ? "" : saved.password());
+
+        Group platform = new Group(content, SWT.NONE);
+        platform.setText("Подключённая информационная база 1С (необязательно)");
+        platform.setLayout(new GridLayout(3, false));
+        GridData platformData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        platformData.horizontalSpan = 2;
+        platform.setLayoutData(platformData);
+
+        new Label(platform, SWT.NONE).setText("Тип информационной базы:");
+        infobaseType = new Combo(platform, SWT.DROP_DOWN | SWT.READ_ONLY);
+        infobaseType.setItems(new String[] { "Файловая (/F)", "Серверная (/S)" });
+        infobaseType.select(saved != null && saved.infobaseType() == InfobaseType.SERVER ? 1 : 0);
+        GridData typeData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        typeData.horizontalSpan = 2;
+        infobaseType.setLayoutData(typeData);
+
+        new Label(platform, SWT.NONE).setText("Каталог ИБ или сервер/имя:");
+        infobaseAddress = new Text(platform, SWT.BORDER);
+        infobaseAddress.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        infobaseAddress.setText(saved == null ? "" : saved.infobaseAddress());
+        Button browseBase = new Button(platform, SWT.PUSH);
+        browseBase.setText("Обзор...");
+        browseBase.setEnabled(infobaseType.getSelectionIndex() == 0);
+        browseBase.addListener(SWT.Selection, event -> {
+            DirectoryDialog chooser = new DirectoryDialog(getShell());
+            chooser.setText("Выберите каталог файловой информационной базы");
+            String selection = chooser.open();
+            if (selection != null) {
+                infobaseAddress.setText(selection);
+            }
+        });
+        infobaseType.addListener(SWT.Selection, event ->
+            browseBase.setEnabled(infobaseType.getSelectionIndex() == 0));
+
+        new Label(platform, SWT.NONE).setText("Платформа 1С (1cv8.exe):");
+        platformExecutable = new Text(platform, SWT.BORDER);
+        platformExecutable.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        platformExecutable.setText(saved == null ? "" : saved.platformExecutable());
+        Button browseExecutable = new Button(platform, SWT.PUSH);
+        browseExecutable.setText("Обзор...");
+        browseExecutable.addListener(SWT.Selection, event -> {
+            FileDialog chooser = new FileDialog(getShell(), SWT.OPEN);
+            chooser.setText("Выберите исполняемый файл Конфигуратора 1С");
+            chooser.setFilterExtensions(new String[] { "1cv8.exe", "*.exe", "*.*" });
+            String selection = chooser.open();
+            if (selection != null) {
+                platformExecutable.setText(selection);
+            }
+        });
+
+        Label hint = new Label(platform, SWT.WRAP);
+        hint.setText("Для файловой базы — каталог с 1Cv8.1CD; для серверной — "
+            + "адрес вида server/ibName. Выбирайте ту версию платформы, "
+            + "которая уже работает с вашим хранилищем. "
+            + "Эти поля пока только сохраняются, Конфигуратор не запускается.");
+        GridData hintData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        hintData.horizontalSpan = 3;
+        hintData.widthHint = 560;
+        hint.setLayoutData(hintData);
 
         Group revisions = new Group(content, SWT.NONE);
         revisions.setText("Состояние синхронизации");
@@ -121,7 +188,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         }
         try {
             StorageProjectSettings.save(project, address.getText(),
-                username.getText(), password.getText());
+                username.getText(), password.getText(),
+                infobaseType.getSelectionIndex() == 1
+                    ? InfobaseType.SERVER : InfobaseType.FILE,
+                infobaseAddress.getText(), platformExecutable.getText());
             super.okPressed();
         } catch (IllegalArgumentException ex) {
             setErrorMessage(ex.getMessage());
