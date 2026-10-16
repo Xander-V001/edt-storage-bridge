@@ -23,19 +23,19 @@
       </menu>
     </menuContribution>
 
-    <!-- Work in EDT Navigator and other Eclipse project context menus. -->
+    <!-- One-click command on the selected project across EDT Navigator and Eclipse views. -->
     <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
-      <menu id="org.xander.edt.storagebridge.ui.project.popup" label="%menu.storage">
+      <command id="org.xander.edt.storagebridge.ui.storage.popup"
+        commandId="org.xander.edt.storagebridge.ui.openStorageSettings"
+        label="%command.storage" style="push">
         <visibleWhen checkEnabled="false">
-          <with variable="selection">
+          <with variable="activeMenuSelection">
             <iterate operator="and" ifEmpty="false">
               <adapt type="org.eclipse.core.resources.IProject"/>
             </iterate>
           </with>
         </visibleWhen>
-        <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings"
-                 label="%command.settings" style="push"/>
-      </menu>
+      </command>
     </menuContribution>
   </extension>
 </plugin>
