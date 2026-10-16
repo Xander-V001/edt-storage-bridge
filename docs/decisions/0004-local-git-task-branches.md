@@ -1,55 +1,38 @@
-# ADR 0004 — Local Git task branch workflow and transfer to classic 1C storage
+# ADR 0004 — Minimal Git workflow and selective repository receive
 
-Status: accepted architectural requirement; **not implemented**
+Status: architectural decision accepted; **comparison/staging not implemented**
 Date: 2026-10-16
 
-## User requirements
+## Branches: simple, developer-controlled only
 
-- Each task is developed in **one local Git feature branch** of the EDT *configuration project* (`feature/TASK-123`).
-- A task branch may contain many commits.
-- The user must be able to choose committed task changes for subsequent placement into the classic 1C configuration repository.
-- Incoming repository changes must not erase local work, even on a task branch.
-- Existing connected infobase remains a candidate for supported 1C Designer operations.
-- The local Git repository is NOT the GitHub repository where this plugin is developed.
+- `main` — primary branch.
+- `feature/<task>` — one branch for each task, created from `main`, containing task commits.
+- **No** automatically created `storage-sync` branch, technical Git branch, worktree, hidden Git merge or helper commits.
+- The Git repository of the EDT configuration project is separate from the GitHub repository of this plugin.
 
-## Three distinct histories
+## Receive: stage → compare → select → apply
 
-1. Local Git: branch name, immutable commit SHA, parents and file changes.
-2. Classical storage: repository identifier, numeric revision, committed objects, locks and authors.
-3. EDT: actual current configuration model and potentially uncommitted workspace changes.
+1. Check actual classic storage version and the user's current project/branch.
+2. Collect new repository changes into an **isolated temporary staging area** (e.g. a validated temporary export/model; if platform operations require a staging infobase, it must be explicitly approved). The *current EDT project / `main` / feature branch are not modified at this stage*. This is not Git and not visible as a branch.
+3. **Always** open an EDT object/property-level **comparison and merge view**, with selections proposed by default for incoming-only changes, and preserved local changes for diverging objects. An object may be accepted, skipped or manually merged. Object dependencies, deletes and metadata model consistency must be validated.
+4. Apply only approved changes to the active EDT project. Developer decides when/how to commit them in normal local Git.
+5. If an object (e.g. Document1) was changed locally and also remotely, keeping it local means its remote change stays **pending/deferred**, *not* silently resolved. Track object identity, source revision and skipped status in plugin state.
+6. Never advance a **whole-project last-applied revision** to 101 when Document1's remote changes from 101 were skipped. Partial adoption requires explicit per-object state and a verified overall baseline for future comparisons.
+7. On next receive/push, revisit pending objects, display their differences, prevent overwriting remote object changes and reconcile before sending overlapping work.
 
-Store a **per-project, per-classical-storage, per-Git-branch** sync checkpoint comprising verified storage revision and corresponding Git baseline SHA. The existing project-only saved applied version must be migrated before any real receive/commit command is enabled. Do not misreport the same checkpoint after switching task branches.
+**Critical implementation proof:** identify an EDT 2026.2 supported compare/merge API that accepts a staged configuration and existing EDT project and allows object-level selection (including added/deleted objects and dependent metadata). The current direct two-stage import **does not** provide this mandatory pre-apply selection and is **NOT production-ready**. Fail closed instead of using a blind import.
 
-## Receive (storage → task)
+## Send selected task commits to classic storage
 
-1. Verify active Git branch, repository identity, clean or explicitly preserved uncommitted workspace, and recorded baseline.
-2. Read the real storage revision and changed object list. Receive into the already connected base using supported 1C mechanisms; this step is mutating and requires consent.
-3. Import changes from the base to an isolated EDT model / technical `storage-sync` worktree, or invoke a verified safe EDT import path that preserves local edits.
-4. Record the verified storage baseline in a technical `storage-sync` Git branch or equivalent immutable commit in an **isolated Git worktree** — never forcibly checkout the task branch.
-5. Present conflicts and explicitly integrate the baseline into the current task branch using standard Git merge / EDT conflict workflow. Never force reset, autostash without review or discard uncommitted changes.
-6. Update applied storage revision for the task branch ONLY after that branch's EDT project reflects the new baseline and import/merge has been verified. The service mirror can be newer than a developer branch.
+1. Work in a named `feature/<task>` branch; commit task changes. Merge them to `main` at the developer's discretion.
+2. Show which **unpublished contiguous Git commits** to publish and their derived affected 1C metadata objects. No arbitrary pick without dependency checks.
+3. Verify classical repository revision, actual object changes/locks, current Git branch/HEAD and any pending skipped remote changes. If affected objects diverged, require receive/compare/reconcile first.
+4. Through the connected infobase and only safe tested Designer operations, stage/apply/capture and commit the intended objects. Do not overwrite unrelated changes or the developer's working base.
+5. Verify real final repository version and objects. Only then persist mapping of Git commit SHAs to actual classical repository revision(s). A Git commit is **never** itself a storage revision; mapping need not be 1:1.
 
-## Send (selected task commits → storage)
+## Bookkeeping
 
-1. Identify selected **unpublished contiguous** Git commits on the task branch relative to the verified baseline SHA; show commit titles and affected 1C metadata objects. This is **not** an unconditional entire-HEAD export.
-2. Validate ancestry, active branch, dirty worktree, mapping of EDT file diffs to metadata objects, additions/deletions/references, and that the selected range contains no remote-sync / previously published changes. Reject ambiguous selection and unsupported changes instead of guessing.
-3. Re-read actual storage version and captured-object state. If storage advanced, receive and merge first; never force-push or silently overwrite.
-4. Export the cumulative selected object state into a **safe staging configuration**. Use existing connected infobase + documented Designer operations ONLY after safety preflight and explicit user approval; do not overwrite the connected base's developer work.
-5. Apply/capture/commit the objects to classic 1C storage, inspect real final repository objects and version, and record a durable operation journal. One selected range can produce one or several repository revisions; the mapping is not 1:1.
-6. Store a verified mapping `(repository identity, revision(s)) ↔ (branch, selected commit SHAs / object set)`. Mark **published** only after confirmed write. If failure or uncertain result occurs, preserve the pending state for reconciliation; never retry a potentially completed commit automatically.
-
-## Implementation sequence (proving the hardest dependency first)
-
-A. Verify actual EDT 2026.2 import/merge integration on disposable config with a task branch carrying local Git commits.
-B. Build read-only local Git adapter to detect active branch, diff and candidate commits, and per-branch checkpoint; demonstrate accurate preview without touching the working tree.
-C. Integrate storage revision received into an existing EDT task branch, with confirmed conflict behavior.
-D. Implement 'Select Git commits to publish' as object-level plan, first for contiguous commits, with preview.
-E. Verify test-storage write and mapping of Git commit(s) to actual storage revision(s).
-F. Extend safe options and performance based on measured results; never rush arbitrary cherry-pick.
-
-## Non-goals / explicit safety guarantees
-
-- No blind copying .xml over EDT or attempting to store a Git commit object in 1C storage.
-- No automatic task-branch checkout, push, reset, rebase, or merge.
-- No guarantee that partial sets of commits can be published safely if subsequent commits alter the same 1C objects.
-- No new builds automatically on commits; VPS and connected user infobase remain out-of-scope without explicit permission.
+- Keep separate states for classic storage version, actual EDT project branch/HEAD and Git commits.
+- Persist sync state by project + classical storage identity + branch; add per-object skipped/accepted/pending records.
+- All receive/write operations require explicit developer action. Never alter another user's live infobase or VPS without their permission.
+- No automatic CI build. Initial implementation/test exclusively against disposable fixtures.

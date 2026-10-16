@@ -19,25 +19,25 @@ The above APIs are evidence from 2025.2 / earlier documentation. **None has been
 
 1. Create a disposable connected classic 1C repository and two independent test infobases/projects (user permission before any real command). Record baseline objects and version.
 2. Make one controlled server-side object change (e.g. a test common-module comment), receive into the connected test infobase using the Designer's *supported* repository update.
-3. On EDT 2026.2, manually run the **official update existing project from infobase** flow and confirm correct update, no unrelated edits.
+3. On EDT 2026.2, verify a comparison preview **before** applying changes to the active project, with selectable metadata objects; imported state must initially remain isolated.
 4. Find a stable public API or EDT CLI that reproduces the same operation programmatically. Verify supported exported packages and actual available OSGi services in 2026.2.
 5. If no supported programmatic merge API exists, present a clear trade-off: supported UI wizard delegation, or staged XML import with explicit compare/conflict detection. Do NOT silently invoke internal `ImportConfigurationChangesJob`.
 6. Repeat with a divergent local edit to the same object, a new object and a deleted object. Confirm the merge is safe and no uncommitted data is lost.
-7. Add a **user-invoked**, background `Get changes` proof action restricted to a disposable fixture. Verify end-to-end result.
-8. Only after verified success, record the applied repository version. Abort/cancel/conflict leaves checkpoint unchanged.
+7. Add an explicit **Get changes → compare → select objects → apply** flow restricted to a disposable fixture. Do not create technical Git branches.
+8. Only after verified success of **all** changes may the complete applied repository version advance; skipped objects require separate pending-state tracking. Abort/cancel/uncertain result leaves checkpoint unchanged.
 
 ## Architecture after proof
 
 - Report/history command: discovery only; not a substitute for receiving to EDT.
 - Existing connected base: platform-backed repository operations, but it must not be mutated without authorization.
 - EDT import: selected, tested integration of **existing project** rather than new project. May use exact EDT 2026.2 public API or supported CLI, with full comparison/merge semantics verified.
-- Local Git is a required user-task feature: **one task = one branch**. The existing project's working tree is never reset or silently checked out.
+- Local Git is a required user-task feature: only developer branches **main + one feature branch per task**. No technical Git branches/worktrees. The existing project's working tree is never reset or silently checked out.
 - Proof must track the last applied storage revision **per branch** with a corresponding Git baseline SHA, preserve local commits during receive and verify merging of a storage change on a branch with unrelated local task commits.
 - For reverse flow, prove conversion of a selected, contiguous range of *unpublished* Git commits into concrete metadata-object changes, then a verified repository write through the connected base. Git commit hash and 1C revision number are not interchangeable.
 
 ## Implementation update (source only)
 
-The first guarded receiving *vertical slice* now exists in source. It calls the public `IInfobaseSynchronizationManager.retrieveInfobaseChanges` API after a user-confirmed Designer `/ConfigurationRepositoryUpdateCfg -force` into an existing connected infobase and uses an EDT-provided conflict resolver without any "override project" operation. It is NOT YET COMPILED OR TESTED ON EDT 2026.2. No update of last applied repository version is performed. Full documented contract: [RECEIVE_CHANGES.md](RECEIVE_CHANGES.md).
+The first guarded receiving *vertical slice* now exists in source. It calls the public `IInfobaseSynchronizationManager.retrieveInfobaseChanges` API after a user-confirmed Designer `/ConfigurationRepositoryUpdateCfg -force` into an existing connected infobase and uses an EDT-provided conflict resolver without any "override project" operation. It is NOT YET COMPILED OR TESTED ON EDT 2026.2, and it **does not yet present obligatory selective compare before apply**, so it must not be used on a working base. No update of last applied repository version is performed. Full documented contract: [RECEIVE_CHANGES.md](RECEIVE_CHANGES.md).
 
 ## Current status
 

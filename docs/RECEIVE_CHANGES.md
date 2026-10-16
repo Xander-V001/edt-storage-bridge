@@ -1,6 +1,6 @@
 # Receive changes — connected 1C storage → infobase → EDT existing project
 
-**Implementation in source (after last successful CI). NOT compiled or tested in EDT 2026.2. DO NOT use on a production/valuable base before disposable fixture smoke tests.**
+**UNSAFE FOR WORKING BASES: Prototype source has NOT been compiled or tested in EDT 2026.2 and does not support obligatory pre-apply compare/merge or object-level selection. Use ONLY disposable fixtures after an explicitly approved build.**
 
 ## User action (new)
 
@@ -30,6 +30,14 @@ Then the user must approve a prominent warning: the connected infobase configura
 - Conflicts with EDT local model changes lead to **deferred** outcome and must be resolved manually later. There is no automated conflict merge for diverged task branches.
 - The last applied classic repository version is NOT advanced. Exit code 0 is not proof of exact version after concurrent commits, and EDT success is not proof of expected object list. Future state checkpoint must be per Git branch with verified version/SHA.
 - The existing permanently connected user infobase is **not** authorized for direct execution by implementing this code. Source-only changes cannot affect the base until the operator explicitly installs, configures and clicks the command.
+
+## Superseding user experience decision
+
+**No automatically created Git branches.** Only `main` and task `feature/...` branches, all developer-managed.
+
+Receiving new storage data must first produce an **isolated non-Git staging snapshot**, show an **always-on comparison/merge view**, and let the developer accept, skip or manually merge individual changed metadata objects. Applying accepted objects to the current project must not alter skipped objects. Skipped remote changes remain pending for later receive/push; full-project revision checkpoint is not advanced on partial selection.
+
+The existing two-stage prototype directly calls EDT import into the active project after base update; it **does not fulfill this requirement**, even if Git worktree is clean. It must be replaced/guarded before use on working bases. A production receive button must stay blocked until that mandatory compare feature has been verified in EDT 2026.2.
 
 ## Future safety hardening
 

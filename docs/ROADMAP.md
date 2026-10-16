@@ -38,6 +38,8 @@
 - [ ] Update last-observed remote revision only after verification.
 
 ## Stage 3 — receive from repository
+- [ ] **Blocking before working-base use:** replace current direct import prototype with isolated receive staging + obligatory selection in EDT compare/merge (no hidden Git branches).
+- [ ] Correctly record object-level deferred changes; whole-project version must not advance if some objects are skipped.
 - [ ] Object-level plan, conflict checks, dependency-aware receive.
 - [ ] Approved use of existing connected base where platform operations require it.
 - [ ] Public EDT import, outcome verification, applied revision checkpoint and recovery journal.
@@ -50,10 +52,10 @@
 ## Stage 4a — required local Git task workflow
 - [ ] Identify current local Git repository and active task branch (one task = one feature branch).
 - [ ] Keep repository and Git baseline checkpoint **per branch**, not merely per EDT project directory.
-- [ ] Isolate service-side storage mirror in another Git worktree; never checkout over user's active EDT files.
+- [ ] Collect storage revisions in disposable staging **without creating any Git branches or worktrees**.
 - [ ] Present candidate **unpublished local Git commits**, object-level changes and a safe contiguous range selection.
 - [ ] Build reproducible mapping: selected Git commits + object changes → one or more verified classical storage revisions.
-- [ ] Receive: merge storage baseline changes to task branch only with user consent and conflict checks.
+- [ ] Receive: always show compare/merge window; apply selected objects to current branch without touching other objects, preserving skipped-object status.
 - [ ] Push: refuse dirty tree, ambiguous commit ancestry, unsupported object diffs, unknown storage baseline or conflicting repository changes.
 - [ ] Never equate Git commit count with storage revision increments.
 
