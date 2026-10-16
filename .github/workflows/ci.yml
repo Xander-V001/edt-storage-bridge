@@ -21,6 +21,14 @@ jobs:
       P2_TOKEN: ${{ secrets.P2_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check authorized access to the 1C:EDT p2 repository
+        shell: bash
+        run: |
+          if [[ -z "$P2_USER" || -z "$P2_TOKEN" ]]; then
+            echo "::error title=1C ITS credentials missing::Configure repository Actions secrets P2_USER and P2_TOKEN before building against EDT 2026.2."
+            exit 1
+          fi
+          echo "1C p2 credentials: configured (values are never printed)."
       - uses: actions/setup-java@v5
         with:
           distribution: zulu
@@ -32,10 +40,8 @@ jobs:
         with:
           maven-version: '3.9.9'
           java-version: '25'
-          java-package: jdk+fx
-          server-id: dt_repository
-          server-username: P2_USER
-          server-password: P2_TOKEN
+          checkout-enabled: false
+          settings-servers: '[{"id":"dt_repository","username":"${env.P2_USER}","password":"${env.P2_TOKEN}"}]'
       - name: Validate Maven and Java
         run: |
           java -version

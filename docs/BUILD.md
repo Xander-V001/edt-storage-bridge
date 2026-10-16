@@ -9,7 +9,7 @@
 - **Maven 3.9.9** and **Tycho 5.0.2**.
 - The target source is `targets/edt-2026.2/edt-2026.2.target`.
 
-1C p2 repositories may require registered user portal credentials. The manual workflow is prepared for optional GitHub Actions secrets `P2_USER` and `P2_TOKEN`, passed by environment variable names to a Maven `dt_repository` server setting as in the official 1C sample. **No secrets have been configured or requested**; they are only needed if the vendor requires authentication. Never commit or paste credentials. Verify target access before the first approved CI build.
+**Authorization is mandatory for the official 1C:EDT p2 repository.** 1C states that access is for eligible registered 1C:ITS users/partners: https://edt.1c.ru/dev/ru/docs/plugins/dev/target-platform/ . Create GitHub repository **Actions secrets** `P2_USER` (ITS portal login) and `P2_TOKEN` (ITS portal password), using `Settings → Secrets and variables → Actions → New repository secret`. **Never send credentials in chat or commit them.** The manually dispatched workflow first checks only that both secrets exist; values are never printed. Then the supported `s4u/setup-maven-action` `settings-servers` input generates the Maven `dt_repository` credentials using `\${env.P2_USER}` and `\${env.P2_TOKEN}` environment references. If the secrets are absent, the workflow stops before Maven starts, instead of wasting build minutes. This does not automatically verify permissions: invalid credentials may still be rejected.
 
 ## Development in Eclipse PDE
 
