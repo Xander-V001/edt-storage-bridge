@@ -1,0 +1,99 @@
+package org.xander.edt.storagebridge.platform;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Strict parser for 1C Designer -getChanges file.
+ *
+ * Unknown changes must NEVER be treated as "not changed": that could erase a
+ * committed EDT change or miss a deletion. FullDump is an explicit refusal,
+ * not an invitation to export/import the full configuration.
+ */
+public final class ConfigurationChangesParser {
+    public record ChangeSet(List<String> newObjects, List<String> modifiedObjects) {
+        public ChangeSet {
+            newObjects = List.copyOf(newObjects);
+            modifiedObjects = List.copyOf(modifiedObjects);
+        }
+
+        /** Top-level MD objects in the platform's Russian qualified naming. */
+        public List<String> objectsToExport() {
+            var names = new LinkedHashSet<String>();
+            for (String object : newObjects) {
+                names.add(topObject(object));
+            }
+            for (String object : modifiedObjects) {
+                names.add(topObject(object));
+            }
+            return List.copyOf(names);
+        }
+    }
+
+    private ConfigurationChangesParser() {
+    }
+
+    public static ChangeSet read(Path path) throws IOException {
+        Objects.requireNonNull(path, "path");
+        if (!Files.isRegularFile(path) || Files.size(path) > 8L * 1024 * 1024) {
+            throw new IOException("Invalid or oversized 1C changes file");
+        }
+        byte[] bytes = Files.readAllBytes(path);
+        int start = bytes.length >= 3
+                && (bytes[0] & 0xff) == 0xef
+                && (bytes[1] & 0xff) == 0xbb
+                && (bytes[2] & 0xff) == 0xbf ? 3 : 0;
+        return parse(new String(bytes, start, bytes.length - start,
+            StandardCharsets.UTF_8));
+    }
+
+    public static ChangeSet parse(String contents) throws IOException {
+        Objects.requireNonNull(contents, "contents");
+        Set<String> newObjects = new LinkedHashSet<>();
+        Set<String> modified = new LinkedHashSet<>();
+        for (String line : contents.replace("\r", "").split("\n")) {
+            String entry = line.trim();
+            if (entry.isEmpty()) {
+                continue;
+            }
+            if ("FullDump".equalsIgnoreCase(entry)) {
+                throw new IOException("1C reports FullDump; full export is forbidden");
+            }
+            int colon = entry.indexOf(':');
+            if (colon < 1 || colon >= entry.length() - 1) {
+                throw new IOException("Unknown 1C change record; refusing unsafe import");
+            }
+            String kind = entry.substring(0, colon);
+            String name = entry.substring(colon + 1).trim();
+            try {
+                topObject(name);
+            } catch (IllegalArgumentException ex) {
+                throw new IOException("Malformed metadata name from 1C", ex);
+            }
+            // Deliberately fail for rename/delete events until the exact
+            // platform semantics and EDT deletion merge have been tested.
+            switch (kind) {
+                case "New" -> newObjects.add(name);
+                case "Modified" -> modified.add(name);
+                default -> throw new IOException(
+                    "Unsupported metadata change type: " + kind);
+            }
+        }
+        return new ChangeSet(List.copyOf(newObjects), List.copyOf(modified));
+    }
+
+    private static String topObject(String fqName) {
+        if (fqName == null
+                || !fqName.matches("[\\p{L}\\p{N}_]+(\\.[\\p{L}\\p{N}_]+)+")) {
+            throw new IllegalArgumentException("Invalid metadata object name");
+        }
+        String[] parts = fqName.split("\\.");
+        return parts[0] + "." + parts[1];
+    }
+}
