@@ -20,7 +20,7 @@ public class ConfigurationChangesParserTest {
     @Test
     public void recognizesConfigurationAndLanguageRootObjects() throws Exception {
         var changes = ConfigurationChangesParser.parse(
-            "Modified: Configuration\\nModified: Language\\n");
+            "Modified: Configuration\nModified: Language\n");
         assertEquals(List.of("Configuration", "Language"),
             changes.objectsToExport());
     }
@@ -28,9 +28,9 @@ public class ConfigurationChangesParserTest {
     @Test
     public void independentFormsAndTemplatesAreExplicitlyExported() throws Exception {
         var changes = ConfigurationChangesParser.parse(
-            "Modified: Document.Doc1.Form.MainForm.Module\\n"
-            + "Modified: Document.Doc1.Template.Print\\n"
-            + "Modified: Document.Doc2.Attribute.SerialNumber\\n");
+            "Modified: Document.Doc1.Form.MainForm.Module\n"
+            + "Modified: Document.Doc1.Template.Print\n"
+            + "Modified: Document.Doc2.Attribute.SerialNumber\n");
         assertEquals(List.of(
             "Document.Doc1",
             "Document.Doc1.Form.MainForm",
