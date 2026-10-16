@@ -31,3 +31,10 @@ These rules are binding for all development in this repository and chat.
 18. Persist nonsecret settings in workspace-scoped preferences, not project content or Git. Encrypt the repository password with Eclipse Secure Storage.
 19. Distinguish actual repository current/observed version from the last repository version **verified as applied** to EDT. Neither may be invented; never increment on merely saving settings or running a subprocess.
 20. **Do not require an intermediary 1C infobase for read-only access by default.** Investigate direct supported read access. Use an isolated connected infobase only for operations where a supported mechanism requires it and explain the tradeoffs.
+
+## Local Git task model
+21. The **user's EDT configuration project** has its own local Git repository, distinct from this plug-in's GitHub repository. Use its Git history as an essential source of task changes. **One task = one feature branch**; do not treat a branch as a storage version.
+22. Before pushing to classic 1C storage, display a confirmed **selection of unpublished task commits** and translate their cumulative diff into configuration object changes. Do not automatically upload all modifications in HEAD. In v1 permit only a contiguous, unambiguous range with verified ancestry and dependency checks.
+23. Do not auto-checkout, reset, force-push, rebase or merge over a developer's active EDT worktree. Integrate incoming repository changes with explicit conflict-aware approval; use an isolated worktree for any technical `storage-sync` mirror.
+24. Track the last applied **storage revision and Git baseline SHA per project and task branch**. Current project-only revision key is inadequate for multi-branch workflows and must be migrated before transfer actions are enabled.
+25. Never promise Git commit == one classical repository revision. Persist traceable commit-to-storage mappings only after actual write verification; failed/partial operations must not mark commits as published.

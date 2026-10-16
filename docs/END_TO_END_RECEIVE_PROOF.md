@@ -31,7 +31,9 @@ The above APIs are evidence from 2025.2 / earlier documentation. **None has been
 - Report/history command: discovery only; not a substitute for receiving to EDT.
 - Existing connected base: platform-backed repository operations, but it must not be mutated without authorization.
 - EDT import: selected, tested integration of **existing project** rather than new project. May use exact EDT 2026.2 public API or supported CLI, with full comparison/merge semantics verified.
-- Git: do not force-clean, reset or auto-commit the EDT worktree; merge review stays explicit.
+- Local Git is a required user-task feature: **one task = one branch**. The existing project's working tree is never reset or silently checked out.
+- Proof must track the last applied storage revision **per branch** with a corresponding Git baseline SHA, preserve local commits during receive and verify merging of a storage change on a branch with unrelated local task commits.
+- For reverse flow, prove conversion of a selected, contiguous range of *unpublished* Git commits into concrete metadata-object changes, then a verified repository write through the connected base. Git commit hash and 1C revision number are not interchangeable.
 
 ## Current status
 

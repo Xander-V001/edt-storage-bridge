@@ -39,6 +39,16 @@
 - [ ] Capture, apply and commit using proven supported operations, no destructive force switches by default.
 - [ ] Verify repository new version and safe rollback/recovery paths.
 
+## Stage 4a — required local Git task workflow
+- [ ] Identify current local Git repository and active task branch (one task = one feature branch).
+- [ ] Keep repository and Git baseline checkpoint **per branch**, not merely per EDT project directory.
+- [ ] Isolate service-side storage mirror in another Git worktree; never checkout over user's active EDT files.
+- [ ] Present candidate **unpublished local Git commits**, object-level changes and a safe contiguous range selection.
+- [ ] Build reproducible mapping: selected Git commits + object changes → one or more verified classical storage revisions.
+- [ ] Receive: merge storage baseline changes to task branch only with user consent and conflict checks.
+- [ ] Push: refuse dirty tree, ambiguous commit ancestry, unsupported object diffs, unknown storage baseline or conflicting repository changes.
+- [ ] Never equate Git commit count with storage revision increments.
+
 ## Stage 5 — performance/distribution
 - [ ] Benchmark large configurations, optimize delta transfer and caching.
 - [ ] Repeatable smoke tests, signed p2/release workflow.

@@ -22,7 +22,7 @@ Only settings persist. Entering them never launches Designer, connects to the ba
 
 ## Integration strategy
 
-Prefer platform-supported operations through an existing connected infobase when needed. Direct supported read-only access remains a candidate for repository history and version queries. Before any receive or commit, inspect locks, identity and divergence and require explicit consent to modify the base. Keep Git and EDT project revisions separate from the classical repository.
+Prefer platform-supported operations through an existing connected infobase when needed. Direct supported read-only access remains a candidate for repository history and version queries. Before any receive or commit, inspect locks, identity and divergence and require explicit consent to modify the base. Local Git is part of the intended task workflow: **one task = one feature branch**. A user explicitly selects unpublished task commits to transfer; the adapter derives object changes and uses the connected base for platform-supported capture/commit. New storage revisions are verified and mapped to source Git SHA(s). Incoming storage changes are merged without overwriting active work. Git SHA and classical repository version remain distinct. See [Git workflow](docs/decisions/0004-local-git-task-branches.md).
 
 [UI details](docs/STORAGE_UI.md) · [Architecture](docs/ARCHITECTURE.md) · [ADR 0003](docs/decisions/0003-optional-infobase.md) · [Roadmap](docs/ROADMAP.md) · [Rules](AGENTS.md)
 
