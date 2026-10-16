@@ -25,7 +25,8 @@ public final class SelectiveDumpCommand {
             "/DisableStartupDialogs",
             "/DumpConfigToFiles", outputDirectory.toString(),
             "-listFile", objectList.toString(),
-            "-Format", "Hierarchical",
+            // Hierarchical is the documented default. Explicit -Format is
+            // unnecessary and can violate -listFile combination constraints.
             "/Out", serviceLog.toString());
     }
 }
