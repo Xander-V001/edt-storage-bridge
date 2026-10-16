@@ -14,7 +14,9 @@ public final class GitReceiveGuard {
     private GitReceiveGuard() {
     }
 
-    public static void requireCleanBranch(IProject project)
+    public record Baseline(String branch, String head) {}
+
+    public static Baseline requireCleanBranch(IProject project)
             throws IOException, InterruptedException {
         if (project.getLocation() == null) {
             throw new IOException("У проекта отсутствует локальный каталог.");
@@ -23,12 +25,27 @@ public final class GitReceiveGuard {
         if (!"true".equals(call(root, "rev-parse", "--is-inside-work-tree").trim())) {
             throw new IOException("Проект не находится под управлением локального Git.");
         }
-        if (call(root, "branch", "--show-current").isBlank()) {
+        String branch = call(root, "branch", "--show-current").trim();
+        if (branch.isBlank()) {
             throw new IOException("Git находится в detached HEAD; выберите ветку задачи.");
+        }
+        String head = call(root, "rev-parse", "HEAD").trim();
+        if (!head.matches("[a-fA-F0-9]{40,64}")) {
+            throw new IOException("Не удалось определить HEAD проекта.");
         }
         if (!call(root, "status", "--porcelain=v1", "--untracked-files=normal").isBlank()) {
             throw new IOException("В Git есть незакоммиченные файлы. "
                 + "Сначала сохраните изменения и создайте коммит.");
+        }
+        return new Baseline(branch, head);
+    }
+
+    public static void requireUnchanged(IProject project, Baseline before)
+            throws IOException, InterruptedException {
+        Baseline after = requireCleanBranch(project);
+        if (!before.equals(after)) {
+            throw new IOException("В ходе обновления изменилась ветка или HEAD Git. "
+                + "Импорт EDT остановлен.");
         }
     }
 

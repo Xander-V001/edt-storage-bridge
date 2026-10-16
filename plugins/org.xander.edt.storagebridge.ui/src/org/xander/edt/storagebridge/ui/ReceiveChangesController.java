@@ -115,7 +115,8 @@ public final class ReceiveChangesController {
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
                     }
-                    GitReceiveGuard.requireCleanBranch(project);
+                    GitReceiveGuard.Baseline gitBaseline =
+                        GitReceiveGuard.requireCleanBranch(project);
                     monitor.worked(1);
                     // Fail closed BEFORE changing the connected 1C configuration.
                     if (!edt.hasKnownBaseline(project, selected)) {
@@ -128,7 +129,7 @@ public final class ReceiveChangesController {
                     monitor.worked(1);
 
                     // Git branch / working tree must not have changed during Designer.
-                    GitReceiveGuard.requireCleanBranch(project);
+                    GitReceiveGuard.requireUnchanged(project, gitBaseline);
                     if (monitor.isCanceled()) {
                         show(display, shell, "Конфигурация ИБ могла измениться, импорт EDT не выполнялся.");
                         return Status.CANCEL_STATUS;
