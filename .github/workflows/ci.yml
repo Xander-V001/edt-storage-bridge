@@ -20,6 +20,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Set up pinned Maven 3.9.9
+        uses: s4u/setup-maven-action@v1.20.0
+        with:
+          maven-version: '3.9.9'
       - name: Validate Maven and Java
         run: |
           java -version
