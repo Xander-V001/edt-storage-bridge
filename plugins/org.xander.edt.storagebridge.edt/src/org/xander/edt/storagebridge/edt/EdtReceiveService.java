@@ -1,85 +1,118 @@
 package org.xander.edt.storagebridge.edt;
 
 import java.util.Objects;
-import java.util.Set;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.emf.ecore.EObject;
+import org.eclipse.swt.widgets.Shell;
 
+import com._1c.g5.ides.monitoring.IMonitoringEventDispatcher;
+import com._1c.g5.v8.dt.compare.core.IComparisonManager;
+import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
+import com._1c.g5.v8.dt.core.filesystem.IQualifiedNameFilePathConverter;
+import com._1c.g5.v8.dt.core.platform.IWorkspaceOrchestrator;
+import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.IInfobaseManager;
-import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseSynchronizationManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseChangesResolver;
-import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseConfigurationChange;
-import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseUpdateConflictResolver;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseSynchronizationManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
-import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseConflictResolutionResult;
-import com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2.IInfobaseSynchronizationFlow;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2.IInfobaseSynchronizationStateManager;
 import com._1c.g5.v8.dt.platform.services.model.InfobaseReference;
+import com._1c.g5.v8.dt.platform.services.ui.infobases.sync.InfobaseUpdateDialogBasedCallback;
 import com.google.inject.Inject;
 
 /**
- * Pull changes into an EXISTING EDT project using supported EDT sync API.
+ * EDT -> existing project receive adapter using the platform's OWN interactive
+ * compare/merge callback. Does not checkout Git branches or perform file copies.
  *
- * <p>Never initializes a new base association, never pushes project changes
- * into the infobase and never chooses "override infobase" conflict policy.
+ * This module must be compiled and smoke-tested on EDT 2026.2 before enabling
+ * receive on a working infobase.
  */
 public final class EdtReceiveService {
     private final IInfobaseManager infobases;
     private final IInfobaseSynchronizationManager synchronization;
     private final IInfobaseSynchronizationStateManager states;
+    private final IV8ProjectManager projects;
+    private final IDtComparisonEditorInputFactory compareEditors;
+    private final IComparisonManager comparisons;
+    private final IMonitoringEventDispatcher monitoring;
+    private final IWorkspaceOrchestrator workspaces;
+    private final IQualifiedNameFilePathConverter names;
 
     @Inject
-    public EdtReceiveService(IInfobaseManager infobases,
+    public EdtReceiveService(
+            IInfobaseManager infobases,
             IInfobaseSynchronizationManager synchronization,
-            IInfobaseSynchronizationStateManager states) {
+            IInfobaseSynchronizationStateManager states,
+            IV8ProjectManager projects,
+            IDtComparisonEditorInputFactory compareEditors,
+            IComparisonManager comparisons,
+            IMonitoringEventDispatcher monitoring,
+            IWorkspaceOrchestrator workspaces,
+            IQualifiedNameFilePathConverter names) {
         this.infobases = Objects.requireNonNull(infobases);
         this.synchronization = Objects.requireNonNull(synchronization);
         this.states = Objects.requireNonNull(states);
+        this.projects = Objects.requireNonNull(projects);
+        this.compareEditors = Objects.requireNonNull(compareEditors);
+        this.comparisons = Objects.requireNonNull(comparisons);
+        this.monitoring = Objects.requireNonNull(monitoring);
+        this.workspaces = Objects.requireNonNull(workspaces);
+        this.names = Objects.requireNonNull(names);
     }
 
     public IInfobaseManager infobaseManager() {
         return infobases;
     }
 
-    /** Fail closed before the caller mutates its already connected 1C infobase. */
+    /**
+     * Must be checked BEFORE running Designer, which can mutate the linked IB.
+     * Known sync history alone is not sufficient: connection must still exist.
+     */
     public boolean hasKnownBaseline(IProject project, InfobaseReference infobase) {
         return synchronization.isConnected(project, infobase)
             && states.hasSynchronizationInfo(project, infobase)
             && !states.isFlowActive(infobase);
     }
 
-    public InfobaseChangesResolutionResult receive(IProject project,
-            InfobaseReference infobase, IProgressMonitor monitor) throws Exception {
+    /**
+     * Create the native UI callback on the SWT UI thread, before scheduling the
+     * receiving Job. EDT itself opens a compare/merge dialog and handles changes.
+     * The callback is single-use: do not share it between receive attempts.
+     *
+     * IMPORTANT: never enable the "overwrite remote IB with EDT" choice.
+     */
+    public IInfobaseChangesResolver newInteractiveMerge(Shell shell) {
+        Objects.requireNonNull(shell, "shell");
+        if (shell.isDisposed()
+                || Thread.currentThread() != shell.getDisplay().getThread()) {
+            throw new IllegalStateException("Must initialize EDT merge on SWT UI thread");
+        }
+        var callback = new InfobaseUpdateDialogBasedCallback(
+            shell, projects, compareEditors, comparisons, monitoring,
+            workspaces, names, states);
+        callback.setAllowOverrideConflict(false);
+        return callback;
+    }
+
+    /**
+     * Pull from the ALREADY connected IB into the EXISTING project.
+     * The native callback controls object selection and merge, not our code.
+     * No checkpoint advances here; compare editor may complete asynchronously.
+     */
+    public InfobaseChangesResolutionResult receive(
+            IProject project, InfobaseReference infobase,
+            IInfobaseChangesResolver interactiveMerge,
+            IProgressMonitor monitor) throws Exception {
         Objects.requireNonNull(project, "project");
         Objects.requireNonNull(infobase, "infobase");
+        Objects.requireNonNull(interactiveMerge, "interactiveMerge");
         Objects.requireNonNull(monitor, "monitor");
         if (!hasKnownBaseline(project, infobase)) {
             throw new IllegalStateException(
                 "Для проекта и выбранной ИБ нет подтверждённого состояния синхронизации EDT.");
         }
-        return synchronization.retrieveInfobaseChanges(project, infobase,
-            new IInfobaseChangesResolver() {
-                @Override
-                public InfobaseConflictResolutionResult resolveInfobaseChanges(
-                        IProject target, InfobaseReference source,
-                        Set<EObject> edtAddedObjects, Set<EObject> edtModifiedObjects,
-                        IInfobaseConfigurationChange changes,
-                        IInfobaseUpdateConflictResolver conflictResolver,
-                        IInfobaseUpdateConflictResolver.IConflictResolveAssist assist,
-                        IInfobaseSynchronizationFlow flow,
-                        IProgressMonitor current) throws com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseSynchronizationException {
-                    // Divergent EDT changes are NOT overwritten. An approved
-                    // interactive merge will be added after real EDT 2026.2 test.
-                    if (!edtAddedObjects.isEmpty() || !edtModifiedObjects.isEmpty()) {
-                        return InfobaseConflictResolutionResult.DEFERRED;
-                    }
-                    // Delegate actual import to EDT's own merge machinery.
-                    return conflictResolver.resolveConflict(target, source,
-                        edtAddedObjects, edtModifiedObjects, changes, assist,
-                        flow, current);
-                }
-            }, false, monitor);
+        return synchronization.retrieveInfobaseChanges(
+            project, infobase, interactiveMerge, false, monitor);
     }
 }
