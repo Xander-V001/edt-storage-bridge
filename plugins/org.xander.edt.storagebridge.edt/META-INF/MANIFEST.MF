@@ -8,6 +8,11 @@ Bundle-RequiredExecutionEnvironment: JavaSE-25
 Require-Bundle: org.eclipse.core.resources,
  org.eclipse.core.runtime
 Import-Package: com._1c.g5.v8.dt.core.platform,
+ com._1c.g5.v8.dt.platform.services.core.infobases,
+ com._1c.g5.v8.dt.platform.services.core.infobases.sync,
+ com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2,
+ com._1c.g5.v8.dt.platform.services.model,
+ org.eclipse.emf.ecore,
  com._1c.g5.v8.dt.metadata.mdclass,
  com._1c.g5.wiring,
  com.google.inject
