@@ -1,0 +1,42 @@
+name: Build and test
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tycho:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Validate Maven and Java
+        run: |
+          java -version
+          mvn --version
+      - name: Compile, run OSGi tests, build p2 site
+        run: mvn -B -ntp clean verify
+      - name: Upload p2 installation archive
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edt-storage-bridge-p2
+          path: repository/org.xander.edt.storagebridge.p2/target/*.zip
+          if-no-files-found: error
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tycho-test-reports
+          path: '**/target/surefire-reports/**'
+          if-no-files-found: ignore
