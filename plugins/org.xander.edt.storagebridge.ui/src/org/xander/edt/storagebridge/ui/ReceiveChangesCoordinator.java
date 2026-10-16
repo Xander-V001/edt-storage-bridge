@@ -109,7 +109,8 @@ public final class ReceiveChangesCoordinator {
             phase.set("Проверка состояния предыдущего получения");
             String branch = git.branch();
             var journal = new ReceiveBaselineJournal(project,
-                settings.address(), branch);
+                settings.address(), branch,
+                settings.infobaseType().name() + ":" + settings.infobaseAddress());
             var transport = new InfobaseLocation(
                 settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
                     ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER,
