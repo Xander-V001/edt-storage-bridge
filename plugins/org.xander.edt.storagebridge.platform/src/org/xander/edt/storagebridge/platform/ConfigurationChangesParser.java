@@ -47,9 +47,12 @@ public final class ConfigurationChangesParser {
             export.add(root);
             String[] parts = object.split("\\.");
             if (parts.length >= 4
-                    && ("Form".equals(parts[2]) || "Template".equals(parts[2])
+                    && ("Form".equals(parts[2]) || "Форма".equals(parts[2])
+                        || "Template".equals(parts[2]) || "Макет".equals(parts[2])
                         || "Recalculation".equals(parts[2])
-                        || "Subsystem".equals(parts[2]))) {
+                        || "Перерасчет".equals(parts[2])
+                        || "Subsystem".equals(parts[2])
+                        || "Подсистема".equals(parts[2]))) {
                 export.add(root + "." + parts[2] + "." + parts[3]);
             }
         }
