@@ -15,11 +15,13 @@
 
 ## Prototype developed since last successful CI — receive (UNBUILT)
 - [x] Source of guarded Designer /ConfigurationRepositoryUpdateCfg -force runner (no -revised), no password argv.
-- [x] Source of EDT public IInfobaseSynchronizationManager.retrieveInfobaseChanges adapter; rejects divergent EDT changes.
-- [x] UI "Получить изменения" button, native EDT infobase picker, destructive-action confirmation.
+- [x] Source of EDT public IInfobaseSynchronizationManager.retrieveInfobaseChanges adapter **with native InfobaseUpdateDialogBasedCallback**, opening EDT's real compare/merge UI; no auto-overwrite path.
+- [x] UI "Получить изменения (тестовый режим)" button, native EDT infobase picker, file/server identity check, destructive-action confirmation.
 - [x] Clean task-branch Git preflight; blocked unknown EDT synchronization baseline, canceled operations never advance checkpoint.
 - [ ] **Manual CI compilation, runtime smoke test in disposable EDT 2026.2**, no authorized live user base access.
-- [ ] Exact selected IB identity matching, session/lock checks, authentic version verification, conflict UI.
+- [x] Exact selected EDT IB file/server connection identity matching; fail closed on ambiguity.
+- [ ] Actual 2026.2 compile/runtime of native callback, full compare/merge behavior and object skipping.
+- [ ] Classic storage repository identity check, session/lock checks, authentic version verification, per-object checkpoints.
 
 ## BLOCKER / next technical priority — real receive into existing EDT project
 - [ ] Verify exact 2026.2 API or CLI for **updating an existing project from an infobase**, with merge/conflict preservation.
@@ -38,7 +40,8 @@
 - [ ] Update last-observed remote revision only after verification.
 
 ## Stage 3 — receive from repository
-- [ ] **Blocking before working-base use:** replace current direct import prototype with isolated receive staging + obligatory selection in EDT compare/merge (no hidden Git branches).
+- [x] Replace automatic conflict resolver with public EDT native interactive compare callback (source only; awaits real 2026.2 acceptance).
+- [ ] **Blocking before working-base use:** prove native compare opens before applying to project and supports selective object-level accept/skip, without hidden Git branches.
 - [ ] Correctly record object-level deferred changes; whole-project version must not advance if some objects are skipped.
 - [ ] Object-level plan, conflict checks, dependency-aware receive.
 - [ ] Approved use of existing connected base where platform operations require it.

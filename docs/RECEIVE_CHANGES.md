@@ -1,55 +1,34 @@
-# Receive changes — connected 1C storage → infobase → EDT existing project
+# Receive from classic 1C storage into existing EDT project (prototype)
 
-**RECEIVE UI DISABLED (fail closed): the user-facing button is now disabled and the public entry point refuses to execute.**
+**Source implementation only. Must compile and pass isolated EDT 2026.2 smoke tests before any production use.** No connected user infobase, storage or VPS has been accessed.
 
-**UNSAFE FOR WORKING BASES: Prototype source has NOT been compiled or tested in EDT 2026.2 and does not support obligatory pre-apply compare/merge or object-level selection. Use ONLY disposable fixtures after an explicitly approved build.**
+## Actual implemented call chain
 
-## User action (new)
+1. Project → **Работа с хранилищем** → **Получить изменения (тестовый режим)**.
+2. Save existing connection settings; select an IB from the official EDT registry.
+3. `InfobaseIdentityMatcher`: require an exact physical file-directory match (`FileConnectionString` with `Files.isSameFile`) or an exact normalized server/infobase pair (`ServerConnectionString`). Reject wrong/ambiguous types and unavailable paths.
+4. Require EDT already connected to that IB and containing a prior sync baseline (`isConnected`, `hasSynchronizationInfo`), with no active synchronization. Do not silently connect or bind any base.
+5. On the SWT UI thread construct EDT's own **`InfobaseUpdateDialogBasedCallback`**, single-use for this receive. This is a public EDT 2025.2 API that uses EDT comparison editor and merge manager. Disable its "override the infobase with EDT changes" choice via `setAllowOverrideConflict(false)`.
+6. Show explicit confirmation that Designer will change the connected infobase configuration. After user confirmation, close the settings dialog so it cannot block the compare/merge editor.
+7. Require clean named Git task branch and record its HEAD. **No technical Git branches**, resets, branch switching or commits.
+8. Designer `/ConfigurationRepositoryUpdateCfg -force` gets the latest classic repository revision into the pre-existing linked IB. `-revised` is forbidden. A private bounded process runner handles timeout, cancel, and output cleanup. No password command-line switches.
+9. Confirm that the Git branch/HEAD/worktree stayed unchanged. Call the **public** `IInfobaseSynchronizationManager.retrieveInfobaseChanges(project, infobase, nativeCallback, false, monitor)`. The native EDT callback prompts the user about IB changes and uses its **normal compare/merge editor** for manual object/property selection and conflicts.
+10. Treat `CHANGES_NOT_RESOLVED`, `CHANGES_IGNORE`, or `UNKNOWN` as **not applied**, and never advance repository checkpoint based on an EDT return value. `CHANGES_RESOLVED` / `NO_CHANGES` report only the EDT step outcome, not the entire repository state.
 
-Right click the EDT project → **Работа с хранилищем** → fill repository address, account, already-connected infobase (/F or /S), installed `1cv8.exe` → **Получить изменения**.
+## Known gaps, no hidden claims
 
-The button saves project-specific settings, opens the *official EDT infobase selection dialog* and requires user confirmation that the selected registered EDT infobase is **the SAME physical infobase** as the configured file/server address. This identity check is **not yet automatic** and is a release blocker for unattended use.
+- All above APIs were examined in **2025.2** public Javadocs; **not yet compiled against or run inside EDT 2026.2**. New GitHub branch changes are not covered by previous successful CI `38944234655`.
+- The actual **classic repository identity** of the pre-connected IB is not programmatically inspected yet. The entered repository address is saved but not used to rebind or authenticate Designer; Designer uses whatever repository the pre-connected IB already has.
+- Designer batch command has no configured IB/repository password handling yet; when platform prompts for authentication the operation fails safely rather than exposing secrets on a command line.
+- There is no standalone non-Git staging snapshot for the classic repository. Instead the official EDT sync API produces and presents changes with its own comparison machinery, which avoids extra branches. Precise ability to **skip one changed object** and safely apply other changed objects, including deletes/dependencies, must be proven in EDT 2026.2.
+- A connected infobase may have local Configurator work/captures or concurrent users; this code does **not** inspect or isolate them. Therefore the existing user's working IB is OUT OF SCOPE for acceptance tests. Only a disposable bound IB after explicit permission.
+- Incoming changes can be partially deferred by the user. We intentionally never mark a whole storage revision applied. Persisted per-object deferred state and per-branch reconciliation are still missing.
+- The earlier simplistic custom conflict resolver was removed. **Do not reintroduce a "give IB priority" automatic import**: the native EDT dialog is required.
 
-Then the user must approve a prominent warning: the connected infobase configuration will be modified. There are no background/scheduled calls to receive.
+## Acceptance checks still needed
 
-## Implemented vertical slice
-
-1. **Git preflight**: Git executable must be accessible; a non-detached branch with a valid HEAD must be checked out and the entire Git worktree must be clean (including untracked files). No Git reset/checkout/commit/rebase.
-2. **EDT preflight**: `IInfobaseSynchronizationStateManager.hasSynchronizationInfo(project, selectedIB)` must be true; reject if the synchronization flow is already active. This ensures an EDT baseline exists. A base only connected to the *classic repository*, and not already associated/synchronized with this EDT project, is NOT sufficient.
-3. **Designer receive into the configured base**: `1cv8.exe DESIGNER /F|/S <ib> /DisableStartupDialogs /ConfigurationRepositoryUpdateCfg -force /Out <temp-log>`. Source is an existing repository-connected base; platform manages its association. The `-force` option enables receipt of newly added/deleted objects. `-revised` is ALWAYS absent so current user captures are not deliberately overwritten. This is a **mutating action**. The operator must independently ensure the connected base does not contain unsaved/ongoing Designer work before approving.
-4. **Bounded command runner**: ProcessBuilder without shell or passwords in argv; timeout 20 minutes by caller (10 seconds to 30 minutes accepted by request); user cancellation stops spawned Designer; redirect stdout/stderr; capped diagnostic logs and temp cleanup.
-5. **Git preflight again**: reject if branch/HEAD changed or local uncommitted files appeared during stage 3.
-6. **EDT public synchronization API**: `IInfobaseSynchronizationManager.retrieveInfobaseChanges(project, ib, callback, false, monitor)` with the verified original EDT state. Callback aborts/defer on divergent EDT added/modified objects. Otherwise delegates to platform-provided `IInfobaseUpdateConflictResolver.resolveConflict(...)`, which uses EDT import/merge machinery. Neither `updateInfobase` nor `reloadInfobase` is called, so this is **IB → project** not a reverse push.
-7. **Outcome**: `CHANGES_RESOLVED` / `NO_CHANGES` are presented as the *EDT stage's* result, not yet as confirmed full classic repository synchronization. Deferred/ignored/unknown are not reported as success. No version checkpoint is updated by this action; actual repository version and object reconciliation require later verification.
-
-## Known blockers/limits — do not hide them
-
-- Public API signatures were verified from 1C EDT **2025.2** Javadocs. Actual installed **2026.2** binary compilation/runtime must still be checked by a user-requested manual CI run and isolated EDT install.
-- The selected EDT infobase is currently confirmed by the user, **not automatically compared** to configured /F or /S location. A wrong choice could receive one infobase into another project's EDT model.
-- Original attached base might contain captured objects or work. Code does not yet inspect base capture state, acquire an exclusive Designer lock or guarantee that no other process updates the base concurrently. **Only a disposable connected base can be used for acceptance tests.**
-- No 1C infobase username/password is currently passed (and repository credentials are intentionally not placed on command line), so Designer batch operations will fail when local environment requires interactive login. Never add /P with plaintext passwords merely to make tests pass.
-- EDT project MUST be already synchronized with selected infobase, not just with the classic repository. No automatic association is attempted (association may initiate unwanted synchronization).
-- Conflicts with EDT local model changes lead to **deferred** outcome and must be resolved manually later. There is no automated conflict merge for diverged task branches.
-- The last applied classic repository version is NOT advanced. Exit code 0 is not proof of exact version after concurrent commits, and EDT success is not proof of expected object list. Future state checkpoint must be per Git branch with verified version/SHA.
-- The existing permanently connected user infobase is **not** authorized for direct execution by implementing this code. Source-only changes cannot affect the base until the operator explicitly installs, configures and clicks the command.
-
-## Superseding user experience decision
-
-**No automatically created Git branches.** Only `main` and task `feature/...` branches, all developer-managed.
-
-Receiving new storage data must first produce an **isolated non-Git staging snapshot**, show an **always-on comparison/merge view**, and let the developer accept, skip or manually merge individual changed metadata objects. Applying accepted objects to the current project must not alter skipped objects. Skipped remote changes remain pending for later receive/push; full-project revision checkpoint is not advanced on partial selection.
-
-The existing two-stage prototype directly calls EDT import into the active project after base update; it **does not fulfill this requirement**, even if Git worktree is clean. It must be replaced/guarded before use on working bases. A production receive button must stay blocked until that mandatory compare feature has been verified in EDT 2026.2.
-
-## Future safety hardening
-
-1. Compile once only on explicit request; fix Tycho/API regressions.
-2. Isolated EDT 2026.2 install and smoke test with a disposable connected repository and infobase.
-3. Mechanically compare selected EDT infobase address/UUID to configured base, guard captures and concurrent sessions, and verify the already-connected base belongs to the intended classic repository.
-4. Test no local modifications, local divergent commits, additions/deletions, cancellations and partial failures.
-5. Verify actual repository revision and per-branch Git baseline before persisting the applied checkpoint.
-6. Later permit UI-assisted conflict resolution via EDT's official comparison editor, never silent overwrite.
-
-## Source safety correction
-
-The prior prototype could invoke Designer `/ConfigurationRepositoryUpdateCfg -force` before proving any selective EDT compare, which could modify the connected user's base. This is unacceptable as a default workflow. The receive button is now disabled and its controller's public `start` method stops before any external process or write. The original proof code remains private and unreferenced solely to study/test after separate approval. No storage/infobase operation is currently available through the plugin UI. This does **not** implement the missing compare/merge.
+- User explicitly requests one manual CI build: fix real 2026.2 Tycho compilation errors if any.
+- Install on EDT 2026.2 with disposable configuration repository + disposable connected IB + project, confirm registered-IB identity, merge dialog and project outcome.
+- Test locally committed edits to Document1 + remote edits to Document1 and Document2, with Document1 skipped. Ensure Document1 preserved, Document2 applied and deferred object recognized on next operation.
+- Repeat for added/deleted objects, dependencies, cancellation, concurrent repository revisions and compare-window lifecycle. Confirm native UI doesn't deadlock.
+- Only then consider working IB use and implement per-branch / per-object state checkpoints and safe send-to-storage.

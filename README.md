@@ -7,7 +7,7 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 - Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
 - The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
 - New read-only history and **two-stage receive command** have been added **after that build**. These changes are UNCOMPILED and have not been tested in EDT.
-- The receive button uses Designer to get classic storage changes into the connected IB, followed by public EDT synchronizer to import changes into the existing EDT project. It will refuse an unknown EDT synchronization baseline or uncommitted Git changes. **Never try it on a valuable base before sandbox tests.**
+- Receive now delegates **actual compare/merge UI to EDT's public `InfobaseUpdateDialogBasedCallback`** rather than a custom conflict resolver. It verifies exact selected EDT IB identity against /F or /S settings and requires existing sync baseline and clean Git branch. **Test mode, not validated; never try it on a valuable base before isolated tests.**
 - Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
 ## Planned user flow
@@ -19,7 +19,7 @@ Right-click a project in EDT Navigator → **Работа с хранилище�
 - **optional** path to the installed platform executable (`1cv8.exe`);
 - observed remote revision and verified locally applied revision (both unknown until real verification).
 
-Only settings persist. Entering them never launches Designer, connects to the base or changes data.
+Saving settings alone never launches Designer or changes data. A separate explicit **Receive changes (test mode)** action can mutate the configured connected base after user confirmation; NOT yet approved for working infobases.
 
 ## Integration strategy
 
@@ -31,4 +31,4 @@ Prefer platform-supported operations through an existing connected infobase when
 
 ## Implemented receive prototype (unverified)
 
-Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying an already-connected infobase and requires choosing the same infobase from EDT's registered list. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).
+Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying an already-connected infobase and mechanically checks that the selected EDT infobase matches the configured file/server address. EDT's native comparison dialog controls acceptance/conflicts. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).
