@@ -10,6 +10,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
 import org.eclipse.core.resources.IProject;
+import org.xander.edt.storagebridge.core.ReceiveAttemptLedger;
+import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 
 /**
  * Crash-recoverable ConfigDumpInfo.xml snapshot from BEFORE 1C storage update.
@@ -20,6 +22,7 @@ import org.eclipse.core.resources.IProject;
  */
 public final class ReceiveBaselineJournal {
     private final Path baselineFile;
+    private final ReceiveAttemptLedger ledger;
 
     public ReceiveBaselineJournal(IProject project, String storageAddress,
             String branch) throws IOException {
@@ -36,6 +39,7 @@ public final class ReceiveBaselineJournal {
             .getStateLocation().toFile().toPath().toAbsolutePath().normalize();
         Path folder = workspaceState.resolve("receive").resolve(digest(identity));
         this.baselineFile = folder.resolve("previous-ConfigDumpInfo.xml");
+        this.ledger = new ReceiveAttemptLedger(folder);
     }
 
     public boolean exists() throws IOException {
@@ -47,6 +51,33 @@ public final class ReceiveBaselineJournal {
             throw new IOException("Stored ConfigDumpInfo is invalid; recovery required");
         }
         return true;
+    }
+
+    public Phase phase() throws IOException {
+        return ledger.read();
+    }
+
+    public void markUpdateAttempted() throws IOException {
+        if (!exists()) {
+            throw new IOException("Cannot update 1C without durable baseline");
+        }
+        ledger.transition(Phase.SNAPSHOT_READY, Phase.UPDATE_ATTEMPTED);
+    }
+
+    public void markUpdateCompleted() throws IOException {
+        ledger.transition(Phase.UPDATE_ATTEMPTED, Phase.UPDATE_COMPLETED);
+    }
+
+    /**
+     * A crash after journaling but before cleanup must not cause another
+     * update. Only the already persisted pending list can be acknowledged.
+     */
+    public void finishAlreadyJournaled() throws IOException {
+        if (ledger.read() != Phase.CHANGES_JOURNALED) {
+            throw new IOException("Receive result is not durably journaled");
+        }
+        Files.deleteIfExists(baselineFile);
+        ledger.finishJournaled();
     }
 
     public Path path() throws IOException {
@@ -76,6 +107,9 @@ public final class ReceiveBaselineJournal {
         } finally {
             Files.deleteIfExists(partial);
         }
+        // A snapshot with no phase marker (including from an old installation)
+        // is UNKNOWN; never assume no Designer mutation happened.
+        ledger.transition(Phase.NONE, Phase.SNAPSHOT_READY);
     }
 
     /**
@@ -83,7 +117,9 @@ public final class ReceiveBaselineJournal {
      * ReceivePendingStore. Pending changes survive even when not selected.
      */
     public void acknowledgeJournaledChanges() throws IOException {
-        Files.deleteIfExists(baselineFile);
+        // The caller must flush ALL pending objects before invoking this.
+        ledger.transition(Phase.UPDATE_COMPLETED, Phase.CHANGES_JOURNALED);
+        finishAlreadyJournaled();
     }
 
     private static String digest(String input) {
