@@ -23,14 +23,18 @@ import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 public final class ReceiveBaselineJournal {
     private final Path baselineFile;
     private final ReceiveAttemptLedger ledger;
+    private final Path intermediaryFingerprintFile;
+    private final String intermediaryFingerprint;
 
     public ReceiveBaselineJournal(IProject project, String storageAddress,
-            String branch) throws IOException {
+            String branch, String intermediaryIdentity) throws IOException {
         Objects.requireNonNull(project);
         Objects.requireNonNull(storageAddress);
         Objects.requireNonNull(branch);
+        Objects.requireNonNull(intermediaryIdentity);
         if (project.getLocationURI() == null || storageAddress.isBlank()
-                || branch.isBlank() || BridgeActivator.getDefault() == null) {
+                || branch.isBlank() || intermediaryIdentity.isBlank()
+                || BridgeActivator.getDefault() == null) {
             throw new IOException("Cannot identify receiving project/context");
         }
         String identity = project.getLocationURI().normalize() + "\u0000"
@@ -40,6 +44,8 @@ public final class ReceiveBaselineJournal {
         Path folder = workspaceState.resolve("receive").resolve(digest(identity));
         this.baselineFile = folder.resolve("previous-ConfigDumpInfo.xml");
         this.ledger = new ReceiveAttemptLedger(folder);
+        this.intermediaryFingerprintFile = folder.resolve("intermediary.sha256");
+        this.intermediaryFingerprint = digest(intermediaryIdentity.trim());
     }
 
     public boolean exists() throws IOException {
@@ -54,7 +60,30 @@ public final class ReceiveBaselineJournal {
     }
 
     public Phase phase() throws IOException {
+        verifyIntermediary();
         return ledger.read();
+    }
+
+    /**
+     * The identity must not change while a previous snapshot or pending
+     * changes exist. A v24 snapshot without this marker is an unknown source,
+     * not evidence that it belongs to a newly configured intermediary.
+     */
+    public void verifyIntermediary() throws IOException {
+        if (Files.exists(intermediaryFingerprintFile)) {
+            if (!Files.isRegularFile(intermediaryFingerprintFile)
+                    || !intermediaryFingerprint.equals(
+                        Files.readString(intermediaryFingerprintFile,
+                            StandardCharsets.US_ASCII).trim())) {
+                throw new IOException(
+                    "База-посредник изменена относительно сохранённого "
+                    + "получения. Для продолжения требуется ручная сверка.");
+            }
+        } else if (Files.exists(baselineFile) || ledger.read() != Phase.NONE) {
+            throw new IOException(
+                "Осталось получение прежней версии плагина без "
+                + "подтверждённой базы-посредника. Требуется ручная сверка.");
+        }
     }
 
     public void markUpdateAttempted() throws IOException {
@@ -90,12 +119,19 @@ public final class ReceiveBaselineJournal {
     /** Must be called BEFORE mutating the connected intermediary infobase. */
     public void persist(Path versionFile) throws IOException {
         Objects.requireNonNull(versionFile);
+        verifyIntermediary();
         if (exists()) {
             // Never overwrite a snapshot before pending changes were journaled:
             // it might be the only record of remote changes after a crash.
             throw new IOException("Unfinished receive snapshot already exists");
         }
         Files.createDirectories(baselineFile.getParent());
+        // Only a SHA-256 fingerprint is persisted, never an IB address or
+        // repository password. Do not silently rebind an existing journal.
+        if (!Files.exists(intermediaryFingerprintFile)) {
+            Files.writeString(intermediaryFingerprintFile,
+                intermediaryFingerprint + "\n", StandardCharsets.US_ASCII);
+        }
         Path partial = baselineFile.resolveSibling("previous-ConfigDumpInfo.part");
         try {
             Files.copy(versionFile, partial, StandardCopyOption.REPLACE_EXISTING);
