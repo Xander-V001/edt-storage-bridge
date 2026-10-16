@@ -19,11 +19,13 @@ import com._1c.g5.v8.dt.compare.datasource.FileSystemComparisonDataSourceDescrip
 import com._1c.g5.v8.dt.compare.datasource.GitComparisonDataSourceDescriptor;
 import com._1c.g5.v8.dt.compare.datasource.V8ProjectComparisonDataSourceDescriptor;
 import com._1c.g5.v8.dt.compare.matching.MatchingStrategy;
-import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInput;
-import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
 import com._1c.g5.v8.dt.core.platform.IV8Project;
 import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.import_.IImportService;
+import com._1c.g5.v8.dt.import_.IImportServiceRegistry;
+import com._1c.g5.v8.dt.internal.compare.ui.editor.IComparisonEditorOpenHelper;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.swt.widgets.Display;
 import com.google.inject.Inject;
 
 /**
@@ -37,13 +39,16 @@ import com.google.inject.Inject;
  */
 public final class EdtDeltaComparisonService {
     private final IV8ProjectManager projectManager;
-    private final IDtComparisonEditorInputFactory editorInputs;
+    private final IImportServiceRegistry importRegistry;
+    private final IComparisonEditorOpenHelper editorOpener;
 
     @Inject
     public EdtDeltaComparisonService(IV8ProjectManager projectManager,
-            IDtComparisonEditorInputFactory editorInputs) {
+            IImportServiceRegistry importRegistry,
+            IComparisonEditorOpenHelper editorOpener) {
         this.projectManager = Objects.requireNonNull(projectManager);
-        this.editorInputs = Objects.requireNonNull(editorInputs);
+        this.importRegistry = Objects.requireNonNull(importRegistry);
+        this.editorOpener = Objects.requireNonNull(editorOpener);
     }
 
     /**
@@ -57,17 +62,16 @@ public final class EdtDeltaComparisonService {
      * @param baselineSha immutable Git SHA corresponding to the source storage
      *                    revision before remote changes
      * @param projectRelativePath path to project directory INSIDE Git repository
-     * @return editor input to open in EDT's existing compare/merge editor.
-     *         This method never starts merge or writes project files.
+     * @return comparison descriptor for the native EDT editor (open later on
+     *         SWT UI thread). This method never starts merge or writes project files.
      */
-    public IDtComparisonEditorInput prepare(IProject project,
+    public CompareMergeProcessDescriptor prepare(IProject project,
             Path platformXmlDirectory, Path externalEdtDeltaDirectory,
             Path gitRepositoryDirectory, Path projectRelativePath,
             String baselineSha, List<String> objectSymlinks,
-            IImportService importer, IProgressMonitor monitor)
+            IProgressMonitor monitor)
             throws IOException {
         Objects.requireNonNull(project, "project");
-        Objects.requireNonNull(importer, "importer");
         Objects.requireNonNull(monitor, "monitor");
 
         IV8Project edtProject = projectManager.getProject(project);
@@ -125,6 +129,14 @@ public final class EdtDeltaComparisonService {
         // This FOUR-argument overload writes to an external directory.
         // The THREE-argument overload would modify the existing EDT project;
         // it is deliberately NOT called anywhere in this service.
+        // Resolve the importer matching the CURRENT project's 1C runtime
+        // version. Never guess based on plugin/EDT version or use an unrelated IB.
+        IImportService importer;
+        try {
+            importer = importRegistry.getImportService(edtProject.getVersion());
+        } catch (Exception ex) {
+            throw new IOException("Cannot resolve XML importer for this EDT project", ex);
+        }
         IStatus status = importer.work(project, xml, output, monitor);
         if (status == null || !status.isOK() || monitor.isCanceled()) {
             throw new IllegalStateException("EDT external XML conversion failed or cancelled");
@@ -147,14 +159,33 @@ public final class EdtDeltaComparisonService {
             .builder(MatchingStrategy.UUID_THEN_NAME).build();
         var descriptor = new CompareMergeProcessDescriptor(handle, settings);
 
-        IDtComparisonEditorInput editor = editorInputs.create(
-            List.of(descriptor), false, "Текущий проект EDT",
-            "Изменения из хранилища 1С");
-        editor.setRunInitialComparison(true);
-        editor.setMergeConfirmationMessage(
-            "Будут изменены выбранные объекты текущего проекта EDT. "
-            + "Проверьте конфликты и список объектов перед подтверждением.");
-        return editor;
+        return descriptor;
+    }
+
+    /**
+     * Opens the OFFICIAL EDT interactive three-way compare/merge editor for a
+     * fully prepared external delta. Must be called from the SWT UI thread.
+     *
+     * The EDT helper is in an internal package; using it here is intentional:
+     * the public factory creates an editor input but exposes no public
+     * workbench editor identifier or editor-opening method. Keep its use
+     * isolated here. Runtime smoke test on EDT 2026.2 MUST establish that:
+     *  - editor opens before any project write;
+     *  - refusing Document1 leaves local content untouched;
+     *  - accepting Document2 changes only the selected object.
+     *
+     * DO NOT delete the external EDT delta while the editor is open.
+     */
+    public IEditorPart openEditor(CompareMergeProcessDescriptor prepared) {
+        Objects.requireNonNull(prepared, "prepared");
+        if (Display.getCurrent() == null) {
+            throw new IllegalStateException("Native EDT merge editor requires SWT UI thread");
+        }
+        return editorOpener.openComparisonEditor(
+            List.of(prepared), false,
+            "Текущий проект EDT", "Изменения из хранилища 1С",
+            "Применение меняет только выбранные изменения. "
+            + "Перед подтверждением проверьте Документ1 и другие конфликты.");
     }
 
     private static void validateGitBaseline(Path root, Path relativeProject,
