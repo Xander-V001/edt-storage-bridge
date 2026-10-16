@@ -24,6 +24,7 @@ import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.import_.IImportService;
 import com._1c.g5.v8.dt.import_.IImportServiceRegistry;
 import com._1c.g5.v8.dt.internal.compare.ui.editor.IComparisonEditorOpenHelper;
+import com._1c.g5.v8.dt.internal.compare.ui.editor.ComparisonEditorOpenException;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.swt.widgets.Display;
 import com.google.inject.Inject;
@@ -176,7 +177,8 @@ public final class EdtDeltaComparisonService {
      *
      * DO NOT delete the external EDT delta while the editor is open.
      */
-    public IEditorPart openEditor(CompareMergeProcessDescriptor prepared) {
+    public IEditorPart openEditor(CompareMergeProcessDescriptor prepared)
+            throws ComparisonEditorOpenException {
         Objects.requireNonNull(prepared, "prepared");
         if (Display.getCurrent() == null) {
             throw new IllegalStateException("Native EDT merge editor requires SWT UI thread");
