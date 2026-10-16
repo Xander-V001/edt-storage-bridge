@@ -53,11 +53,26 @@ import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
  */
 public final class ReceiveChangesCoordinator {
     private static final Duration TIMEOUT = Duration.ofMinutes(30);
+    /** Prevent overlapping native editors and repository operations per EDT project. */
+    private static final java.util.Set<String> ACTIVE =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private ReceiveChangesCoordinator() {}
 
     public static void receive(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings) {
+        if (project == null || project.getLocationURI() == null) {
+            MessageDialog.openError(shell, "Работа с хранилищем",
+                "Не удалось определить существующий EDT-проект.");
+            return;
+        }
+        String operationKey = project.getLocationURI().normalize().toString();
+        if (!ACTIVE.add(operationKey)) {
+            MessageDialog.openInformation(shell, "Работа с хранилищем",
+                "Для этого проекта уже выполняется получение или открыт "
+                + "редактор объединения.");
+            return;
+        }
         SelectiveDumpRunner.ExportResult export = null;
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
@@ -235,6 +250,7 @@ public final class ReceiveChangesCoordinator {
                                 + "unresolved objects remain pending.");
                         } finally {
                             cleanupQuietly(retainedExport, retainedConverted);
+                            ACTIVE.remove(operationKey);
                         }
                     }
                 }
@@ -258,6 +274,7 @@ public final class ReceiveChangesCoordinator {
         } finally {
             if (!editorOwnsStaging) {
                 cleanupQuietly(export, conversionRoot);
+                ACTIVE.remove(operationKey);
             }
         }
     }
