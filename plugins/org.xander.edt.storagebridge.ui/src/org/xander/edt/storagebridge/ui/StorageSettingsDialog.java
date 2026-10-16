@@ -150,9 +150,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             formatVersion(saved == null ? -1 : saved.appliedVersion()));
 
         Label note = new Label(content, SWT.WRAP);
-        note.setText("Получение изменений пока заблокировано: "
-            + "штатное сравнение и выборочное объединение не проверены в EDT 2026.2. "
-            + "Подключённая ИБ и проект не изменяются при сохранении настроек.");
+        note.setText("Получение работает в тестовом режиме: "
+            + "после подтверждения изменяет подключённую ИБ и вызывает штатное "
+            + "сравнение/объединение EDT. До проверки в EDT 2026.2 "
+            + "НЕ применять к рабочей базе. Сохранение настроек безопасно.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
@@ -191,10 +192,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     @Override
     protected void buttonPressed(int buttonId) {
         if (buttonId == RECEIVE_BUTTON_ID) {
-            // Deliberately fail closed until a verified object-level
-            // compare/merge workflow exists for EDT 2026.2.
-            setErrorMessage("Получение заблокировано до проверки безопасного "
-                + "сравнения и объединения в EDT 2026.2.");
+            if (saveSettings() && ReceiveChangesController.start(project, getShell())) {
+                close();
+            }
             return;
         }
         super.buttonPressed(buttonId);
@@ -226,10 +226,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     @Override
     protected void createButtonsForButtonBar(Composite parent) {
         Button receive = createButton(parent, RECEIVE_BUTTON_ID,
-            "Получить изменения (пока недоступно)", false);
-        receive.setEnabled(false);
-        receive.setToolTipText("Нет подтверждённого механизма "
-            + "предварительного сравнения и выборочного объединения.");
+            "Получить изменения (тестовый режим)", false);
+        receive.setToolTipText("Использует штатное сравнение EDT; "
+            + "проверять только на тестовой ИБ до испытания EDT 2026.2.");
         createButton(parent, IDialogConstants.OK_ID, "Сохранить", true);
         createButton(parent, IDialogConstants.CANCEL_ID, "Отмена", false);
     }

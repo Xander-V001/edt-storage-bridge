@@ -1,9 +1,9 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.time.Duration;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -15,21 +15,25 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.window.Window;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.PlatformUI;
 import org.xander.edt.storagebridge.edt.EdtReceiveService;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseChangesResolver;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
 import com._1c.g5.v8.dt.platform.services.model.InfobaseReference;
 import com._1c.g5.v8.dt.platform.services.ui.infobases.InfobaseSelectDialog;
 
 /**
- * Explicit, user-triggered two-stage update: classic repository → connected
- * infobase → EDT model. Refuses unknown EDT sync state and unsafe local edits.
+ * User-triggered classic storage receive into a connected IB, followed by
+ * the native EDT interactive compare/merge into the existing Git task branch.
  *
- * <p>The selected EDT infobase MUST be the same one as the specified /F or /S
- * base, confirmed by the user. Automatic address mapping is pending.
+ * <p>Never updates a Git branch, creates a technical branch, resets Git state,
+ * or marks a classical repository revision as fully applied.
+ * The callback and its comparison UI belong to EDT, not this plugin.
  */
 public final class ReceiveChangesController {
     private static final Set<IProject> ACTIVE_PROJECTS = ConcurrentHashMap.newKeySet();
@@ -37,47 +41,47 @@ public final class ReceiveChangesController {
     private ReceiveChangesController() {
     }
 
-    /**
-     * Fail-closed while selective compare/merge is not implemented.
-     * Intentionally no callable production entry point into the prototype.
-     */
-    public static void start(IProject project, Shell shell) {
-        if (project == null || !project.isAccessible() || shell == null || shell.isDisposed()) {
-            return;
+    /** Returns true ONLY if a Job was scheduled (caller may close settings dialog). */
+    public static boolean start(IProject project, Shell dialogShell) {
+        if (project == null || !project.isAccessible()
+                || dialogShell == null || dialogShell.isDisposed()) {
+            return false;
         }
-        MessageDialog.openInformation(shell, "Получение из хранилища",
-            "Получение временно заблокировано. Сначала необходимо подтвердить "
-            + "предварительное сравнение и выборочное объединение в EDT 2026.2.");
-        return;
-    }
+        // Use the workbench shell, not the settings dialog's transient shell.
+        IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+        if (window == null || window.getShell().isDisposed()) {
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "Не найдено активное окно EDT.");
+            return false;
+        }
+        Shell workbenchShell = window.getShell();
+        Display display = workbenchShell.getDisplay();
+        if (ACTIVE_PROJECTS.contains(project)) {
+            MessageDialog.openInformation(dialogShell, "Работа с хранилищем",
+                "Для проекта уже выполняется получение изменений.");
+            return false;
+        }
 
-    // The mutating proof-of-concept below is retained for isolated review ONLY.
-    // No GUI or public start() method can invoke it.
-    private static void startUnverifiedPrototype(IProject project, Shell shell) {
-        if (project == null || !project.isAccessible() || shell == null || shell.isDisposed()) {
-            return;
-        }
         final StorageProjectSettings.Snapshot settings;
         final RepositoryUpdateRequest request;
         try {
             settings = StorageProjectSettings.load(project);
             if (settings.address().isBlank() || settings.infobaseAddress().isBlank()
                     || settings.platformExecutable().isBlank()) {
-                MessageDialog.openInformation(shell, "Получение из хранилища",
-                    "Заполните и сохраните адрес хранилища, подключённую ИБ "
-                    + "и путь к 1cv8.exe.");
-                return;
+                MessageDialog.openInformation(dialogShell, "Получение из хранилища",
+                    "Укажите адрес хранилища, подключённую ИБ и путь к 1cv8.exe.");
+                return false;
             }
-            var ibKind = settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
-                ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER;
-            request = new RepositoryUpdateRequest(
-                Path.of(settings.platformExecutable()),
-                new InfobaseLocation(ibKind, settings.infobaseAddress()),
+            InfobaseLocation.Kind kind =
+                settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
+                    ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER;
+            request = new RepositoryUpdateRequest(Path.of(settings.platformExecutable()),
+                new InfobaseLocation(kind, settings.infobaseAddress()),
                 Duration.ofMinutes(20));
         } catch (StorageException | RuntimeException ex) {
-            MessageDialog.openError(shell, "Получение из хранилища",
-                "Не удалось прочитать настройки или выбран неверный путь к платформе 1С.");
-            return;
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "Не удалось прочитать настройки или путь к платформе.");
+            return false;
         }
 
         final EdtReceiveService edt;
@@ -85,48 +89,64 @@ public final class ReceiveChangesController {
             edt = BridgeActivator.getDefault().getInjector()
                 .getInstance(EdtReceiveService.class);
         } catch (RuntimeException ex) {
-            MessageDialog.openError(shell, "Получение из хранилища",
-                "Сервис синхронизации EDT недоступен. Проверьте Error Log.");
-            return;
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "Сервисы сравнения и синхронизации EDT недоступны.");
+            return false;
         }
 
-        InfobaseSelectDialog chooser = new InfobaseSelectDialog(shell,
-            edt.infobaseManager(), null, null,
-            "Выберите в списке EDT ИМЕННО ту же информационную базу, "
-            + "которая указана в настройках хранилища.");
+        InfobaseSelectDialog chooser = new InfobaseSelectDialog(
+            dialogShell, edt.infobaseManager(), null, null,
+            "Выберите ИБ, уже связанную с этим проектом EDT.");
         if (chooser.open() != Window.OK) {
-            return;
+            return false;
         }
         InfobaseReference selected = chooser.getSelectedInfobase().orElse(null);
-        if (selected == null) {
-            return;
+        if (!InfobaseIdentityMatcher.matches(
+                selected, settings.infobaseType(), settings.infobaseAddress())) {
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "Выбранная в EDT ИБ не совпадает с адресом ИБ в настройках. "
+                + "Получение остановлено до изменения каких-либо данных.");
+            return false;
+        }
+        // This is BEFORE launching Designer or any command that can change the IB.
+        if (!edt.hasKnownBaseline(project, selected)) {
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "EDT не имеет подтверждённой синхронизации этого проекта с "
+                + "выбранной ИБ. Сначала установите связь штатными средствами EDT.");
+            return false;
         }
 
-        boolean approved = MessageDialog.openConfirm(shell,
-            "Подтверждение получения",
-            "Будет изменена КОНФИГУРАЦИЯ подключённой базы 1С:\n"
-            + settings.infobaseAddress() + "\n\n"
-            + "Подтвердите, что выбранная в EDT база — та же самая "
-            + "и что её конфигурация не содержит незавершённой работы.\n"
-            + "Команда получит изменения из хранилища, включая добавление и удаление "
-            + "объектов (-force), но НЕ использует -revised.\n\n"
-            + "После этого EDT импортирует изменения в выбранный проект, "
-            + "только если обнаружит безопасное состояние для объединения.\n"
-            + "Продолжить?");
+        final IInfobaseChangesResolver interactiveMerge;
+        try {
+            interactiveMerge = edt.newInteractiveMerge(workbenchShell);
+        } catch (RuntimeException ex) {
+            MessageDialog.openError(dialogShell, "Работа с хранилищем",
+                "Не удалось подготовить штатное окно сравнения EDT.");
+            return false;
+        }
+        boolean approved = MessageDialog.openConfirm(dialogShell,
+            "Подтвердите получение",
+            "Будет изменена конфигурация подключённой ИБ:\n"
+                + settings.infobaseAddress() + "\n\n"
+                + "Не должно быть незавершённых изменений и захватов "
+                + "в Конфигураторе.\n"
+                + "Будет использовано получение из хранилища (-force, БЕЗ -revised).\n"
+                + "После этого EDT покажет штатное сравнение и объединение. "
+                + "Вы сами определите, что принять в проект.\n\n"
+                + "Продолжить?");
         if (!approved) {
-            return;
+            return false;
         }
         if (!ACTIVE_PROJECTS.add(project)) {
-            MessageDialog.openInformation(shell, "Работа с хранилищем",
-                "Для этого проекта уже выполняется получение.");
-            return;
+            MessageDialog.openInformation(dialogShell, "Работа с хранилищем",
+                "Для проекта уже выполняется получение изменений.");
+            return false;
         }
-        // Capture SWT display on the UI thread; Job must not call Widget#getDisplay.
-        Display display = shell.getDisplay();
-        Job task = new Job("EDT Storage Bridge — получить изменения") {
+
+        Job job = new Job("EDT Storage Bridge: получить изменения") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
-                monitor.beginTask("Получение из хранилища в EDT", 3);
+                monitor.beginTask("Хранилище 1С → ИБ → сравнение EDT", 3);
                 try {
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
@@ -134,66 +154,71 @@ public final class ReceiveChangesController {
                     GitReceiveGuard.Baseline gitBaseline =
                         GitReceiveGuard.requireCleanBranch(project);
                     monitor.worked(1);
-                    // Fail closed BEFORE changing the connected 1C configuration.
                     if (!edt.hasKnownBaseline(project, selected)) {
-                        show(display, shell, "Импорт не запущен: EDT не имеет "
-                            + "подтверждённой истории синхронизации проекта с этой ИБ. "
-                            + "Сначала свяжите их штатными средствами EDT.");
+                        notifyUser(display, workbenchShell,
+                            "Состояние синхронизации EDT изменилось. "
+                            + "Получение в ИБ не запускалось.");
                         return Status.CANCEL_STATUS;
                     }
+
                     new RepositoryUpdateRunner().receive(request, monitor::isCanceled);
                     monitor.worked(1);
-
-                    // Git branch / working tree must not have changed during Designer.
                     GitReceiveGuard.requireUnchanged(project, gitBaseline);
                     if (monitor.isCanceled()) {
-                        show(display, shell, "Конфигурация ИБ могла измениться, импорт EDT не выполнялся.");
+                        notifyUser(display, workbenchShell,
+                            "Получение в ИБ могло завершиться, но импорт EDT отменён. "
+                            + "Проверьте состояние ИБ.");
                         return Status.CANCEL_STATUS;
                     }
+
                     InfobaseChangesResolutionResult result =
-                        edt.receive(project, selected, monitor);
+                        edt.receive(project, selected, interactiveMerge, monitor);
                     monitor.worked(1);
-                    if (result == InfobaseChangesResolutionResult.CHANGES_RESOLVED
-                            || result == InfobaseChangesResolutionResult.NO_CHANGES) {
-                        show(display, shell, "Этап получения в ИБ завершён, EDT ответила: "
-                            + result.name() + ".\n"
-                            + "Версия хранилища пока НЕ фиксируется автоматически: "
-                            + "её нужно отдельно подтвердить по истории.");
+                    if (result == InfobaseChangesResolutionResult.NO_CHANGES
+                            || result == InfobaseChangesResolutionResult.CHANGES_RESOLVED) {
+                        notifyUser(display, workbenchShell,
+                            "EDT завершила этап обработки изменений: " + result.name()
+                            + ". Версия хранилища автоматически НЕ фиксируется.");
                         return Status.OK_STATUS;
                     }
-                    show(display, shell, "Конфигурация ИБ могла измениться. EDT вернула: "
-                        + result.name() + ".\n"
-                        + "Проект не объявлен обновлённым, контрольная версия не изменена. "
-                        + "Проверьте конфликты в EDT.");
+                    // The native comparison editor might still be open when
+                    // CHANGES_NOT_RESOLVED is returned. No success claim.
+                    notifyUser(display, workbenchShell,
+                        "Штатное сравнение EDT: " + result.name()
+                        + ". Если редактор объединения открыт, завершите выбор "
+                        + "объектов вручную. Версия хранилища не изменена в настройках.");
                     return Status.CANCEL_STATUS;
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
-                    show(display, shell, "Операция прервана. Состояние ИБ требует проверки.");
+                    notifyUser(display, workbenchShell,
+                        "Обновление прервано. Проверьте состояние подключённой ИБ.");
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
-                    // Exception messages from external tools may contain credentials.
-                    show(display, shell, "Получение не подтверждено. "
-                        + "Проверьте подключённую ИБ, связи проекта и журнал ошибок. "
-                        + "Контрольная версия не изменена.");
+                    // Never display third-party messages, which could contain
+                    // credentials, paths or other sensitive connection details.
+                    notifyUser(display, workbenchShell,
+                        "Обновление не подтверждено. Проверьте состояние ИБ и EDT. "
+                        + "Версия хранилища не фиксировалась.");
                     return new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
-                        "Repository receive did not reach a verified completed state");
+                        "Receive was not fully verified");
                 } finally {
                     ACTIVE_PROJECTS.remove(project);
                     monitor.done();
                 }
             }
         };
-        task.setUser(true);
-        // Do NOT claim the IProject scheduling rule: EDT synchronization may
-        // schedule child project jobs and would deadlock waiting for our rule.
-        task.schedule();
+        job.setUser(true);
+        // Do NOT hold an IProject workspace scheduling rule while calling EDT:
+        // EDT itself may schedule jobs that would deadlock on that same rule.
+        job.schedule();
+        return true;
     }
 
-    private static void show(Display display, Shell shell, String text) {
+    private static void notifyUser(Display display, Shell shell, String message) {
         if (!display.isDisposed()) {
             display.asyncExec(() -> {
                 if (!shell.isDisposed()) {
-                    MessageDialog.openInformation(shell, "Работа с хранилищем", text);
+                    MessageDialog.openInformation(shell, "Работа с хранилищем", message);
                 }
             });
         }
