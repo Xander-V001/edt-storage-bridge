@@ -105,6 +105,8 @@ public final class ReceiveChangesController {
                 "Для этого проекта уже выполняется получение.");
             return;
         }
+        // Capture SWT display on the UI thread; Job must not call Widget#getDisplay.
+        Display display = shell.getDisplay();
         Job task = new Job("EDT Storage Bridge — получить изменения") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
@@ -117,7 +119,7 @@ public final class ReceiveChangesController {
                     monitor.worked(1);
                     // Fail closed BEFORE changing the connected 1C configuration.
                     if (!edt.hasKnownBaseline(project, selected)) {
-                        show(shell, "Импорт не запущен: EDT не имеет "
+                        show(display, shell, "Импорт не запущен: EDT не имеет "
                             + "подтверждённой истории синхронизации проекта с этой ИБ. "
                             + "Сначала свяжите их штатными средствами EDT.");
                         return Status.CANCEL_STATUS;
@@ -128,7 +130,7 @@ public final class ReceiveChangesController {
                     // Git branch / working tree must not have changed during Designer.
                     GitReceiveGuard.requireCleanBranch(project);
                     if (monitor.isCanceled()) {
-                        show(shell, "Конфигурация ИБ могла измениться, импорт EDT не выполнялся.");
+                        show(display, shell, "Конфигурация ИБ могла измениться, импорт EDT не выполнялся.");
                         return Status.CANCEL_STATUS;
                     }
                     InfobaseChangesResolutionResult result =
@@ -136,24 +138,24 @@ public final class ReceiveChangesController {
                     monitor.worked(1);
                     if (result == InfobaseChangesResolutionResult.CHANGES_RESOLVED
                             || result == InfobaseChangesResolutionResult.NO_CHANGES) {
-                        show(shell, "Этап получения в ИБ завершён, EDT ответила: "
+                        show(display, shell, "Этап получения в ИБ завершён, EDT ответила: "
                             + result.name() + ".\n"
                             + "Версия хранилища пока НЕ фиксируется автоматически: "
                             + "её нужно отдельно подтвердить по истории.");
                         return Status.OK_STATUS;
                     }
-                    show(shell, "Конфигурация ИБ могла измениться. EDT вернула: "
+                    show(display, shell, "Конфигурация ИБ могла измениться. EDT вернула: "
                         + result.name() + ".\n"
                         + "Проект не объявлен обновлённым, контрольная версия не изменена. "
                         + "Проверьте конфликты в EDT.");
                     return Status.CANCEL_STATUS;
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
-                    show(shell, "Операция прервана. Состояние ИБ требует проверки.");
+                    show(display, shell, "Операция прервана. Состояние ИБ требует проверки.");
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
                     // Exception messages from external tools may contain credentials.
-                    show(shell, "Получение не подтверждено. "
+                    show(display, shell, "Получение не подтверждено. "
                         + "Проверьте подключённую ИБ, связи проекта и журнал ошибок. "
                         + "Контрольная версия не изменена.");
                     return new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
@@ -170,8 +172,7 @@ public final class ReceiveChangesController {
         task.schedule();
     }
 
-    private static void show(Shell shell, String text) {
-        Display display = shell.getDisplay();
+    private static void show(Display display, Shell shell, String text) {
         if (!display.isDisposed()) {
             display.asyncExec(() -> {
                 if (!shell.isDisposed()) {
