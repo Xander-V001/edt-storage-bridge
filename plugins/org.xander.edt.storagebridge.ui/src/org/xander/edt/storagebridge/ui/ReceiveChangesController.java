@@ -37,7 +37,23 @@ public final class ReceiveChangesController {
     private ReceiveChangesController() {
     }
 
+    /**
+     * Fail-closed while selective compare/merge is not implemented.
+     * Intentionally no callable production entry point into the prototype.
+     */
     public static void start(IProject project, Shell shell) {
+        if (project == null || !project.isAccessible() || shell == null || shell.isDisposed()) {
+            return;
+        }
+        MessageDialog.openInformation(shell, "Получение из хранилища",
+            "Получение временно заблокировано. Сначала необходимо подтвердить "
+            + "предварительное сравнение и выборочное объединение в EDT 2026.2.");
+        return;
+    }
+
+    // The mutating proof-of-concept below is retained for isolated review ONLY.
+    // No GUI or public start() method can invoke it.
+    private static void startUnverifiedPrototype(IProject project, Shell shell) {
         if (project == null || !project.isAccessible() || shell == null || shell.isDisposed()) {
             return;
         }

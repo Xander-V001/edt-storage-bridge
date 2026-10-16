@@ -1,5 +1,7 @@
 # Receive changes — connected 1C storage → infobase → EDT existing project
 
+**RECEIVE UI DISABLED (fail closed): the user-facing button is now disabled and the public entry point refuses to execute.**
+
 **UNSAFE FOR WORKING BASES: Prototype source has NOT been compiled or tested in EDT 2026.2 and does not support obligatory pre-apply compare/merge or object-level selection. Use ONLY disposable fixtures after an explicitly approved build.**
 
 ## User action (new)
@@ -47,3 +49,7 @@ The existing two-stage prototype directly calls EDT import into the active proje
 4. Test no local modifications, local divergent commits, additions/deletions, cancellations and partial failures.
 5. Verify actual repository revision and per-branch Git baseline before persisting the applied checkpoint.
 6. Later permit UI-assisted conflict resolution via EDT's official comparison editor, never silent overwrite.
+
+## Source safety correction
+
+The prior prototype could invoke Designer `/ConfigurationRepositoryUpdateCfg -force` before proving any selective EDT compare, which could modify the connected user's base. This is unacceptable as a default workflow. The receive button is now disabled and its controller's public `start` method stops before any external process or write. The original proof code remains private and unreferenced solely to study/test after separate approval. No storage/infobase operation is currently available through the plugin UI. This does **not** implement the missing compare/merge.

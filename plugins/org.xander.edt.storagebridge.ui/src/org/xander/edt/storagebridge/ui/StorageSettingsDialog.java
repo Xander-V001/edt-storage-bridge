@@ -150,10 +150,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             formatVersion(saved == null ? -1 : saved.appliedVersion()));
 
         Label note = new Label(content, SWT.WRAP);
-        note.setText("Кнопка «Получить изменения» запускает обновление подключённой ИБ, "
-            + "затем штатный импорт EDT. Требуется чистая Git-ветка и заранее "
-            + "подтверждённая связь проекта с этой же ИБ в EDT. "
-            + "Версия хранилища пока автоматически не фиксируется.");
+        note.setText("Получение изменений пока заблокировано: "
+            + "штатное сравнение и выборочное объединение не проверены в EDT 2026.2. "
+            + "Подключённая ИБ и проект не изменяются при сохранении настроек.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
@@ -192,9 +191,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     @Override
     protected void buttonPressed(int buttonId) {
         if (buttonId == RECEIVE_BUTTON_ID) {
-            if (saveSettings()) {
-                ReceiveChangesController.start(project, getShell());
-            }
+            // Deliberately fail closed until a verified object-level
+            // compare/merge workflow exists for EDT 2026.2.
+            setErrorMessage("Получение заблокировано до проверки безопасного "
+                + "сравнения и объединения в EDT 2026.2.");
             return;
         }
         super.buttonPressed(buttonId);
@@ -225,7 +225,11 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void createButtonsForButtonBar(Composite parent) {
-        createButton(parent, RECEIVE_BUTTON_ID, "Получить изменения", false);
+        Button receive = createButton(parent, RECEIVE_BUTTON_ID,
+            "Получить изменения (пока недоступно)", false);
+        receive.setEnabled(false);
+        receive.setToolTipText("Нет подтверждённого механизма "
+            + "предварительного сравнения и выборочного объединения.");
         createButton(parent, IDialogConstants.OK_ID, "Сохранить", true);
         createButton(parent, IDialogConstants.CANCEL_ID, "Отмена", false);
     }
