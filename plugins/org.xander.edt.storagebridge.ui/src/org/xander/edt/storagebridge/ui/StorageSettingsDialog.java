@@ -196,8 +196,23 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         if (buttonId == RECEIVE_BUTTON_ID) {
             if (saveSettings()) {
                 try {
-                    ReceiveChangesCoordinator.receive(
-                        getShell(), project, StorageProjectSettings.load(project));
+                    StorageProjectSettings.Snapshot current =
+                        StorageProjectSettings.load(project);
+                    // A JFace TitleAreaDialog is modal. Opening EDT's merge
+                    // editor while this dialog remains open would block the
+                    // user's ability to interact with the merge editor.
+                    Shell workbenchShell = getShell().getParent();
+                    if (workbenchShell == null || workbenchShell.isDisposed()) {
+                        setErrorMessage("Окно EDT недоступно для получения изменений.");
+                        return;
+                    }
+                    close();
+                    workbenchShell.getDisplay().asyncExec(() -> {
+                        if (!workbenchShell.isDisposed() && project.isAccessible()) {
+                            ReceiveChangesCoordinator.receive(
+                                workbenchShell, project, current);
+                        }
+                    });
                 } catch (StorageException ex) {
                     setErrorMessage("Не удалось получить настройки Secure Storage.");
                 }
