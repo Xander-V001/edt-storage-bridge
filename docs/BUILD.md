@@ -9,7 +9,7 @@
 - **Maven 3.9.9** and **Tycho 5.0.2**.
 - The target source is `targets/edt-2026.2/edt-2026.2.target`.
 
-1C p2 repositories may require credentials from its registered user portal. Never commit credentials, Maven settings with passwords or mirrors serving proprietary binaries. Verify authentication in the official target editor before an approved CI build.
+1C p2 repositories may require registered user portal credentials. The manual workflow is prepared for optional GitHub Actions secrets `P2_USER` and `P2_TOKEN`, passed by environment variable names to a Maven `dt_repository` server setting as in the official 1C sample. **No secrets have been configured or requested**; they are only needed if the vendor requires authentication. Never commit or paste credentials. Verify target access before the first approved CI build.
 
 ## Development in Eclipse PDE
 
