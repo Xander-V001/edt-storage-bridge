@@ -4,6 +4,17 @@
 
 Completed: #38938763356 built the previous code (not the subsequent UI). Source now includes a project context settings dialog with encrypted repository password, last-observed / last-applied revisions, optional preconnected infobase and 1cv8.exe path.
 
+## Platform read-only transport progress (added after last build)
+
+- [x] New independent `org.xander.edt.storagebridge.platform` OSGi/Tycho module, containing only allowlisted 1C Designer history report generation.
+- [x] File/server infobase location and requested version-range models.
+- [x] Bounded `ProcessBuilder` with cancellation, timeout, output limits, temporary-file cleanup, private diagnostics and no credentials in argv.
+- [x] Pure command-construction tests added **but not run**.
+- [ ] Verify against real sample 1C TXT report and encoding; **no revision parser or version UI integration yet**.
+- [ ] Explicit manually requested new CI compilation and runtime smoke tests.
+
+See [read-only report design](READ_ONLY_REPORT.md).
+
 ## Next steps
 
 1. User-authorized **manual** CI build of the new settings/dialog code, review Tycho errors before any retry.
