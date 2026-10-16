@@ -22,7 +22,7 @@ public final class VerifiedReceiveContent {
     private VerifiedReceiveContent() {}
 
     public static Set<String> clearMatchingSelected(IProject project,
-            String repositoryAddress, String branch,
+            String repositoryAddress, String branch, String intermediaryIdentity,
             Set<String> selectedRoots, Set<String> selectedPendingNames,
             Path convertedEdt) throws IOException, BackingStoreException {
         if (project.getLocation() == null || !project.isAccessible()) {
@@ -45,7 +45,8 @@ public final class VerifiedReceiveContent {
         }
         if (!verifiedNames.isEmpty()) {
             ReceivePendingStore.clearVerified(
-                project, repositoryAddress, branch, verifiedNames);
+                project, repositoryAddress, branch, intermediaryIdentity,
+                verifiedNames);
         }
         return Set.copyOf(verifiedNames);
     }
