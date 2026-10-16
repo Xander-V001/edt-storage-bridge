@@ -13,6 +13,14 @@
 - [ ] One user-requested build and real EDT 2026.2 installation.
 - [ ] Verify preferences persistence and secure-password behavior across restarts.
 
+## Prototype developed since last successful CI — receive (UNBUILT)
+- [x] Source of guarded Designer /ConfigurationRepositoryUpdateCfg -force runner (no -revised), no password argv.
+- [x] Source of EDT public IInfobaseSynchronizationManager.retrieveInfobaseChanges adapter; rejects divergent EDT changes.
+- [x] UI "Получить изменения" button, native EDT infobase picker, destructive-action confirmation.
+- [x] Clean task-branch Git preflight; blocked unknown EDT synchronization baseline, canceled operations never advance checkpoint.
+- [ ] **Manual CI compilation, runtime smoke test in disposable EDT 2026.2**, no authorized live user base access.
+- [ ] Exact selected IB identity matching, session/lock checks, authentic version verification, conflict UI.
+
 ## BLOCKER / next technical priority — real receive into existing EDT project
 - [ ] Verify exact 2026.2 API or CLI for **updating an existing project from an infobase**, with merge/conflict preservation.
 - [ ] Complete controlled end-to-end test from disposable 1C repository → connected base → existing EDT project.

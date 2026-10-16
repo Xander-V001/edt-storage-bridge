@@ -35,12 +35,16 @@ The above APIs are evidence from 2025.2 / earlier documentation. **None has been
 - Proof must track the last applied storage revision **per branch** with a corresponding Git baseline SHA, preserve local commits during receive and verify merging of a storage change on a branch with unrelated local task commits.
 - For reverse flow, prove conversion of a selected, contiguous range of *unpublished* Git commits into concrete metadata-object changes, then a verified repository write through the connected base. Git commit hash and 1C revision number are not interchangeable.
 
+## Implementation update (source only)
+
+The first guarded receiving *vertical slice* now exists in source. It calls the public `IInfobaseSynchronizationManager.retrieveInfobaseChanges` API after a user-confirmed Designer `/ConfigurationRepositoryUpdateCfg -force` into an existing connected infobase and uses an EDT-provided conflict resolver without any "override project" operation. It is NOT YET COMPILED OR TESTED ON EDT 2026.2. No update of last applied repository version is performed. Full documented contract: [RECEIVE_CHANGES.md](RECEIVE_CHANGES.md).
+
 ## Current status
 
 [ ] Public documented implementation path confirmed at runtime in EDT 2026.2
 [ ] Minimal end-to-end receive completed on disposable fixture
 [ ] Conflict/new/delete semantics verified
-[ ] Command integrated with form
+[x] Command integrated with form in source; runtime unverified
 [ ] Repository applied-version checkpoint verification implemented
 
 Until these checkboxes are proven, claiming a working synchronization engine is prohibited. **No new CI build, live base access or test command has been run for this document.**

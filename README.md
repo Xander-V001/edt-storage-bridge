@@ -6,7 +6,8 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 
 - Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
 - The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
-- A new independent read-only report transport and decoding tests have been added **after that build** and are uncompiled. No real repository operations are wired into the UI.
+- New read-only history and **two-stage receive command** have been added **after that build**. These changes are UNCOMPILED and have not been tested in EDT.
+- The receive button uses Designer to get classic storage changes into the connected IB, followed by public EDT synchronizer to import changes into the existing EDT project. It will refuse an unknown EDT synchronization baseline or uncommitted Git changes. **Never try it on a valuable base before sandbox tests.**
 - Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
 ## Planned user flow
@@ -27,3 +28,7 @@ Prefer platform-supported operations through an existing connected infobase when
 [UI details](docs/STORAGE_UI.md) · [Architecture](docs/ARCHITECTURE.md) · [ADR 0003](docs/decisions/0003-optional-infobase.md) · [Roadmap](docs/ROADMAP.md) · [Rules](AGENTS.md)
 
 **Builds only on explicit manual request**, not per commit. Do not use user VPS or real infobases/repositories without approval.
+
+## Implemented receive prototype (unverified)
+
+Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying an already-connected infobase and requires choosing the same infobase from EDT's registered list. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).
