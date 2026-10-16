@@ -15,8 +15,10 @@ Import-Package: com._1c.g5.v8.dt.compare.core,
  com._1c.g5.v8.dt.core.platform,
  com._1c.g5.v8.dt.import_,
  com._1c.g5.v8.dt.metadata.mdclass,
+ com._1c.g5.v8.dt.platform.version,
  com._1c.g5.wiring,
  com.google.inject,
  org.eclipse.swt.widgets,
- org.eclipse.ui
+ org.eclipse.ui,
+ org.eclipse.xtext.naming
 Export-Package: org.xander.edt.storagebridge.edt
