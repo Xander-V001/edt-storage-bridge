@@ -4,7 +4,7 @@
 - [x] GitHub repository and baseline documentation
 - [x] Modular Eclipse bundles with a read-only project inspection command (source)
 - [x] Tycho / feature / p2 repository / CI definitions (source)
-- [ ] CI confirmed green and p2 ZIP inspected
+- [x] GitHub Actions Tycho build green; p2 ZIP produced and uploaded (2026-10-16); 3 JUnit tests passed
 - [ ] Manual smoke test with 1C:EDT 2026.1.x
 
 ## Phase 1 — verification

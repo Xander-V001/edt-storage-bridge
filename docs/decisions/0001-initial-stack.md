@@ -6,7 +6,7 @@ The first compiled artifact uses public Eclipse Platform APIs (commands, workben
 
 The official 1C-Company/dt-example-plugins repository provides a more extensive EDT target for 2026.2 that requires specific p2 artifacts and JDK 25. That target will be adopted only after testing targeted EDT releases and confirming credentials.
 
-We choose Java 17 bundle bytecode for an initial cross-version baseline, Maven Tycho 4.0.13 for OSGi/p2 packaging, and GitHub Actions for independent CI. Until smoke tests pass, neither build success nor source code presence means a release is ready.
+We choose Java 17 bundle bytecode for an initial cross-version baseline, Maven Tycho 5.0.2 (with pinned Maven 3.9.9 and build JDK 21) for OSGi/p2 packaging, and GitHub Actions for independent CI. Until smoke tests pass, neither build success nor source code presence means a release is ready.
 
 References:
 - https://github.com/1C-Company/dt-example-plugins
