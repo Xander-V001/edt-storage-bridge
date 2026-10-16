@@ -61,3 +61,35 @@ Official documentation:
 - `StorageSettingsDialog` now wires `Получить изменения` to coordinator, and `VerifiedReceiveContent` checks staged files against EDT project after native editor closure. Matching objects can be cleared, other objects remain pending.
 - This source flow does not automatically determine a true storage/Git common ancestor, and therefore does **not** pretend Git HEAD is the repository source. Objects are *not selected* by default. Not supported yet: confident detection of already-updated intermediary vs unrefreshed EDT branch; revision-history checkpoints verified against classical storage; safe deletion handling; arbitrary unknown object types; roundtrip smoke test and manual build.
 - **Do not call this a functioning installer** until EDT 2026.2 target compile and a disposable Document1/Document2 test both succeed. No CI/build or real IB access was used while editing these sources.
+
+
+## Runtime failure observed in installed 1C:EDT 2026.2.1.3 (2026-10-17)
+
+Build #24 successfully compiled and packaged the plugin (25/25 OSGi unit tests),
+but installation/runtime receiving was **not validated** by that CI run.
+The user's EDT log for 2026-10-17 01:38:19 contains only
+`Storage receive failed: IOException`; the previous handler discarded the
+throwing stage, stack frames, and the actual exception message. The root
+cause of that individual runtime failure therefore cannot be established from
+that log alone. Older, unrelated EDT metadata-validation entries must not be
+attributed to the bridge.
+
+Corrections after build #24 (NOT YET BUILT OR RUNTIME-VERIFIED):
+
+- `ChangedObjectsProbe` now passes `-update` together with
+  `-getChanges` and `-configDumpInfoForChanges`, as required by the 1C
+  command-line contract. It never passes `-force` for detecting changes.
+- Added a headless JUnit regression test for incremental Designer argv and
+  version-only baseline capture; the test has not yet been executed by CI.
+- `ReceiveChangesCoordinator` now reports which stage failed and writes
+  exception **types** and own-code stack locations to the EDT error log.
+  It does not write arbitrary exception messages, shell arguments,
+  connection strings or passwords.
+- It explicitly records whether updating the classical-repository-connected
+  infobase was attempted, and warns that its state may be uncertain after a
+  failure. The configured 1C executable and file-infobase directory are checked
+  before confirmation or any mutating operation.
+
+**Safety gate:** Until the actual infobase's post-failure state and stored
+baseline have been verified, do not retry receiving on a working infobase.
+No new GitHub Actions build was dispatched by these source-only changes.
