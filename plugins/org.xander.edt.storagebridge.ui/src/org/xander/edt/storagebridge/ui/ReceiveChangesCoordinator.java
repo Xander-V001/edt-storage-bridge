@@ -247,6 +247,7 @@ public final class ReceiveChangesCoordinator {
                     if (part == editorReference) {
                         page.removePartListener(this);
                         try {
+                            GitReceiveGuard.requireSameBranchAndHead(project, git);
                             VerifiedReceiveContent.clearMatchingSelected(
                                 project, settings.address(), branch,
                                 selected, selectedPendingNames,

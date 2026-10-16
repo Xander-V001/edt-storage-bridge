@@ -40,6 +40,26 @@ public final class GitReceiveGuard {
         return new Baseline(branch, head);
     }
 
+    /**
+     * Verify branch and HEAD after the native EDT merge. The worktree is
+     * intentionally NOT required to be clean: an accepted merge modifies it.
+     * A branch switch during interactive compare must not acknowledge objects
+     * against an unrelated task branch's pending journal.
+     */
+    public static void requireSameBranchAndHead(IProject project, Baseline before)
+            throws IOException, InterruptedException {
+        if (before == null || project == null || project.getLocation() == null) {
+            throw new IOException("Git receive identity is missing");
+        }
+        Path root = Path.of(project.getLocation().toOSString());
+        String branch = call(root, "branch", "--show-current").trim();
+        String head = call(root, "rev-parse", "HEAD").trim();
+        if (!before.branch().equals(branch) || !before.head().equals(head)) {
+            throw new IOException("Git branch or HEAD changed during EDT merge;"
+                + " pending remote objects are preserved.");
+        }
+    }
+
     public static void requireUnchanged(IProject project, Baseline before)
             throws IOException, InterruptedException {
         Baseline after = requireCleanBranch(project);
