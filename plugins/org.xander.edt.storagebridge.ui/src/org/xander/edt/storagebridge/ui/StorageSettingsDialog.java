@@ -201,7 +201,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     // A JFace TitleAreaDialog is modal. Opening EDT's merge
                     // editor while this dialog remains open would block the
                     // user's ability to interact with the merge editor.
-                    Shell workbenchShell = getShell().getParent();
+                    Composite dialogParent = getShell().getParent();
+                    Shell workbenchShell = dialogParent == null
+                        ? null : dialogParent.getShell();
                     if (workbenchShell == null || workbenchShell.isDisposed()) {
                         setErrorMessage("Окно EDT недоступно для получения изменений.");
                         return;
