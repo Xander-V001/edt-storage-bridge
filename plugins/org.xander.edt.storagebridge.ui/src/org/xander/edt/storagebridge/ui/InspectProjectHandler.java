@@ -9,11 +9,13 @@ import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.swt.SWTException;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
@@ -21,14 +23,18 @@ import org.xander.edt.storagebridge.core.ProjectSnapshot;
 import org.xander.edt.storagebridge.edt.EdtProjectInspector;
 
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 
 /**
  * Read-only asynchronous diagnosis of the selected 1C:EDT workspace project.
+ *
+ * The EDT service is resolved on the Job thread, never while constructing
+ * an Eclipse command handler on the SWT thread.
  */
 public final class InspectProjectHandler extends AbstractHandler {
 
     @Inject
-    private EdtProjectInspector inspector;
+    private Provider<EdtProjectInspector> inspectorProvider;
 
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -59,8 +65,13 @@ public final class InspectProjectHandler extends AbstractHandler {
                 if (monitor.isCanceled()) {
                     return Status.CANCEL_STATUS;
                 }
+                if (!project.isAccessible()) {
+                    postResult(display, shell, "Проект был закрыт до начала проверки: " + snapshot.name());
+                    return Status.CANCEL_STATUS;
+                }
                 try {
-                    boolean available = inspector.hasConfigurationModel(project);
+                    // Both OSGi service lookup and configuration model access occur here.
+                    boolean available = inspectorProvider.get().hasConfigurationModel(project);
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
                     }
@@ -72,13 +83,15 @@ public final class InspectProjectHandler extends AbstractHandler {
                     postResult(display, shell, result);
                     return Status.OK_STATUS;
                 } catch (RuntimeException ex) {
-                    BridgeActivator.getDefault().getLog().log(
-                        new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
-                            "Cannot inspect EDT configuration model", ex));
+                    Status error = new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
+                        "Cannot inspect EDT configuration model", ex);
+                    // Logging is independent from the plug-in activator lifecycle.
+                    if (Platform.isRunning()) {
+                        Platform.getLog(InspectProjectHandler.class).log(error);
+                    }
                     postResult(display, shell, "Проверка модели EDT завершилась с ошибкой. "
                         + "Подробности — в журнале ошибок Eclipse.");
-                    return new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
-                        "Project model inspection failed");
+                    return error;
                 }
             }
         };
@@ -94,8 +107,16 @@ public final class InspectProjectHandler extends AbstractHandler {
     }
 
     private static void postResult(Display display, Shell shell, String text) {
-        if (display != null && !display.isDisposed()) {
+        if (display == null || display.isDisposed()) {
+            return;
+        }
+        try {
             display.asyncExec(() -> show(shell, text));
+        } catch (SWTException ex) {
+            // Workbench shutdown can dispose Display between check and enqueue.
+            if (!display.isDisposed()) {
+                throw ex;
+            }
         }
     }
 

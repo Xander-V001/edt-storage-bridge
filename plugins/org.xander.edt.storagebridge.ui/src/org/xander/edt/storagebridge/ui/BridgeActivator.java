@@ -2,6 +2,7 @@ package org.xander.edt.storagebridge.ui;
 
 import org.eclipse.ui.plugin.AbstractUIPlugin;
 import org.osgi.framework.BundleContext;
+import org.xander.edt.storagebridge.edt.EdtServiceModule;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -34,7 +35,7 @@ public final class BridgeActivator extends AbstractUIPlugin {
 
     public synchronized Injector getInjector() {
         if (injector == null) {
-            injector = Guice.createInjector(new BridgeServiceModule(this));
+            injector = Guice.createInjector(new EdtServiceModule(this));
         }
         return injector;
     }
