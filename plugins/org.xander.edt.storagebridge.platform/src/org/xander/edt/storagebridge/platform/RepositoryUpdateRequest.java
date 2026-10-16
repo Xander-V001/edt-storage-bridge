@@ -9,12 +9,32 @@ import java.util.Objects;
  * 1C infobase. This request never contains user credentials or shell options.
  */
 public record RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
-        Duration timeout) {
+        Duration timeout, String repositoryAddress, String repositoryUsername,
+        String repositoryPassword) {
+
+    /** No explicit repository authentication (e.g. bound base uses saved auth). */
+    public RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
+            Duration timeout) {
+        this(executable, infobase, timeout, "", "", "");
+    }
 
     public RepositoryUpdateRequest {
         Objects.requireNonNull(executable, "executable");
         Objects.requireNonNull(infobase, "infobase");
         Objects.requireNonNull(timeout, "timeout");
+        Objects.requireNonNull(repositoryAddress, "repositoryAddress");
+        Objects.requireNonNull(repositoryUsername, "repositoryUsername");
+        Objects.requireNonNull(repositoryPassword, "repositoryPassword");
+        if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
+                || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())) {
+            throw new IllegalArgumentException(
+                "Repository credentials require repository path and username");
+        }
+        if (repositoryAddress.indexOf('\n') >= 0
+                || repositoryUsername.indexOf('\n') >= 0
+                || repositoryPassword.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("Multiline credentials are unsupported");
+        }
         if (!executable.isAbsolute()) {
             throw new IllegalArgumentException("1C executable must have an absolute path");
         }
