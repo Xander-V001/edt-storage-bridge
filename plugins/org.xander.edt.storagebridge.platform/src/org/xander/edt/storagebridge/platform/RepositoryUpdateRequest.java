@@ -6,7 +6,7 @@ import java.util.Objects;
 
 /**
  * Mutating, explicitly user-approved receive into a pre-existing connected
- * 1C infobase. This request never contains user credentials or shell options.
+ * 1C infobase. Repository credentials are optional and must never be logged.\n * The native Designer command line is visible to privileged local OS users;\n * the caller must warn the user before passing a repository password.
  */
 public record RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
         Duration timeout, String repositoryAddress, String repositoryUsername,
