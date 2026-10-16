@@ -23,7 +23,7 @@ import java.util.function.BooleanSupplier;
 public final class ChangedObjectsProbe {
     private static final long MAX_DIAGNOSTICS = 8L * 1024 * 1024;
 
-    public List<String> command(SelectiveDumpRequest request, Path info,
+    public List<String> command(ChangeDetectionRequest request, Path info,
             Path inspectionDirectory, Path changeFile, Path serviceLog) {
         Objects.requireNonNull(request, "request");
         for (Path path : new Path[]{info, inspectionDirectory, changeFile, serviceLog}) {
@@ -49,7 +49,7 @@ public final class ChangedObjectsProbe {
     }
 
     public ConfigurationChangesParser.ChangeSet detect(
-            SelectiveDumpRequest request, Path verifiedDumpInfo,
+            ChangeDetectionRequest request, Path verifiedDumpInfo,
             BooleanSupplier cancelled) throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(cancelled, "cancelled");
