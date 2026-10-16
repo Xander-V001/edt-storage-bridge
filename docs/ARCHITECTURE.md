@@ -1,29 +1,31 @@
-# Architecture
+# EDT Storage Bridge — architecture (EDT 2026.2)
 
-- **core:** immutable state, validation, future diff/plan engine; no Eclipse UI, Git or 1C transport.
-- **edt:** public EDT Guice/OSGi service adapter; does not access the classic 1C repository.
-- **ui:** project-context command, SWT/JFace form, workspace-scoped preferences, Eclipse Secure Storage, background Jobs.
-- **direct-read repository adapter (planned):** authenticated metadata, current version and changed-object history, strictly read-only.
-- **platform-backed adapter (planned, optional):** isolated connected 1C infobase for Designer-dependent capture/commit operations, only if necessary.
-- **Git adapter (optional):** handles EDT source history separately, never substitutes for repository verification.
+## Components
 
-## Version invariants
+- `core`: validations, immutable domain and future transfer plan, no UI/EDT/1C calls.
+- `edt`: public EDT OSGi/Guice service adapter for read-only model probing, later verified import/export APIs.
+- `ui`: project context command, form, workspace instance preferences, encrypted password, independent remote/applied revision labels.
+- **Read-only repository adapter (planned):** choose either direct documented transport or 1C Designer history report, based on actual capabilities.
+- **Designer adapter (planned):** optional use of a **pre-existing connected infobase** to perform platform-supported repository operations. No rebinding/rewriting/mutating on form save. Strict side-effect safeguards.
+- **Git adapter (optional):** independent branch/commit state, not a classical storage revision.
 
-- `remoteObservedVersion`: latest number actually read from the classical repository.
-- `lastVerifiedAppliedVersion`: latest repository snapshot truly reflected in the EDT workspace after verified synchronization.
-- **No guessed increments.** Failure, canceled operation, partial import, Git commit, or successful Designer exit alone must never advance `lastVerifiedAppliedVersion`.
-- Changing repository address invalidates both stored versions.
+## Important identities
 
-## Proposed safe synchronization
+Each project may have a repository address, repository user/secret, an *optional* connected-base location/mode (`/F` or `/S`), an *optional* `1cv8.exe` path, and two distinct revision counters.
 
-1. Validate current EDT project, repository address/credentials, workspace modifications and storage identity.
-2. Discover remote history/version via read-only transport where supported.
-3. Calculate changed objects and conflicts vs confirmed applied version.
-4. Prepare reversible staged state; only use optional connected infobase if required by a proven supported platform operation.
-5. Import/merge safely into EDT using public APIs, retaining local modifications.
-6. Read target EDT model / repository state to verify success.
-7. Update the confirmed project checkpoint only after verification; retain detailed journal for interrupted/uncertain operations.
+- `observedRemoteVersion`: remote repository version actually read and authenticated.
+- `lastVerifiedAppliedVersion`: last repository version confirmed in EDT after safe synchronization.
 
-For sending changes, support and test capture/commit semantics separately, with read-after-write verification of the **actual** classical repository, not only an intermediary DB.
+Never increment either speculatively; changing repository identity invalidates both. Base connection is not an EDT checkpoint.
 
-No production base/repository writes, secret leakage, unexplained reflection or automatic builds.
+## Operations (design, not yet implemented)
+
+1. **Preflight:** validate workspace/selected project, 1C platform version, repository identity, connected infobase mode/identity, auth availability and captured objects. Validate that repository user is compatible with the already bound base. Do not bind to a different base to 'repair' access.
+2. **Discover:** fetch remote version/history without writing or modifying configuration. Separate report generation from actual receive.
+3. **Plan:** compare only objects that actually changed since the verified applied checkpoint, detect divergent EDT edits and locks. Handle addition, deletion and references.
+4. **Receive:** use public EDT APIs and supported Designer commands if and only if platform semantics require the intermediary connected base; isolate/backup and require explicit user confirmation for any base mutation.
+5. **Verify:** verify resulting EDT objects and external storage state; only then advance applied checkpoint.
+6. **Commit/send:** perform object capture and repository commit with read-after-write verification; uncertain results are not silently retried.
+7. **Recovery:** preserve an operation journal, safely report incomplete phases without false success.
+
+**Constraints:** project-context-only settings, optional connected base, no unapproved production base changes, no secrets in logs, no automatic builds. Prefer reliable supported platform mechanics over fragile direct binary repository writes.

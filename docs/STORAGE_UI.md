@@ -1,46 +1,60 @@
-# UI workflow for classical configuration repository
+# Dialog: «Работа с хранилищем»
 
-Status: source implemented in PR #6, **not yet compiled or installed**.
-Target: 1C:EDT **2026.2**.
+**Target:** 1C:EDT 2026.2. **Status:** source only — these latest dialog changes have not been compiled or smoke-tested. The successful CI run #38938763356 predates this UI.
 
-## User interaction
+## Open
 
-Right-click a project in EDT Navigator or another Eclipse project selection view:
-`Работа с хранилищем → Настройки и состояние`.
+Right click on the workspace project in EDT Navigator → **Работа с хранилищем**. The dialog applies only to that project.
 
-The dialog opens for that specific Eclipse `IProject`. Fields:
-- repository address/path (local path, TCP or HTTP; transport not implemented yet);
-- repository username;
-- repository password (masked SWT input);
-- last observed remote storage version;
-- last successfully applied storage version in the EDT project.
+### Configuration fields
 
-Saving writes address/login and version checkpoints to **workspace instance preferences** keyed by SHA-256 of the project location URI. It does NOT create files in project directories and cannot accidentally commit credentials to Git. The password is encrypted using **Eclipse Secure Storage**, stored separately. Saving aborts on encryption failure. A new repository address invalidates cached versions to prevent confusing different repositories. Username/password changes do not silently change versions.
+| Group | Field | Purpose |
+|---|---|---|
+| Хранилище | Адрес хранилища | Connection address of classic configuration repository |
+| Хранилище | Пользователь | Repository account |
+| Хранилище | Пароль | Encrypted in Eclipse Secure Storage, never stored in project files |
+| Подключённая ИБ 1С (необязательно) | Тип ИБ | Файловая (`/F`) or Серверная (`/S`) |
+| Подключённая ИБ 1С (необязательно) | Каталог ИБ / сервер/имя | File base directory containing `1Cv8.1CD`, or `server/ibName` |
+| Подключённая ИБ 1С (необязательно) | Путь к платформе | Path to installed `1cv8.exe` of the platform version authorized for the storage |
+| Состояние | Версия хранилища | Last **confirmed** remote observed revision |
+| Состояние | Версия проекта EDT | Last **verified successfully applied** revision |
 
-The address must be nonblank. No network test occurs during saving. The settings dialog is intentionally only a form; no unimplemented fetch, push or test button is active. This avoids an apparent false-success UI.
+The file base directory and Windows executable may be selected with **Обзор...**. For server bases, type the cluster/infobase address. Infobase/platform values are **optional**: you can leave both blank for a future direct-read-only transport.
 
-## Two version values: do not conflate
+The dialog currently only saves and loads fields — **no 1C Designer process or storage command is executed**, there is no connection test, no update, and no commit. Settings do not prove the infobase is connected to that repository. Do not display stale versions as current values. A change to the repository address invalidates the version checkpoints.
 
-1. **Remote current version**: last actually observed from the repository by a future read-only transport; it may increase due to other team members. The form currently displays 'Не определена'.
-2. **Applied project checkpoint**: the actual repository revision confirmed as applied to EDT model. It must not be changed by entering settings, reading a remote version, Git checkout or a subprocess exit code alone. The form currently displays 'Не определена'.
+## Why use the existing connected infobase?
 
-`StorageProjectSettings.recordObservedRemoteVersion()` and
-`StorageProjectSettings.recordVerifiedAppliedVersion()` are **future coordinator hooks**, not called by UI. They must be invoked only after their respective transport and verification success. Applied revisions are actual repository revision numbers; never calculate them as previous+1.
+The official 1C methodology calls a connected infobase the primary mode for group development, where capture, receive and commit adhere to the platform's locking and object dependency rules. It also warns that one repository user has one bound infobase identity; forcibly rebinding another base can break the original connection.
 
-## Why an intermediate 1C infobase is not an assumption
+For our plugin, reusing an existing dedicated connected base can avoid provisioning a new disposable infobase and provide a supported Designer-command execution context. We should prefer it for **operations requiring classical repository semantics**, after validating identity, user, platform version and current captures. It is **not** proof that we may modify the user's working base without a separate explicit authorization. Read-only history reports may be run through the base only after reviewing their side effects and connection lock implications.
 
-- An existing plugin (ZigRinat85/PluginEDT) describes using a repository-connected 1C infobase for locking, receiving and committing, then importing to EDT: https://infostart.ru/1c/articles/2442956/
-- gitsync/v8storage documents direct repository read and export, and a persisted `VERSION` value: https://github.com/oscript-library/gitsync and https://github.com/oscript-library/v8storage
-- Platform DESIGNER update and repository commit commands are typically executed in an infobase context; direct read-only metadata and full bidirectional write have different requirements.
-- Architectural decision: prefer a **direct read-only adapter** for remote version/history. Prototype and benchmark safe write mechanisms. An isolated connected infobase is an **optional transport adapter only where required by the platform**. Never use a user's production infobase without explicit instruction.
+A *direct read-only* adapter (e.g., supported `v8storage` integration) remains an alternative for querying revision/history without using an infobase. Choosing transport per action is an implementation decision, not exposed as complexity in the main dialog.
 
-## Acceptance tests after next user-approved build
+**Official sources:**
+- Connected vs unconnected mode, bound user and object-locking semantics: https://its.1c.ru/db/content/metod8dev/src/developers/platform/metod/devtools/i8102287.htm
+- Designer repository report/update/dump commands: https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/
+- File `/F` and server `/S` parameters: https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.3._General_startup_commands/7.3.1._Connection_parameters/
 
-1. Confirm project-context menu appears in the **actual 1C:EDT 2026.2 Navigator** (not only Eclipse Project Explorer).
-2. Open the settings dialog and save address/login/password; close and reopen to confirm persistence.
-3. Check that password is not visible in plain workspace or project files and remains masked in UI.
-4. Verify two unknown version labels before any genuine repository contact.
-5. Change repository address and check both version checkpoints are invalidated.
-6. Close/rename/reopen project; check behavior and record any project location identity changes.
-7. Test failure or locked Eclipse Secure Storage; no secret must fall back to plain settings.
-8. Install ZIP in isolated EDT; no repository writes, platform commands, or Git changes occur.
+## Storage and security
+
+All non-secret fields reside in Eclipse workspace instance preferences **per project**, keyed by SHA-256 of its project location URI. Passwords go through Eclipse Secure Storage, with encryption failure blocking save. No credentials, local file paths, or version checkpoints are written into the source project/Git.
+
+For future operations, infobase credentials (if needed) must be handled *separately* from repository credentials. No password arguments may be echoed into logs.
+
+## Version invariants
+
+- Observed remote version is updated only after a genuine authenticated read from the correct storage.
+- Applied EDT version is updated only after the imported changes have been verified in the EDT model.
+- Version changes are **not** calculated using plus-one; numbers belong to the storage history.
+- Saving form values, dumping a .cf, executing Designer or committing Git does not itself advance the applied checkpoint.
+
+## Next permitted steps
+
+1. User-authorized **manual** build against EDT 2026.2.
+2. Install and test project context menu/dialog in real EDT.
+3. Validate file/server path round-trip and Eclipse Secure Storage, including reopen and errors.
+4. Build a read-only connection/version/status probe against a **disposable test repository/infobase**, compare direct access and Designer-based reporting.
+5. Later: explicit safety confirmation before accessing the existing connected base (identify whether it is dedicated, has other users or captured objects, and whether operations can alter it).
+
+Never assume that a user's permission to store the base path is permission to launch Designer, receive/update configurations or modify the base.

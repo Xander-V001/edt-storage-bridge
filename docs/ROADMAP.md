@@ -1,36 +1,35 @@
-# Roadmap (target 1C:EDT 2026.2)
+# Roadmap — 1C:EDT 2026.2
 
-## Phase 0 — baseline
-- [x] Repo, modular bundles, manually triggered GitHub Actions and artifact cleanup
-- [x] Successful **manual** 1C:EDT 2026.2 Tycho build: GitHub Actions #38938763356, all modules; 3 JUnit tests passed
-- [x] p2 ZIP generated; not installed/smoke-tested in a live EDT session
+## Stage 0 — baseline (done)
+- [x] Module skeleton (core/edt/ui), Maven Tycho 5.0.2, Java 25, official EDT target.
+- [x] CI manual-only, artifact cleanup; #38938763356 success, 3 JUnit tests.
+- [ ] Live install and smoke test.
 
-## Phase 1 — plugin UI and project settings
-- [x] Context command `Работа с хранилищем`, project-specific connection/settings form in source
-- [x] Masked password in Eclipse Secure Storage, address/login in workspace-only instance preferences
-- [x] Independent remote-observed and EDT-applied revision fields, displayed as unknown until verified
-- [ ] **Manual build and runtime smoke test of new UI code** when user explicitly requests
-- [ ] Confirm command is visible in actual EDT 2026.2 Navigator
-- [ ] Test password re-open and storage changes without leaking secrets
+## Stage 1 — project context UI (source changes only)
+- [x] Right-click project → Работа с хранилищем.
+- [x] Repository address/user + encrypted Eclipse Secure Storage password.
+- [x] Optional connected infobase mode File (/F) / Server (/S), location, installed platform 1cv8.exe path with browse buttons.
+- [x] Two separate persisted revisions; never invent/advance on save.
+- [ ] One user-requested build and real EDT 2026.2 installation.
+- [ ] Verify preferences persistence and secure-password behavior across restarts.
 
-## Phase 2 — read-only classic configuration repository
-- [ ] Confirm supported read-only transport (direct where feasible); interrogate test repository
-- [ ] Show current remote version, history and changes with authenticated request
-- [ ] Persist observed remote version ONLY after confirmed response; no guessed increments
-- [ ] Compare speed/direct-access availability against staging-base alternatives
+## Stage 2 — safe connection and read-only inspection
+- [ ] Validate configured connected-base identity and compatible repository user **without rebinding**.
+- [ ] Test version/history access using documented Designer report and direct transport.
+- [ ] Select transport with actual evidence: correct results, side effects, performance.
+- [ ] Show live remote revision and list of changed repository objects.
+- [ ] Update last-observed remote revision only after verification.
 
-## Phase 3 — receive into EDT
-- [ ] Detect local changes/conflicts and reconcile safely
-- [ ] Implement import/reconciliation through public EDT API
-- [ ] Make isolated staging database **optional**, only if required for verified platform commands
-- [ ] Persist last-applied checkpoint **only after successful verified import**
+## Stage 3 — receive from repository
+- [ ] Object-level plan, conflict checks, dependency-aware receive.
+- [ ] Approved use of existing connected base where platform operations require it.
+- [ ] Public EDT import, outcome verification, applied revision checkpoint and recovery journal.
 
-## Phase 4 — send to 1C configuration repository
-- [ ] Validate object locks and concurrent version changes
-- [ ] Staging/export, platform-backed upload and read-after-write verification
-- [ ] Recovery journal with no false success
+## Stage 4 — capture/commit to repository
+- [ ] Check other captures and concurrent versions, verify platform/infobase state.
+- [ ] Capture, apply and commit using proven supported operations, no destructive force switches by default.
+- [ ] Verify repository new version and safe rollback/recovery paths.
 
-## Phase 5 — optimize and distribute
-- [ ] Benchmark large real configurations and object-level changes
-- [ ] Add safe incremental-only transfer when supported
-- [ ] Versioned installer and reliable upgrade workflow
+## Stage 5 — performance/distribution
+- [ ] Benchmark large configurations, optimize delta transfer and caching.
+- [ ] Repeatable smoke tests, signed p2/release workflow.

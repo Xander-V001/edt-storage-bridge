@@ -1,24 +1,28 @@
 # EDT Storage Bridge
 
-Независимый плагин для **1C:EDT 2026.2** и классического хранилища конфигурации 1С.
+Independently developed extension for **1C:EDT 2026.2** and classic 1C configuration repositories.
 
-**Статус:** предварительная разработка. Последняя успешная сборка **#38938763356** прошла на Java 25 и официальной target platform EDT 2026.2 (3 JUnit-теста), но не проверялась установкой в EDT. **Новый код меню и окна настроек добавлен после неё и ещё не собран.** Реальный обмен с хранилищем не реализован.
+## Status
 
-## Новый интерфейс (исходники, не протестировано)
+- Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
+- **New UI fields have NOT yet been compiled or installed.** No remote repository operations are implemented.
+- Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
-- Правая кнопка на проекте → **«Работа с хранилищем»** → открывается окно конкретного EDT-проекта.
-- Адрес, пользователь, пароль хранилища; последние сохранены между запусками.
-- Пароль сохраняется только в защищённом хранилище Eclipse (не в Git / исходниках / файлах проекта).
-- Раздельные показатели: **последняя обнаруженная версия хранилища** и **последняя подтверждённо применённая версия проекта EDT**.
-- До реализации удалённого чтения обе версии отображаются как «Не определена». Сохранение адреса не подключается к серверу и не повышает версии.
+## Planned user flow
 
-Исходники: `core`, `edt` (публичные сервисы EDT), `ui` (диалог, меню, локальные настройки), Eclipse feature/p2.
-Документация: [форма](docs/STORAGE_UI.md), [архитектура](docs/ARCHITECTURE.md), [дорожная карта](docs/ROADMAP.md), [правила](AGENTS.md).
+Right-click a project in EDT Navigator → **Работа с хранилищем**. The per-project dialog lets you save:
 
-## Стратегия обмена
+- repository address, user and securely encrypted password;
+- **optional** already-connected 1C infobase (file directory or server/infobase name);
+- **optional** path to the installed platform executable (`1cv8.exe`);
+- observed remote revision and verified locally applied revision (both unknown until real verification).
 
-Сначала **прямой доступ для чтения** к хранилищу (версия, история, список изменений), если доступен поддерживаемый механизм. Промежуточная база 1С **не обязательна**. Если для захвата и помещения объектов платформа требует подключённую базу, реализуем этот путь как отдельный адаптер и только после тестирования на изолированной базе.
+Only settings persist. Entering them never launches Designer, connects to the base or changes data.
 
-**Git, EDT, хранилище 1С и возможная промежуточная база — независимые состояния.** Последнюю применённую версию нельзя менять до фактической проверки результата импорта.
+## Integration strategy
 
-Сборки **только по прямому запросу**, без CI на каждый коммит. Рабочие 1С-хранилища и VPS без разрешения не трогаем.
+Prefer platform-supported operations through an existing connected infobase when needed. Direct supported read-only access remains a candidate for repository history and version queries. Before any receive or commit, inspect locks, identity and divergence and require explicit consent to modify the base. Keep Git and EDT project revisions separate from the classical repository.
+
+[UI details](docs/STORAGE_UI.md) · [Architecture](docs/ARCHITECTURE.md) · [ADR 0003](docs/decisions/0003-optional-infobase.md) · [Roadmap](docs/ROADMAP.md) · [Rules](AGENTS.md)
+
+**Builds only on explicit manual request**, not per commit. Do not use user VPS or real infobases/repositories without approval.
