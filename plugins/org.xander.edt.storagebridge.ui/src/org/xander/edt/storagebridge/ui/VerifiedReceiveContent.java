@@ -22,8 +22,8 @@ public final class VerifiedReceiveContent {
 
     public static Set<String> clearMatchingSelected(IProject project,
             String repositoryAddress, String branch,
-            Set<String> selected, Path convertedEdt)
-            throws IOException, BackingStoreException {
+            Set<String> selectedRoots, Set<String> selectedPendingNames,
+            Path convertedEdt) throws IOException, BackingStoreException {
         if (project.getLocation() == null || !project.isAccessible()) {
             throw new IOException("EDT project is not available for verification");
         }
@@ -32,17 +32,21 @@ public final class VerifiedReceiveContent {
         if (stage.startsWith(projectRoot) || projectRoot.startsWith(stage)) {
             throw new IOException("Invalid receive staging root");
         }
-        Set<String> verified = new LinkedHashSet<>();
-        for (String object : selected) {
-            if (isExactlyApplied(projectRoot, stage, object)) {
-                verified.add(object);
+        Set<String> verifiedNames = new LinkedHashSet<>();
+        for (String root : selectedRoots) {
+            if (isExactlyApplied(projectRoot, stage, root)) {
+                for (String pendingName : selectedPendingNames) {
+                    if (ReceiveChangesCoordinator.topObject(pendingName).equals(root)) {
+                        verifiedNames.add(pendingName);
+                    }
+                }
             }
         }
-        if (!verified.isEmpty()) {
+        if (!verifiedNames.isEmpty()) {
             ReceivePendingStore.clearVerified(
-                project, repositoryAddress, branch, verified);
+                project, repositoryAddress, branch, verifiedNames);
         }
-        return Set.copyOf(verified);
+        return Set.copyOf(verifiedNames);
     }
 
     private static boolean isExactlyApplied(Path projectRoot, Path stage,
