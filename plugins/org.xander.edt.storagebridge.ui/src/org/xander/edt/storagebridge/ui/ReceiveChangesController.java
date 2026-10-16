@@ -1,6 +1,8 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
 
 import org.eclipse.core.resources.IProject;
@@ -30,6 +32,7 @@ import com._1c.g5.v8.dt.platform.services.ui.infobases.InfobaseSelectDialog;
  * base, confirmed by the user. Automatic address mapping is pending.
  */
 public final class ReceiveChangesController {
+    private static final Set<IProject> ACTIVE_PROJECTS = ConcurrentHashMap.newKeySet();
 
     private ReceiveChangesController() {
     }
@@ -97,6 +100,11 @@ public final class ReceiveChangesController {
         if (!approved) {
             return;
         }
+        if (!ACTIVE_PROJECTS.add(project)) {
+            MessageDialog.openInformation(shell, "Работа с хранилищем",
+                "Для этого проекта уже выполняется получение.");
+            return;
+        }
         Job task = new Job("EDT Storage Bridge — получить изменения") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
@@ -151,12 +159,14 @@ public final class ReceiveChangesController {
                     return new Status(IStatus.ERROR, BridgeActivator.PLUGIN_ID,
                         "Repository receive did not reach a verified completed state");
                 } finally {
+                    ACTIVE_PROJECTS.remove(project);
                     monitor.done();
                 }
             }
         };
         task.setUser(true);
-        task.setRule(project);
+        // Do NOT claim the IProject scheduling rule: EDT synchronization may
+        // schedule child project jobs and would deadlock waiting for our rule.
         task.schedule();
     }
 
