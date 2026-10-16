@@ -2,6 +2,7 @@ package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -52,35 +53,91 @@ public final class VerifiedReceiveContent {
     private static boolean isExactlyApplied(Path projectRoot, Path stage,
             String classicalObject) throws IOException {
         String owner = EdtSelectiveReviewService.edtOwner(classicalObject);
-        Path stagedFolder = stage.resolve("src").resolve(owner);
-        Path projectFolder = projectRoot.resolve("src").resolve(owner);
-        boolean sawFile = false;
-        if (Files.isDirectory(stagedFolder)) {
-            try (Stream<Path> files = Files.walk(stagedFolder)) {
-                for (Path stagedFile : files.filter(Files::isRegularFile).toList()) {
-                    sawFile = true;
-                    Path relative = stagedFolder.relativize(stagedFile);
-                    Path projectFile = projectFolder.resolve(relative);
-                    if (!Files.isRegularFile(projectFile)
-                            || Files.size(projectFile) != Files.size(stagedFile)
-                            || Files.mismatch(stagedFile, projectFile) != -1) {
-                        return false;
-                    }
-                }
+        Path source = stage.resolve("src").resolve(owner);
+        Path target = projectRoot.resolve("src").resolve(owner);
+        // Compare BOTH directions. Checking only staged -> project files could
+        // erroneously clear a pending object when a locally changed module or
+        // additional form remains in the EDT project.
+        boolean stageDir = Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS);
+        boolean projectDir = Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS);
+        if (stageDir != projectDir) {
+            return false;
+        }
+        boolean sawData = false;
+        if (stageDir) {
+            if (!equalFileTrees(source, target)) {
+                return false;
+            }
+            try (Stream<Path> files = Files.walk(source)) {
+                sawData = files.anyMatch(p ->
+                    Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS));
             }
         }
-        // Some EDT objects use src/<group>/<name>.mdo directly, others use
-        // src/<group>/<name>/<name>.mdo. Both must be verified if present.
-        Path flat = stage.resolve("src").resolve(owner + ".mdo");
-        if (Files.isRegularFile(flat)) {
-            sawFile = true;
-            Path local = projectRoot.resolve("src").resolve(owner + ".mdo");
-            if (!Files.isRegularFile(local)
-                    || Files.size(local) != Files.size(flat)
-                    || Files.mismatch(flat, local) != -1) {
+        // Some EDT objects have a flat src/<type>/<name>.mdo while others
+        // also include a directory src/<type>/<name>/.
+        Path flatStage = stage.resolve("src").resolve(owner + ".mdo");
+        Path flatProject = projectRoot.resolve("src").resolve(owner + ".mdo");
+        boolean stageFlat = Files.isRegularFile(flatStage,
+            LinkOption.NOFOLLOW_LINKS);
+        boolean projectFlat = Files.isRegularFile(flatProject,
+            LinkOption.NOFOLLOW_LINKS);
+        if (stageFlat != projectFlat) {
+            return false;
+        }
+        if (stageFlat) {
+            sawData = true;
+            if (!equalFile(flatStage, flatProject)) {
                 return false;
             }
         }
-        return sawFile;
+        return sawData;
+    }
+
+    private static boolean equalFileTrees(Path left, Path right)
+            throws IOException {
+        try (Stream<Path> leftTree = Files.walk(left);
+             Stream<Path> rightTree = Files.walk(right)) {
+            Set<Path> a = new LinkedHashSet<>();
+            Set<Path> b = new LinkedHashSet<>();
+            for (Path file : leftTree.toList()) {
+                if (Files.isSymbolicLink(file)) {
+                    return false;
+                }
+                a.add(left.relativize(file));
+            }
+            for (Path file : rightTree.toList()) {
+                if (Files.isSymbolicLink(file)) {
+                    return false;
+                }
+                b.add(right.relativize(file));
+            }
+            if (!a.equals(b)) {
+                return false;
+            }
+            for (Path rel : a) {
+                Path first = left.resolve(rel);
+                Path second = right.resolve(rel);
+                boolean file = Files.isRegularFile(first,
+                    LinkOption.NOFOLLOW_LINKS);
+                if (file != Files.isRegularFile(second,
+                        LinkOption.NOFOLLOW_LINKS)) {
+                    return false;
+                }
+                if (file && !equalFile(first, second)) {
+                    return false;
+                }
+                if (!file && (!Files.isDirectory(first, LinkOption.NOFOLLOW_LINKS)
+                        || !Files.isDirectory(second, LinkOption.NOFOLLOW_LINKS))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static boolean equalFile(Path a, Path b) throws IOException {
+        return !Files.isSymbolicLink(a) && !Files.isSymbolicLink(b)
+            && Files.size(a) == Files.size(b)
+            && Files.mismatch(a, b) == -1L;
     }
 }
