@@ -7,7 +7,12 @@ Bundle-Vendor: Xander-V001
 Bundle-RequiredExecutionEnvironment: JavaSE-25
 Require-Bundle: org.eclipse.core.resources,
  org.eclipse.core.runtime
-Import-Package: com._1c.g5.v8.dt.core.platform,
+Import-Package: com._1c.g5.v8.dt.compare.core,
+ com._1c.g5.v8.dt.compare.datasource,
+ com._1c.g5.v8.dt.compare.matching,
+ com._1c.g5.v8.dt.compare.ui.editor,
+ com._1c.g5.v8.dt.core.platform,
+ com._1c.g5.v8.dt.import_,
  com._1c.g5.v8.dt.metadata.mdclass,
  com._1c.g5.wiring,
  com.google.inject
