@@ -5,8 +5,8 @@
 ## Actual implemented call chain
 
 1. Project → **Работа с хранилищем** → **Получить изменения (тестовый режим)**.
-2. Save existing connection settings; select an IB from the official EDT registry.
-3. `InfobaseIdentityMatcher`: require an exact physical file-directory match (`FileConnectionString` with `Files.isSameFile`) or an exact normalized server/infobase pair (`ServerConnectionString`). Reject wrong/ambiguous types and unavailable paths.
+2. Save the configured existing repository-connected IB address. Search EDT's registered IB references automatically for an **exact physical connection match**, not by display name or manual selection among other attached databases.
+3. `InfobaseIdentityMatcher`: require an exact physical file-directory match (`FileConnectionString` with `Files.isSameFile`) or an exact server/infobase pair (`ServerConnectionString`). Require exactly one matching EDT registration; fail if none or several. **Do not touch any of the other 1…100 IBs associated with this EDT project.**
 4. Require EDT already connected to that IB and containing a prior sync baseline (`isConnected`, `hasSynchronizationInfo`), with no active synchronization. Do not silently connect or bind any base.
 5. On the SWT UI thread construct EDT's own **`InfobaseUpdateDialogBasedCallback`**, single-use for this receive. This is a public EDT 2025.2 API that uses EDT comparison editor and merge manager. Disable its "override the infobase with EDT changes" choice via `setAllowOverrideConflict(false)`.
 6. Show explicit confirmation that Designer will change the connected infobase configuration. After user confirmation, close the settings dialog so it cannot block the compare/merge editor.

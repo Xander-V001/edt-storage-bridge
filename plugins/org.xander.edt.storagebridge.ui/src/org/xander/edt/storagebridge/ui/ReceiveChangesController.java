@@ -1,6 +1,8 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,7 +14,6 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.equinox.security.storage.StorageException;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.window.Window;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbenchWindow;
@@ -25,14 +26,14 @@ import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseChangesResolver;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
 import com._1c.g5.v8.dt.platform.services.model.InfobaseReference;
-import com._1c.g5.v8.dt.platform.services.ui.infobases.InfobaseSelectDialog;
 
 /**
  * User-triggered classic storage receive into a connected IB, followed by
  * the native EDT interactive compare/merge into the existing Git task branch.
  *
- * <p>Never updates a Git branch, creates a technical branch, resets Git state,
- * or marks a classical repository revision as fully applied.
+ * <p>Uses ONLY the configured repository-connected IB; no manual selection
+ * among other EDT databases. Never updates Git, creates helper branches,
+ * resets Git state or marks the repository revision as fully applied.
  * The callback and its comparison UI belong to EDT, not this plugin.
  */
 public final class ReceiveChangesController {
@@ -94,25 +95,35 @@ public final class ReceiveChangesController {
             return false;
         }
 
-        InfobaseSelectDialog chooser = new InfobaseSelectDialog(
-            dialogShell, edt.infobaseManager(), null, null,
-            "Выберите ИБ, уже связанную с этим проектом EDT.");
-        if (chooser.open() != Window.OK) {
-            return false;
+        // The source is the explicitly configured repository-connected IB,
+        // NOT an arbitrary IB selected from the project's many attached bases.
+        // EDT registrations are read-only; never add, rebind or change them here.
+        List<InfobaseReference> matches = new ArrayList<>();
+        var references = edt.infobaseManager().getInfobasesResource().getAllContents();
+        while (references.hasNext()) {
+            Object reference = references.next();
+            if (reference instanceof InfobaseReference candidate
+                    && InfobaseIdentityMatcher.matches(candidate,
+                        settings.infobaseType(), settings.infobaseAddress())) {
+                matches.add(candidate);
+            }
         }
-        InfobaseReference selected = chooser.getSelectedInfobase().orElse(null);
-        if (!InfobaseIdentityMatcher.matches(
-                selected, settings.infobaseType(), settings.infobaseAddress())) {
+        if (matches.size() != 1) {
             MessageDialog.openError(dialogShell, "Работа с хранилищем",
-                "Выбранная в EDT ИБ не совпадает с адресом ИБ в настройках. "
-                + "Получение остановлено до изменения каких-либо данных.");
+                matches.isEmpty()
+                    ? "База, подключённая к хранилищу, не зарегистрирована в EDT. "
+                        + "Получение остановлено: другие базы проекта не выбираются."
+                    : "База, подключённая к хранилищу, зарегистрирована в EDT "
+                        + "несколько раз. Невозможно однозначно определить источник.");
             return false;
         }
+        InfobaseReference selected = matches.get(0);
         // This is BEFORE launching Designer or any command that can change the IB.
         if (!edt.hasKnownBaseline(project, selected)) {
             MessageDialog.openError(dialogShell, "Работа с хранилищем",
-                "EDT не имеет подтверждённой синхронизации этого проекта с "
-                + "выбранной ИБ. Сначала установите связь штатными средствами EDT.");
+                "Существующая база, подключённая к хранилищу, найдена, "
+                + "но у проекта EDT нет подтверждённой синхронизации с ней. "
+                + "Не станем выбирать другую базу или изменять связи автоматически.");
             return false;
         }
 
@@ -126,7 +137,7 @@ public final class ReceiveChangesController {
         }
         boolean approved = MessageDialog.openConfirm(dialogShell,
             "Подтвердите получение",
-            "Будет изменена конфигурация подключённой ИБ:\n"
+            "Будет изменена конфигурация базы, подключённой к хранилищу:\n"
                 + settings.infobaseAddress() + "\n\n"
                 + "Не должно быть незавершённых изменений и захватов "
                 + "в Конфигураторе.\n"

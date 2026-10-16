@@ -25,7 +25,7 @@ Import-Package: com._1c.g5.wiring,
  com._1c.g5.v8.dt.platform.services.core.infobases,
  com._1c.g5.v8.dt.platform.services.core.infobases.sync,
  com._1c.g5.v8.dt.platform.services.model,
- com._1c.g5.v8.dt.platform.services.ui.infobases,
  com.google.inject,
+ org.eclipse.emf.ecore,
  org.osgi.framework,
  org.osgi.service.prefs
