@@ -38,6 +38,7 @@ public final class GitObjectDivergenceGuard {
             throw new IOException("Verified Git baseline is required");
         }
         Path projectPath = Path.of(project.getLocation().toOSString()).toRealPath();
+        requireAncestor(projectPath, verifiedBaselineSha);
         // --relative makes paths relative to this EDT project even when the
         // Git repository root is above the project directory.
         byte[] names = gitDiff(projectPath, verifiedBaselineSha);
@@ -65,6 +66,28 @@ public final class GitObjectDivergenceGuard {
             throw new IOException("Truncated NUL-delimited Git diff");
         }
         return new Result(objects, unknown);
+    }
+
+    private static void requireAncestor(Path project, String sha)
+            throws IOException, InterruptedException {
+        var process = new ProcessBuilder("git", "-C", project.toString(),
+                "merge-base", "--is-ancestor", sha, "HEAD")
+            .redirectErrorStream(true)
+            .start();
+        try {
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IOException("Git ancestry verification timed out");
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException(
+                    "Stored Git baseline is not an ancestor of current HEAD");
+            }
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
     }
 
     private static byte[] gitDiff(Path project, String sha)
