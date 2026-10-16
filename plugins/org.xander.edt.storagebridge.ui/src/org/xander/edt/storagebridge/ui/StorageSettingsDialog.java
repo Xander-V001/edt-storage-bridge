@@ -152,10 +152,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             formatVersion(saved == null ? -1 : saved.appliedVersion()));
 
         Label note = new Label(content, SWT.WRAP);
-        note.setText("База хранилища не обязана быть связана с проектом EDT. "
-            + "Обновление ещё разрабатывается: только выборочная выгрузка "
-            + "изменённых объектов и безопасное сравнение. "
-            + "Все базы и текущий проект остаются неизменными.");
+        note.setText("Получение обновит только существующую базу хранилища "
+            + "после подтверждения. Затем можно выбрать отдельные объекты "
+            + "для сравнения и объединения с EDT. Непринятые объекты "
+            + "останутся в журнале. Другие базы EDT не используются.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
@@ -194,8 +194,14 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     @Override
     protected void buttonPressed(int buttonId) {
         if (buttonId == RECEIVE_BUTTON_ID) {
-            setErrorMessage("Получение заблокировано до реализации "
-                + "выборочного объединения без связи базы хранилища с EDT.");
+            if (saveSettings()) {
+                try {
+                    ReceiveChangesCoordinator.receive(
+                        getShell(), project, StorageProjectSettings.load(project));
+                } catch (StorageException ex) {
+                    setErrorMessage("Не удалось получить настройки Secure Storage.");
+                }
+            }
             return;
         }
         super.buttonPressed(buttonId);
@@ -227,10 +233,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     @Override
     protected void createButtonsForButtonBar(Composite parent) {
         Button receive = createButton(parent, RECEIVE_BUTTON_ID,
-            "Получить изменения (разрабатывается)", false);
-        receive.setEnabled(false);
-        receive.setToolTipText("База-посредник не связана с EDT. "
-            + "Полная выгрузка и импорт XML запрещены.");
+            "Получить изменения", false);
+        receive.setEnabled(saved != null);
+        receive.setToolTipText("Выборочное получение с подтверждением "
+            + "обновления базы, ручным выбором объектов и штатным сравнением EDT.");
         createButton(parent, IDialogConstants.OK_ID, "Сохранить", true);
         createButton(parent, IDialogConstants.CANCEL_ID, "Отмена", false);
     }
