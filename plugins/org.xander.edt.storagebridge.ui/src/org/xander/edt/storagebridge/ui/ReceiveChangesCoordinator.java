@@ -22,6 +22,7 @@ import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
@@ -193,6 +194,12 @@ public final class ReceiveChangesCoordinator {
                 throw new IOException("EDT comparison editor failed to initialize");
             }
             final IWorkbenchPage page = editor.getSite().getPage();
+            final IEditorReference editorReference = java.util.Arrays
+                .stream(page.getEditorReferences())
+                .filter(reference -> reference.getEditor(false) == editor)
+                .findFirst()
+                .orElseThrow(() -> new IOException(
+                    "EDT editor reference is not available"));
             final Path retainedConverted = conversionRoot;
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             // Compare is interactive. The editor may stay open after this
@@ -200,7 +207,7 @@ public final class ReceiveChangesCoordinator {
             IPartListener2 listener = new IPartListener2() {
                 @Override
                 public void partClosed(IWorkbenchPartReference part) {
-                    if (part.getPart(false) == editor) {
+                    if (part == editorReference) {
                         page.removePartListener(this);
                         try {
                             VerifiedReceiveContent.clearMatchingSelected(
