@@ -44,3 +44,10 @@ Official documentation:
 - `EdtPathObjectMapperTest`, `ConfigurationChangesParserTest` were added as source; **neither compiled nor executed**.
 
 **Still missing:** provisioning/validating the initial ConfigDumpInfo baseline and its relation to a classic storage version, invoking current Designer update after permitted preflight, mapping classic 1C MD names to EDT symlinks, selecting the actual EDT importer implementation, opening the EDT editor through compatible runtime API, preserving pending skipped objects and end-to-end conflict test. These components are source-level integration seams, **not a working receive button**. Build and test remain manual only after explicit user request.
+
+## Version-only baseline capture and selective staging (2026-10-17, source only)
+
+- `ConfigVersionSnapshotRunner` uses **only** `/DumpConfigToFiles -configDumpInfoOnly -Format Hierarchical` against the existing repository-bound base, producing a temporary `ConfigDumpInfo.xml` without all metadata XML. This baseline is valid ONLY for the base's state at that moment; it **must not** be labeled an earlier repository revision without verification. No production operations were run.
+- `SelectiveReceiveStagingService` now joins `ChangedObjectsProbe.detect` to `SelectiveDumpRunner.export` for the SAME existing base and carries the staged XML as a Closeable result. Empty changes skip export; `FullDump` and unknown change types fail closed.
+- `ConfigurationChangesParser.objectsToExport` now includes independently developed `Form`, `Template`, `Recalculation` and `Subsystem` children explicitly, instead of losing them by exporting only the parent. Includes a regression source test.
+- Still NOT built/tested under EDT 2026.2 and NOT connected to receive UI. Missing verified repository-revision-to-baseline relationship, EDT scope mapping, compare-editor opening and merge outcomes/checkpoints. No user baselines or Git refs were touched.
