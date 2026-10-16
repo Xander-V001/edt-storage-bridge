@@ -13,6 +13,13 @@
 - [ ] One user-requested build and real EDT 2026.2 installation.
 - [ ] Verify preferences persistence and secure-password behavior across restarts.
 
+## BLOCKER / next technical priority — real receive into existing EDT project
+- [ ] Verify exact 2026.2 API or CLI for **updating an existing project from an infobase**, with merge/conflict preservation.
+- [ ] Complete controlled end-to-end test from disposable 1C repository → connected base → existing EDT project.
+- [ ] Test divergent local edits, new and deleted objects; never mark applied revision on partial success.
+- [ ] Implement minimal user-invoked receive action after proving mechanism.
+- See [critical-path proof](END_TO_END_RECEIVE_PROOF.md). Additional history parser/UI work is secondary until this is proven.
+
 ## Stage 2 — safe connection and read-only inspection
 - [x] Read-only 1C Designer history-report module and bounded process runner (source only; not built)
 - [x] TXT UTF-8/UTF-16 BOM decoder and pure tests (added, not run)
