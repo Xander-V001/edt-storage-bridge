@@ -1,0 +1,23 @@
+# Project rules — EDT Storage Bridge
+
+These rules are binding for all development in this repository and chat.
+
+## CI resources
+1. **Never start a build or tests after every commit.** GitHub Actions build/test workflows must use `workflow_dispatch` only. No automatic builds on push, pull requests, merging, cron schedules, release events, or branch changes.
+2. **Do not manually dispatch a build without an explicit user request for that specific build.** No hidden or duplicate builds. Reviewing Java/XML, creating commits, PRs or merging must not trigger compilation.
+3. **Avoid artifact accumulation.** After every manually requested successful build, delete obsolete artifacts from earlier builds while retaining one newest `edt-storage-bridge-p2` archive and one newest diagnostics artifact (if any). Newly uploaded artifacts expire after 3 days. A separate **manual** `Cleanup old build artifacts` workflow handles already accumulated artifacts without compiling code.
+4. Cleanup is scoped to artifacts named `edt-storage-bridge-p2` and `tycho-test-reports`; never delete unrelated project artifacts or GitHub releases.
+5. Keep GitHub Actions time usage minimal. Avoid duplicate jobs or matrix builds until explicitly approved.
+
+## Safety
+6. Never use the user's VPS to build, test, host, or run this project without explicit permission.
+7. Never write to a working 1C infobase or configuration repository for development/testing. Only isolated disposable test data may be used with explicit agreement.
+8. No credentials, session tokens or local machine secrets in commits, build logs, or artifacts.
+9. Never label a plugin as tested in a 1C:EDT application until it has actually been installed and smoke-tested in that version.
+10. Treat repository state, staging base state, EDT project state, and Git state as separate; verify results before advancing checkpoints.
+
+## Code and workflow
+11. Prefer supported, versioned EDT/Eclipse APIs. No reflection/internal Eclipse/EDT shortcuts without a documented necessity and test plan.
+12. Keep exchange business logic independent from Eclipse UI and Git.
+13. Document changed behavior, expected invariants and known gaps in `docs/`. New API integrations require read-only proof before implementation of write operations.
+14. Development can be committed without running a build; clearly state that new changes remain unverified until the user requests a build.

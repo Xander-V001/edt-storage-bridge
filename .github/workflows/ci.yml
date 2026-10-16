@@ -1,13 +1,17 @@
-name: Build and test
+name: Build and test (manual)
+
+# Resource policy: builds are permitted only by explicit user request.
+# Do not add push, pull_request, schedule, or workflow_run triggers.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
+
+concurrency:
+  group: storage-bridge-actions
+  cancel-in-progress: false
 
 jobs:
   tycho:
@@ -38,6 +42,7 @@ jobs:
           name: edt-storage-bridge-p2
           path: repository/org.xander.edt.storagebridge.p2/target/*.zip
           if-no-files-found: error
+          retention-days: 3
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -45,3 +50,11 @@ jobs:
           name: tycho-test-reports
           path: '**/target/surefire-reports/**'
           if-no-files-found: ignore
+          retention-days: 3
+      - name: Remove artifacts from previous builds
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prune = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/prune-artifacts.cjs`);
+            await prune({github, context, core});

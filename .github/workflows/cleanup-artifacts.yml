@@ -1,0 +1,26 @@
+name: Cleanup old build artifacts (manual)
+
+# Cleanup only. No Maven, no Gradle, no tests, no compilation.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: storage-bridge-actions
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep only the newest artifact for each build artifact name
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prune = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/prune-artifacts.cjs`);
+            await prune({github, context, core});
