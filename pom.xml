@@ -16,6 +16,7 @@
   <modules>
     <module>targets/edt-2026.2</module>
     <module>plugins/org.xander.edt.storagebridge.core</module>
+    <module>plugins/org.xander.edt.storagebridge.platform</module>
     <module>plugins/org.xander.edt.storagebridge.edt</module>
     <module>plugins/org.xander.edt.storagebridge.ui</module>
     <module>tests/org.xander.edt.storagebridge.core.tests</module>

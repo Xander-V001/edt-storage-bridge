@@ -8,6 +8,8 @@
   <license>This is an internal development preview. Redistribution is not authorized.</license>
   <plugin id="org.xander.edt.storagebridge.core"
     download-size="0" install-size="0" version="0.0.0" unpack="false"/>
+  <plugin id="org.xander.edt.storagebridge.platform"
+    download-size="0" install-size="0" version="0.0.0" unpack="false"/>
   <plugin id="org.xander.edt.storagebridge.edt"
     download-size="0" install-size="0" version="0.0.0" unpack="false"/>
   <plugin id="org.xander.edt.storagebridge.ui"
