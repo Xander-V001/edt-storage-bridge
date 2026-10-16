@@ -18,6 +18,14 @@ public class ConfigurationChangesParserTest {
     }
 
     @Test
+    public void recognizesConfigurationAndLanguageRootObjects() throws Exception {
+        var changes = ConfigurationChangesParser.parse(
+            "Modified: Configuration\\nModified: Language\\n");
+        assertEquals(List.of("Configuration", "Language"),
+            changes.objectsToExport());
+    }
+
+    @Test
     public void emptyResultMeansNoRemoteChanges() throws Exception {
         assertTrue(ConfigurationChangesParser.parse("").objectsToExport().isEmpty());
     }

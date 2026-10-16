@@ -32,7 +32,10 @@ public record SelectiveDumpRequest(
         }
         for (String nameOfObject : objectNames) {
             if (nameOfObject == null || nameOfObject.length() > 1024
-                    || nameOfObject.isBlank() || !nameOfObject.contains(".")
+                    || nameOfObject.isBlank()
+                    || (!nameOfObject.contains(".")
+                        && !"Configuration".equals(nameOfObject)
+                        && !"Language".equals(nameOfObject))
                     || !nameOfObject.matches("[\\p{L}\\p{N}_.]+")) {
                 throw new IllegalArgumentException("Invalid 1C metadata object name");
             }

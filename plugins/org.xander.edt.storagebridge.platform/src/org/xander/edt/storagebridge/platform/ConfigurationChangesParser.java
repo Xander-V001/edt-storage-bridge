@@ -89,11 +89,19 @@ public final class ConfigurationChangesParser {
     }
 
     private static String topObject(String fqName) {
+        // "Configuration" and "Language" are valid top-level metadata
+        // objects in the 1C increment/edtExport exchange format.
+        if ("Configuration".equals(fqName) || "Language".equals(fqName)) {
+            return fqName;
+        }
         if (fqName == null
                 || !fqName.matches("[\\p{L}\\p{N}_]+(\\.[\\p{L}\\p{N}_]+)+")) {
             throw new IllegalArgumentException("Invalid metadata object name");
         }
         String[] parts = fqName.split("\\.");
+        if ("Configuration".equals(parts[0]) || "Language".equals(parts[0])) {
+            return parts[0];
+        }
         return parts[0] + "." + parts[1];
     }
 }

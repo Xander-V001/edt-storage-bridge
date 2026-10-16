@@ -35,6 +35,12 @@ public class SelectiveDumpCommandTest {
     }
 
     @Test
+    public void acceptsPlatformRootMetadataObjects() {
+        var req = request(List.of("Configuration", "Language"));
+        assertEquals(2, req.objectNames().size());
+    }
+
+    @Test
     public void fullDumpAndUnsafeNamesAreRejected() {
         assertThrows(IllegalArgumentException.class, () -> request(List.of()));
         assertThrows(IllegalArgumentException.class,
