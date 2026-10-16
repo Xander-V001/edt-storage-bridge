@@ -51,3 +51,13 @@ Official documentation:
 - `SelectiveReceiveStagingService` now joins `ChangedObjectsProbe.detect` to `SelectiveDumpRunner.export` for the SAME existing base and carries the staged XML as a Closeable result. Empty changes skip export; `FullDump` and unknown change types fail closed.
 - `ConfigurationChangesParser.objectsToExport` now includes independently developed `Form`, `Template`, `Recalculation` and `Subsystem` children explicitly, instead of losing them by exporting only the parent. Includes a regression source test.
 - Still NOT built/tested under EDT 2026.2 and NOT connected to receive UI. Missing verified repository-revision-to-baseline relationship, EDT scope mapping, compare-editor opening and merge outcomes/checkpoints. No user baselines or Git refs were touched.
+
+## 2026-10-17: interactive receive coordinator (source wired, build unverified)
+
+- `ReceiveChangesCoordinator` connects snapshot → native repository update (separately confirmed by the user) → incremental `-getChanges` → branch-scoped pending journal → **explicit, initially empty selection** → selected-object dump → EDT external conversion → native review editor.
+- `ReceiveBaselineJournal` retains the old `ConfigDumpInfo.xml` outside user Git, even if 1C Designer updates its intermediary but EDT crashes before processing changes. Recovery never overwrites the earlier snapshot.
+- `ReceivePendingStore` tracks remote object debt by (EDT project directory, classical repository address, actual Git branch). Skipped objects remain eligible on later receives.
+- `EdtSelectiveReviewService` derives compare scope using EDT's official `IQualifiedNameFilePathConverter` rather than pretending Russian object type names are EDT symlinks. Only recognized metadata kinds are accepted; other cases fail closed.
+- `StorageSettingsDialog` now wires `Получить изменения` to coordinator, and `VerifiedReceiveContent` checks staged files against EDT project after native editor closure. Matching objects can be cleared, other objects remain pending.
+- This source flow does not automatically determine a true storage/Git common ancestor, and therefore does **not** pretend Git HEAD is the repository source. Objects are *not selected* by default. Not supported yet: confident detection of already-updated intermediary vs unrefreshed EDT branch; revision-history checkpoints verified against classical storage; safe deletion handling; arbitrary unknown object types; roundtrip smoke test and manual build.
+- **Do not call this a functioning installer** until EDT 2026.2 target compile and a disposable Document1/Document2 test both succeed. No CI/build or real IB access was used while editing these sources.

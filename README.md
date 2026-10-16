@@ -1,6 +1,6 @@
 # EDT Storage Bridge
 
-> **ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД РАБОТОЙ:** [Исходная задача и разбор ошибок разработки](docs/LESSONS_LEARNED.md). Требование закреплено также в [AGENTS.md](AGENTS.md). Главный механизм получения изменений из хранилища **ещё не реализован**; не выдавать за него настройки, XML-экспорт или прототипы.
+> **ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД РАБОТОЙ:** [Исходная задача и разбор ошибок разработки](docs/LESSONS_LEARNED.md). Требование закреплено также в [AGENTS.md](AGENTS.md). Код цепочки получения и выборочного сравнения EDT собран в исходниках, но **ещё не прошёл сборку и испытания**, поэтому НЕ является готовым плагином.
 
 Independently developed extension for **1C:EDT 2026.2** and classic 1C configuration repositories.
 
@@ -9,7 +9,7 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 - Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
 - The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
 - New read-only history and **two-stage receive command** have been added **after that build**. These changes are UNCOMPILED and have not been tested in EDT.
-- **Receive is disabled** until there is a proven selective merge path. The prior assumption that the repository-bound intermediary infobase was registered/linked to EDT was false; its EDT synchronization adapter has been removed.
+- **Receive UI is now wired in SOURCE ONLY, NOT BUILT OR TESTED**; do not install/operate on live bases until the intended manual build and disposable smoke tests. The prior assumption that the repository-bound intermediary infobase was registered/linked to EDT was false; its EDT synchronization adapter has been removed.
 - Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
 ## Planned user flow
@@ -21,7 +21,7 @@ Right-click a project in EDT Navigator → **Работа с хранилище�
 - **optional** path to the installed platform executable (`1cv8.exe`);
 - observed remote revision and verified locally applied revision (both unknown until real verification).
 
-Saving settings never launches Designer. **Receive button is disabled**, so no mutating command is executable through the UI.
+Saving settings never launches Designer. A separate **Получить изменения** button now has a confirmed, explicitly approved read/update/stage/compare flow in source. It is **UNBUILT and must not be used with live data**.
 
 ## Integration strategy
 
@@ -31,6 +31,15 @@ Prefer platform-supported operations through an existing connected infobase when
 
 **Builds only on explicit manual request**, not per commit. Do not use user VPS or real infobases/repositories without approval.
 
-## Implemented receive prototype (unverified)
+## Receive flow wired in sources (NOT VERIFIED)
 
-The new platform-side **selective object dump** is source-only and accepts an explicit list of changed metadata objects for /DumpConfigToFiles -listFile. It does not perform a full configuration XML export, EDT import, or modify the existing project. There is no completed end-to-end receive operation yet. [Status](docs/RECEIVE_CHANGES.md).
+1. User explicitly confirms updating **only the existing classical-repository-bound intermediary**. The EDT project's other attached bases are never accessed.
+2. Capture a **ConfigDumpInfo.xml-only** pre-update baseline; persist it outside the EDT project so a crash cannot lose newly changed objects.
+3. Update the existing intermediary with the platform's native repository command, detect changed MD objects using `-getChanges` and refuse `FullDump` fallback.
+4. Persist remote-object debt **per project/repository/user Git branch**, including previously skipped objects. Show a list with **nothing preselected**; the user chooses precisely which objects to review.
+5. Export only the selected objects with `-listFile`, convert to an isolated EDT source folder with the official `IImportService`, derive native top-level object FQNs and open the **existing EDT compare/merge editor**.
+6. On editor close, clear a pending object only if all its staged EDT source files exactly match the resulting project. Otherwise leave it pending. **Never advance an invented repository-wide applied revision**.
+
+**Open technical and verification limits:** This first interactive mode is TWO-WAY: it protects unselected locally committed objects by leaving them entirely outside the comparison scope, but does not claim a repository/Git three-way common ancestor. The separate three-way adapter requires a verified Git/storage baseline not yet provisioned. Repository version history parsing, objects deleted from storage, pre-existing storage/EDT divergence (if the connected IB was already updated independently), and unsupported object-type mappings require additional proof. Compile and runtime smoke tests on EDT 2026.2 have NOT been performed. The current branch has **no newly verified p2 release**.
+
+See [Detailed implementation](docs/RECEIVE_CHANGES.md).
