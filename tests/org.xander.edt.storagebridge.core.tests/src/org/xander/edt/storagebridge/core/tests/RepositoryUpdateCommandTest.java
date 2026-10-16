@@ -44,6 +44,35 @@ public class RepositoryUpdateCommandTest {
     }
 
     @Test
+    public void explicitlyConfiguredRepositoryUsesDocumentedAuthenticationSwitches() {
+        var req = new RepositoryUpdateRequest(Path.of("/opt/bin/1cv8.exe"),
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "/test/ib"),
+            Duration.ofMinutes(5), "tcp://repo/test", "repository-user",
+            "non-loggable-secret");
+        var args = RepositoryUpdateCommand.arguments(req, Path.of("/temp/out.txt"));
+        int repository = args.indexOf("/ConfigurationRepositoryF");
+        int username = args.indexOf("/ConfigurationRepositoryN");
+        int password = args.indexOf("/ConfigurationRepositoryP");
+        assertTrue(repository > 0);
+        assertEquals("tcp://repo/test", args.get(repository + 1));
+        assertEquals("repository-user", args.get(username + 1));
+        assertEquals("non-loggable-secret", args.get(password + 1));
+        assertTrue(args.indexOf("/ConfigurationRepositoryUpdateCfg") > password);
+        assertFalse(args.contains("-revised"));
+        assertFalse(args.contains("/UpdateDBCfg"));
+        assertFalse(req.toString().contains("non-loggable-secret"));
+        assertFalse(req.toString().contains("tcp://repo/test"));
+    }
+
+    @Test
+    public void credentialsCannotBeUsedWithoutRepositoryIdentity() {
+        assertThrows(IllegalArgumentException.class, () -> new RepositoryUpdateRequest(
+            Path.of("/opt/bin/1cv8.exe"),
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "/test/ib"),
+            Duration.ofMinutes(2), "", "user", "secret"));
+    }
+
+    @Test
     public void rejectsNonPlatformExeAndRelativePath() {
         assertThrows(IllegalArgumentException.class, () -> new RepositoryUpdateRequest(
             Path.of("/opt/shell.sh"),
