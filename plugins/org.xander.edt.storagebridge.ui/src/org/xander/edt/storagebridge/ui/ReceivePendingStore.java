@@ -24,11 +24,12 @@ import org.osgi.service.prefs.Preferences;
 public final class ReceivePendingStore {
     private static final String ROOT = "org.xander.edt.storagebridge.ui";
     private static final String ITEM = "obj-";
+    private static final String INTERMEDIARY = "boundIntermediary";
     private ReceivePendingStore() {}
 
     public static Set<String> get(IProject project, String repositoryAddress,
-            String branch) throws BackingStoreException {
-        Preferences node = node(project, repositoryAddress, branch);
+            String branch, String intermediaryIdentity) throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
         Set<String> values = new LinkedHashSet<>();
         for (String key : node.keys()) {
             if (key.startsWith(ITEM)) {
@@ -43,8 +44,9 @@ public final class ReceivePendingStore {
     }
 
     public static void add(IProject project, String repositoryAddress,
-            String branch, Set<String> names) throws BackingStoreException {
-        Preferences node = node(project, repositoryAddress, branch);
+            String branch, String intermediaryIdentity, Set<String> names)
+            throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
         for (String name : names) {
             requireObject(name);
             node.put(ITEM + digest(name), name);
@@ -57,9 +59,9 @@ public final class ReceivePendingStore {
      * staged, repository-sourced EDT content. UI selections alone are NOT proof.
      */
     public static void clearVerified(IProject project, String repositoryAddress,
-            String branch, Set<String> verifiedObjects)
+            String branch, String intermediaryIdentity, Set<String> verifiedObjects)
             throws BackingStoreException {
-        Preferences node = node(project, repositoryAddress, branch);
+        Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
         for (String name : verifiedObjects) {
             requireObject(name);
             String key = ITEM + digest(name);
@@ -73,18 +75,38 @@ public final class ReceivePendingStore {
     }
 
     private static Preferences node(IProject project, String repositoryAddress,
-            String branch) {
+            String branch, String intermediaryIdentity) throws BackingStoreException {
         Objects.requireNonNull(project, "project");
         Objects.requireNonNull(repositoryAddress, "repositoryAddress");
         Objects.requireNonNull(branch, "branch");
+        Objects.requireNonNull(intermediaryIdentity, "intermediaryIdentity");
         if (branch.isBlank() || repositoryAddress.isBlank()
-                || project.getLocationURI() == null) {
+                || intermediaryIdentity.isBlank() || project.getLocationURI() == null) {
             throw new IllegalArgumentException("Unidentified receive context");
         }
         String key = digest(project.getLocationURI().normalize().toString()
             + "\u0000" + repositoryAddress.trim() + "\u0000" + branch);
-        return InstanceScope.INSTANCE.getNode(ROOT)
+        Preferences result = InstanceScope.INSTANCE.getNode(ROOT)
             .node("pendingReceive").node(key);
+        String fingerprint = digest(intermediaryIdentity.trim());
+        String previous = result.get(INTERMEDIARY, "");
+        if (!previous.isBlank() && !previous.equals(fingerprint)) {
+            throw new IllegalStateException(
+                "Configured intermediary differs from pending remote changes");
+        }
+        if (previous.isBlank()) {
+            // A v24 pending list has no recorded intermediary identity.
+            // Never silently reinterpret it as coming from the current IB.
+            for (String entry : result.keys()) {
+                if (entry.startsWith(ITEM)) {
+                    throw new IllegalStateException(
+                        "Legacy remote changes require manual intermediary verification");
+                }
+            }
+            result.put(INTERMEDIARY, fingerprint);
+            result.flush();
+        }
+        return result;
     }
 
     private static void requireObject(String name) {
