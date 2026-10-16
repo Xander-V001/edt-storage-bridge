@@ -45,7 +45,8 @@ public final class EdtReceiveService {
 
     /** Fail closed before the caller mutates its already connected 1C infobase. */
     public boolean hasKnownBaseline(IProject project, InfobaseReference infobase) {
-        return states.hasSynchronizationInfo(project, infobase)
+        return synchronization.isConnected(project, infobase)
+            && states.hasSynchronizationInfo(project, infobase)
             && !states.isFlowActive(infobase);
     }
 
