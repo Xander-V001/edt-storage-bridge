@@ -13,13 +13,20 @@
 - [ ] One user-requested build and real EDT 2026.2 installation.
 - [ ] Verify preferences persistence and secure-password behavior across restarts.
 
-## Prototype developed since last successful CI — receive (UNBUILT)
+## Receive stage (UNBUILT; NOT FUNCTIONAL)
+- [x] Removed invalid EDT-infobase association and unsafe receive entry point.
+- [x] Added read-only /DumpConfigToFiles -listFile selective export from the existing storage-bound intermediary with private temp cleanup.
+- [ ] Determine changed objects and select the minimum required delta.
+- [ ] Transform the delta into EDT format, show official compare, safely merge selected objects.
+- [ ] Build and disposable test only on explicit user request.
+
+## Previous discarded prototype (reference only; no longer wired)
 - [x] Source of guarded Designer /ConfigurationRepositoryUpdateCfg -force runner (no -revised), no password argv.
-- [x] Source of EDT public IInfobaseSynchronizationManager.retrieveInfobaseChanges adapter **with native InfobaseUpdateDialogBasedCallback**, opening EDT's real compare/merge UI; no auto-overwrite path.
-- [x] UI "Получить изменения (тестовый режим)" button, native EDT infobase picker, file/server identity check, destructive-action confirmation.
+- [x] **Removed:** attempted EDT infobase synchronization based on false linked-base assumption; source deleted.
+- [x] **Disabled:** receiving UI until selective project merge is verified. No EDT base picker.
 - [x] Clean task-branch Git preflight; blocked unknown EDT synchronization baseline, canceled operations never advance checkpoint.
 - [ ] **Manual CI compilation, runtime smoke test in disposable EDT 2026.2**, no authorized live user base access.
-- [x] Exact selected EDT IB file/server connection identity matching; fail closed on ambiguity.
+- [x] **Removed** irrelevant EDT infobase identity matcher; intermediary base has no EDT association.
 - [ ] Actual 2026.2 compile/runtime of native callback, full compare/merge behavior and object skipping.
 - [ ] Classic storage repository identity check, session/lock checks, authentic version verification, per-object checkpoints.
 

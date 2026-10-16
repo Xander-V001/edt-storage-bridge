@@ -39,3 +39,7 @@ Never increment either speculatively; changing repository identity invalidates b
 ## Source infobase is NOT the set of EDT project infobases
 
 There are exactly three actors: classic repository, one pre-existing classic-repository-connected 1C infobase, and one existing EDT project with its normal local Git branches. The configured intermediary base is identified by physical /F path or /S server/name, **not chosen from a project's 1…100 other attached infobases**. The receive adapter currently requires that same intermediary infobase to be registered and already synchronized with EDT for the public `retrieveInfobaseChanges` API. This is a **known limitation**, not a reason to modify or choose another attached base. If it is not connected to EDT, the action stops; future integration must bridge that explicitly and safely, without touching unrelated infobases.
+
+## Correction — storage-linked base has no EDT association
+
+The existing repository-bound 1C infobase has **no association with the EDT project**. Thus EDT's `retrieveInfobaseChanges` (which requires associated sync baseline) is **not a valid bridge**. Deleted this adapter and disabled receive UI. Instead use only the repo-bound base for Designer update and explicit *changed-object* partial dump (`-listFile`), then a separate, as-yet-unimplemented EDT format conversion + comparison. Full XML export/reimport every sync is unacceptable for large projects. This is a concrete source correction, NOT a completed receive engine.

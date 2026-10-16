@@ -1,34 +1,36 @@
-# Receive from classic 1C storage into existing EDT project (prototype)
+# Storage receive — actual actors, current implementation
 
-**Source implementation only. Must compile and pass isolated EDT 2026.2 smoke tests before any production use.** No connected user infobase, storage or VPS has been accessed.
+Status: **NOT FUNCTIONAL in EDT; source-only; build and runtime unverified.**
 
-## Actual implemented call chain
+There are exactly three actors:
+1. Classical 1C configuration storage (shared by developers).
+2. One pre-existing 1C infobase **bound to that classical storage**. This intermediary is **NOT related to EDT**.
+3. One existing EDT project with local Git main/task branches. It can have 0–100+ separately connected bases; they are irrelevant to storage receiving.
 
-1. Project → **Работа с хранилищем** → **Получить изменения (тестовый режим)**.
-2. Save the configured existing repository-connected IB address. Search EDT's registered IB references automatically for an **exact physical connection match**, not by display name or manual selection among other attached databases.
-3. `InfobaseIdentityMatcher`: require an exact physical file-directory match (`FileConnectionString` with `Files.isSameFile`) or an exact server/infobase pair (`ServerConnectionString`). Require exactly one matching EDT registration; fail if none or several. **Do not touch any of the other 1…100 IBs associated with this EDT project.**
-4. Require EDT already connected to that IB and containing a prior sync baseline (`isConnected`, `hasSynchronizationInfo`), with no active synchronization. Do not silently connect or bind any base.
-5. On the SWT UI thread construct EDT's own **`InfobaseUpdateDialogBasedCallback`**, single-use for this receive. This is a public EDT 2025.2 API that uses EDT comparison editor and merge manager. Disable its "override the infobase with EDT changes" choice via `setAllowOverrideConflict(false)`.
-6. Show explicit confirmation that Designer will change the connected infobase configuration. After user confirmation, close the settings dialog so it cannot block the compare/merge editor.
-7. Require clean named Git task branch and record its HEAD. **No technical Git branches**, resets, branch switching or commits.
-8. Designer `/ConfigurationRepositoryUpdateCfg -force` gets the latest classic repository revision into the pre-existing linked IB. `-revised` is forbidden. A private bounded process runner handles timeout, cancel, and output cleanup. No password command-line switches.
-9. Confirm that the Git branch/HEAD/worktree stayed unchanged. Call the **public** `IInfobaseSynchronizationManager.retrieveInfobaseChanges(project, infobase, nativeCallback, false, monitor)`. The native EDT callback prompts the user about IB changes and uses its **normal compare/merge editor** for manual object/property selection and conflicts.
-10. Treat `CHANGES_NOT_RESOLVED`, `CHANGES_IGNORE`, or `UNKNOWN` as **not applied**, and never advance repository checkpoint based on an EDT return value. `CHANGES_RESOLVED` / `NO_CHANGES` report only the EDT step outcome, not the entire repository state.
+## Verified platform primitives
 
-## Known gaps, no hidden claims
+- `/ConfigurationRepositoryUpdateCfg` updates the *repository-bound intermediary* from classical storage. The platform supports `-Objects` for selective receive; it supports `-force` to confirm additions/deletions. No `-revised` by default.
+- `/DumpConfigToFiles <directory> -listFile <objects.txt> -Format Hierarchical` exports **only** the explicit metadata objects from that intermediary. Object list format is 1C full metadata names, one name per line. This is not full XML export.
+- The platform additionally supports `-update` using `ConfigDumpInfo.xml` for incremental updates of an existing export, but **this mode is not yet implemented in our bridge**.
 
-- All above APIs were examined in **2025.2** public Javadocs; **not yet compiled against or run inside EDT 2026.2**. New GitHub branch changes are not covered by previous successful CI `38944234655`.
-- The actual **classic repository identity** of the pre-connected IB is not programmatically inspected yet. The entered repository address is saved but not used to rebind or authenticate Designer; Designer uses whatever repository the pre-connected IB already has.
-- Designer batch command has no configured IB/repository password handling yet; when platform prompts for authentication the operation fails safely rather than exposing secrets on a command line.
-- There is no standalone non-Git staging snapshot for the classic repository. Instead the official EDT sync API produces and presents changes with its own comparison machinery, which avoids extra branches. Precise ability to **skip one changed object** and safely apply other changed objects, including deletes/dependencies, must be proven in EDT 2026.2.
-- A connected infobase may have local Configurator work/captures or concurrent users; this code does **not** inspect or isolate them. Therefore the existing user's working IB is OUT OF SCOPE for acceptance tests. Only a disposable bound IB after explicit permission.
-- Incoming changes can be partially deferred by the user. We intentionally never mark a whole storage revision applied. Persisted per-object deferred state and per-branch reconciliation are still missing.
-- The earlier simplistic custom conflict resolver was removed. **Do not reintroduce a "give IB priority" automatic import**: the native EDT dialog is required.
+Official documentation:
+- https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/
+- https://kb.1ci.com/1C_Enterprise_Platform/What___s_New/Functional_Highlights/Incremental_export_of_configurations_to_XML_files/
 
-## Acceptance checks still needed
+## Source added now
 
-- User explicitly requests one manual CI build: fix real 2026.2 Tycho compilation errors if any.
-- Install on EDT 2026.2 with disposable configuration repository + disposable connected IB + project, confirm registered-IB identity, merge dialog and project outcome.
-- Test locally committed edits to Document1 + remote edits to Document1 and Document2, with Document1 skipped. Ensure Document1 preserved, Document2 applied and deferred object recognized on next operation.
-- Repeat for added/deleted objects, dependencies, cancellation, concurrent repository revisions and compare-window lifecycle. Confirm native UI doesn't deadlock.
-- Only then consider working IB use and implement per-branch / per-object state checkpoints and safe send-to-storage.
+- `SelectiveDumpRequest` accepts **non-empty, validated** metadata names and one existing /F or /S intermediary address.
+- `SelectiveDumpCommand` produces the read-only and strictly selective Designer command; no full-configuration fallback, no `-force`, no EDT base selection.
+- `SelectiveDumpRunner` writes the explicit UTF-8 object list and exports the selected objects into a private temporary directory. It bounds the process lifetime, redirects stdout, handles cancellation, validates nonempty result and owns temp cleanup via AutoCloseable.
+- Pure JUnit command tests were added but have **NOT** been executed.
+- Removed incorrect `EdtReceiveService`, EDT base-selection controller and matching class; UI command is disabled until a safe merge can be verified.
+
+## What is still missing
+
+- Read changed object names/revisions correctly from classical storage history, including additions, deletions and dependencies. **No parser-to-export wiring yet.**
+- Convert selected 1C XML files into equivalent EDT-format source using verified 2026.2 import API or equivalent, **without** reimporting the entire configuration.
+- Show native compare/merge between selected incoming objects and current project. Respect explicit "keep my Document1" while applying other objects; no silent overwrite.
+- Track skipped/pending objects independently of the latest repository version; don't claim full sync after partial acceptance.
+- Prove the full chain in a disposable fixture and build only after explicit authorization.
+
+**No attached EDT bases are used for storage operations. No production infobase has been touched, and no CI build was launched.**

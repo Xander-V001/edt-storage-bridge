@@ -7,7 +7,7 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 - Previous build #38938763356 passed against EDT 2026.2 API (Tycho/Java 25, 3 core tests).
 - The project settings UI was compiled in the successful manual CI build #38944234655 but **has not been installed/smoke-tested in EDT**.
 - New read-only history and **two-stage receive command** have been added **after that build**. These changes are UNCOMPILED and have not been tested in EDT.
-- Receive now delegates **actual compare/merge UI to EDT's public `InfobaseUpdateDialogBasedCallback`** rather than a custom conflict resolver. It verifies exact selected EDT IB identity against /F or /S settings and requires existing sync baseline and clean Git branch. **Test mode, not validated; never try it on a valuable base before isolated tests.**
+- **Receive is disabled** until there is a proven selective merge path. The prior assumption that the repository-bound intermediary infobase was registered/linked to EDT was false; its EDT synchronization adapter has been removed.
 - Working branch `feature/edt-2026.2-integration`; PR #6 remains draft until approved build and smoke test.
 
 ## Planned user flow
@@ -19,7 +19,7 @@ Right-click a project in EDT Navigator → **Работа с хранилище�
 - **optional** path to the installed platform executable (`1cv8.exe`);
 - observed remote revision and verified locally applied revision (both unknown until real verification).
 
-Saving settings alone never launches Designer or changes data. A separate explicit **Receive changes (test mode)** action can mutate the configured connected base after user confirmation; NOT yet approved for working infobases.
+Saving settings never launches Designer. **Receive button is disabled**, so no mutating command is executable through the UI.
 
 ## Integration strategy
 
@@ -31,4 +31,4 @@ Prefer platform-supported operations through an existing connected infobase when
 
 ## Implemented receive prototype (unverified)
 
-Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying the existing repository-connected infobase. It automatically resolves only that exact IB from EDT's registered references by file/server address, never presents a list of the project's development/test databases. EDT's native comparison dialog controls acceptance/conflicts. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).
+The new platform-side **selective object dump** is source-only and accepts an explicit list of changed metadata objects for /DumpConfigToFiles -listFile. It does not perform a full configuration XML export, EDT import, or modify the existing project. There is no completed end-to-end receive operation yet. [Status](docs/RECEIVE_CHANGES.md).
