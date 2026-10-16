@@ -122,12 +122,15 @@ public final class ReceiveChangesCoordinator {
                 monitor.subTask("Поиск только изменённых объектов");
                 var detected = new ChangedObjectsProbe().detect(
                     detect, journal.path(), canceled);
-                Set<String> roots = topObjects(detected.objectsToExport());
-                // Commit remote debt BEFORE deleting the only prior snapshot.
-                ReceivePendingStore.add(project, settings.address(), branch, roots);
+                Set<String> changedNames =
+                    new LinkedHashSet<>(detected.objectsToExport());
+                // Store both owning MD objects and separately exported forms,
+                // templates, etc. A later receive must not forget their names.
+                ReceivePendingStore.add(
+                    project, settings.address(), branch, changedNames);
                 journal.acknowledgeJournaledChanges();
                 monitor.worked(1);
-                return roots;
+                return changedNames;
             });
 
             Set<String> pending = ReceivePendingStore.get(
@@ -137,8 +140,9 @@ public final class ReceiveChangesCoordinator {
                     "Новых изменений для выбранного проекта нет.");
                 return;
             }
+            Set<String> candidateRoots = topObjects(new ArrayList<>(pending));
             var choices = new ListSelectionDialog(shell,
-                pending.stream().sorted().toList(),
+                candidateRoots.stream().sorted().toList(),
                 ArrayContentProvider.getInstance(),
                 new LabelProvider(),
                 "Выбери объекты для сравнения с EDT. "
@@ -160,7 +164,15 @@ public final class ReceiveChangesCoordinator {
             }
             GitReceiveGuard.requireUnchanged(project, git);
 
-            List<String> selectedList = new ArrayList<>(selected);
+            // Convert root-level UI selection back to ALL explicit Designer
+            // metadata names required for independently developed children.
+            Set<String> selectedPendingNames = new LinkedHashSet<>();
+            for (String pendingName : pending) {
+                if (selected.contains(topObject(pendingName))) {
+                    selectedPendingNames.add(pendingName);
+                }
+            }
+            List<String> selectedList = new ArrayList<>(selectedPendingNames);
             export = progress(shell, monitor -> {
                 monitor.beginTask("Выгрузка только выбранных объектов", 1);
                 var result = new SelectiveDumpRunner().export(
@@ -212,7 +224,8 @@ public final class ReceiveChangesCoordinator {
                         try {
                             VerifiedReceiveContent.clearMatchingSelected(
                                 project, settings.address(), branch,
-                                selected, retainedConverted.resolve("edt"));
+                                selected, selectedPendingNames,
+                                retainedConverted.resolve("edt"));
                         } catch (Exception ex) {
                             BridgeActivator.getDefault().getLog().warn(
                                 "Partial receive verification failed; "
@@ -275,14 +288,20 @@ public final class ReceiveChangesCoordinator {
     private static Set<String> topObjects(List<String> objectNames) {
         Set<String> result = new LinkedHashSet<>();
         for (String entry : objectNames) {
-            String[] parts = entry.split("\\.");
-            if (parts.length >= 2) {
-                result.add(parts[0] + "." + parts[1]);
-            } else {
-                result.add(entry);
-            }
+            result.add(topObject(entry));
         }
         return result;
+    }
+
+    public static String topObject(String name) {
+        if ("Configuration".equals(name) || name.startsWith("Configuration.")) {
+            return "Configuration";
+        }
+        if ("Language".equals(name) || name.startsWith("Language.")) {
+            return "Language";
+        }
+        String[] parts = name.split("\\.");
+        return parts.length >= 2 ? parts[0] + "." + parts[1] : name;
     }
 
     private static void cleanupQuietly(
