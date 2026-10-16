@@ -15,7 +15,7 @@ Independently developed extension for **1C:EDT 2026.2** and classic 1C configura
 Right-click a project in EDT Navigator → **Работа с хранилищем**. The per-project dialog lets you save:
 
 - repository address, user and securely encrypted password;
-- **optional** already-connected 1C infobase (file directory or server/infobase name);
+- one existing **classical-repository-connected 1C infobase** used as the storage transport (file directory or server/infobase name). It is **not** any arbitrary EDT development/test infobase;
 - **optional** path to the installed platform executable (`1cv8.exe`);
 - observed remote revision and verified locally applied revision (both unknown until real verification).
 
@@ -31,4 +31,4 @@ Prefer platform-supported operations through an existing connected infobase when
 
 ## Implemented receive prototype (unverified)
 
-Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying an already-connected infobase and mechanically checks that the selected EDT infobase matches the configured file/server address. EDT's native comparison dialog controls acceptance/conflicts. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).
+Open the project storage dialog, enter settings and click **Получить изменения**. The operation explicitly warns before modifying the existing repository-connected infobase. It automatically resolves only that exact IB from EDT's registered references by file/server address, never presents a list of the project's development/test databases. EDT's native comparison dialog controls acceptance/conflicts. It never runs automatically. No stored repository revision is changed. [Full safety contract](docs/RECEIVE_CHANGES.md).

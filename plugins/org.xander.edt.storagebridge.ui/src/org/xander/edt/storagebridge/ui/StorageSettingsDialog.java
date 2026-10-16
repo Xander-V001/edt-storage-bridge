@@ -80,7 +80,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             saved == null ? "" : saved.password());
 
         Group platform = new Group(content, SWT.NONE);
-        platform.setText("Подключённая информационная база 1С (необязательно)");
+        platform.setText("База 1С, подключённая к хранилищу");
         platform.setLayout(new GridLayout(3, false));
         GridData platformData = new GridData(SWT.FILL, SWT.TOP, true, false);
         platformData.horizontalSpan = 2;
@@ -94,7 +94,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         typeData.horizontalSpan = 2;
         infobaseType.setLayoutData(typeData);
 
-        new Label(platform, SWT.NONE).setText("Каталог ИБ или сервер/имя:");
+        new Label(platform, SWT.NONE).setText("Адрес базы-посредника:");
         infobaseAddress = new Text(platform, SWT.BORDER);
         infobaseAddress.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         infobaseAddress.setText(saved == null ? "" : saved.infobaseAddress());
@@ -132,7 +132,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         hint.setText("Для файловой базы — каталог с 1Cv8.1CD; для серверной — "
             + "адрес вида server/ibName. Выбирайте ту версию платформы, "
             + "которая уже работает с вашим хранилищем. "
-            + "Эти поля пока только сохраняются, Конфигуратор не запускается.");
+            + "Эта база нужна для работы с хранилищем. "
+            + "Другие базы, подключённые к проекту EDT, не используются. "
+            + "Сохранение полей не запускает Конфигуратор.");
         GridData hintData = new GridData(SWT.FILL, SWT.TOP, true, false);
         hintData.horizontalSpan = 3;
         hintData.widthHint = 560;
@@ -150,10 +152,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             formatVersion(saved == null ? -1 : saved.appliedVersion()));
 
         Label note = new Label(content, SWT.WRAP);
-        note.setText("Получение работает в тестовом режиме: "
-            + "после подтверждения изменяет подключённую ИБ и вызывает штатное "
-            + "сравнение/объединение EDT. До проверки в EDT 2026.2 "
-            + "НЕ применять к рабочей базе. Сохранение настроек безопасно.");
+        note.setText("Тестовое получение: обновляет конфигурацию только базы, "
+            + "подключённой к хранилищу, затем вызывает штатное сравнение EDT. "
+            + "Другие базы проекта не выбираются и не изменяются. "
+            + "До проверки в EDT 2026.2 НЕ применять к рабочей базе.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;

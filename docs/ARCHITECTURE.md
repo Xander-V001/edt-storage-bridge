@@ -6,7 +6,7 @@
 - `edt`: public EDT OSGi/Guice service adapter for read-only model probing, later verified import/export APIs.
 - `ui`: project context command, form, workspace instance preferences, encrypted password, independent remote/applied revision labels.
 - **Read-only repository adapter (planned):** choose either direct documented transport or 1C Designer history report, based on actual capabilities.
-- **Designer adapter (planned):** optional use of a **pre-existing connected infobase** to perform platform-supported repository operations. No rebinding/rewriting/mutating on form save. Strict side-effect safeguards.
+- **Designer adapter (in progress):** the **single existing base already bound to classic 1C storage** is selected in per-project settings and used as repository transport. The project's other attached development/test infobases are NOT candidates and MUST NOT be mutated. No rebinding/rewriting/mutating on form save.
 - **Local Git adapter (required for task workflow, planned):** inspect active branch, commit graph, working-tree status, candidate commits, object-level diffs and mappings to confirmed classical-repository revisions. No implicit reset/rebase/checkout or auto-commit to user's task branch.
 - **Receive path (source implemented, untested):** platform Designer receives into pre-connected IB, then the supported EDT synchronization API receives via EDT's own **InfobaseUpdateDialogBasedCallback** (native compare/merge UI). No extra Git branch, Git worktree or auto-commit. Disposable staging may be necessary only if EDT callback cannot reliably preserve skipped objects — decide from actual tests.
 
@@ -14,7 +14,7 @@
 
 **One task = one feature branch** (e.g. `feature/TASK-123`), with an arbitrary number of local commits. The plugin's own source repository is unrelated to the local Git repository of an EDT configuration project.
 
-Each project may have a repository address, repository user/secret, an *optional* connected-base location/mode (`/F` or `/S`), an *optional* `1cv8.exe` path, and two distinct revision counters.
+Each project may have a repository address, repository user/secret, a configured **classic-storage-connected** base location/mode (`/F` or `/S`), an *optional* `1cv8.exe` path, and two distinct revision counters.
 
 - `observedRemoteVersion`: remote repository version actually read and authenticated.
 - `lastVerifiedAppliedVersion`: last repository version confirmed in EDT after safe synchronization.
@@ -35,3 +35,7 @@ Never increment either speculatively; changing repository identity invalidates b
 8. **Recovery:** preserve an operation journal, safely report incomplete phases without false success.
 
 **Constraints:** project-context-only settings, optional connected base, no unapproved production base changes, no secrets in logs, no automatic builds. Prefer reliable supported platform mechanics over fragile direct binary repository writes.
+
+## Source infobase is NOT the set of EDT project infobases
+
+There are exactly three actors: classic repository, one pre-existing classic-repository-connected 1C infobase, and one existing EDT project with its normal local Git branches. The configured intermediary base is identified by physical /F path or /S server/name, **not chosen from a project's 1…100 other attached infobases**. The receive adapter currently requires that same intermediary infobase to be registered and already synchronized with EDT for the public `retrieveInfobaseChanges` API. This is a **known limitation**, not a reason to modify or choose another attached base. If it is not connected to EDT, the action stops; future integration must bridge that explicitly and safely, without touching unrelated infobases.
