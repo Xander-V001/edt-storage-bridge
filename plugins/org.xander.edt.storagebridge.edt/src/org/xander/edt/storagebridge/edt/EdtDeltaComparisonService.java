@@ -23,10 +23,15 @@ import com._1c.g5.v8.dt.core.platform.IV8Project;
 import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.import_.IImportService;
 import com._1c.g5.v8.dt.import_.IImportServiceRegistry;
-import com._1c.g5.v8.dt.internal.compare.ui.editor.IComparisonEditorOpenHelper;
-import com._1c.g5.v8.dt.internal.compare.ui.editor.ComparisonEditorOpenException;
-import org.eclipse.ui.IEditorPart;
+import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInput;
+import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
+import org.eclipse.core.runtime.IConfigurationElement;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.PartInitException;
+import org.eclipse.ui.PlatformUI;
 import com.google.inject.Inject;
 
 /**
@@ -41,15 +46,15 @@ import com.google.inject.Inject;
 public final class EdtDeltaComparisonService {
     private final IV8ProjectManager projectManager;
     private final IImportServiceRegistry importRegistry;
-    private final IComparisonEditorOpenHelper editorOpener;
+    private final IDtComparisonEditorInputFactory inputFactory;
 
     @Inject
     public EdtDeltaComparisonService(IV8ProjectManager projectManager,
             IImportServiceRegistry importRegistry,
-            IComparisonEditorOpenHelper editorOpener) {
+            IDtComparisonEditorInputFactory inputFactory) {
         this.projectManager = Objects.requireNonNull(projectManager);
         this.importRegistry = Objects.requireNonNull(importRegistry);
-        this.editorOpener = Objects.requireNonNull(editorOpener);
+        this.inputFactory = Objects.requireNonNull(inputFactory);
     }
 
     /**
@@ -164,30 +169,75 @@ public final class EdtDeltaComparisonService {
     }
 
     /**
-     * Opens the OFFICIAL EDT interactive three-way compare/merge editor for a
-     * fully prepared external delta. Must be called from the SWT UI thread.
+     * Opens native EDT comparison via its exported editor-input factory and
+     * the standard Eclipse workbench editor extension registry.
      *
-     * The EDT helper is in an internal package; using it here is intentional:
-     * the public factory creates an editor input but exposes no public
-     * workbench editor identifier or editor-opening method. Keep its use
-     * isolated here. Runtime smoke test on EDT 2026.2 MUST establish that:
-     *  - editor opens before any project write;
-     *  - refusing Document1 leaves local content untouched;
-     *  - accepting Document2 changes only the selected object.
+     * The editor implementation lives in a non-exported vendor package. Never
+     * import or instantiate it directly: Eclipse owns its lifecycle. The
+     * registered editor ID is resolved from the extension instead of guessed.
+     * External staging must remain available until the editor is closed.
      *
-     * DO NOT delete the external EDT delta while the editor is open.
+     * Must run on the SWT UI thread. Preparation itself remains read-only;
+     * a merge is possible only through the native EDT editor interaction.
      */
     public IEditorPart openEditor(CompareMergeProcessDescriptor prepared)
-            throws ComparisonEditorOpenException {
+            throws PartInitException {
         Objects.requireNonNull(prepared, "prepared");
         if (Display.getCurrent() == null) {
-            throw new IllegalStateException("Native EDT merge editor requires SWT UI thread");
+            throw new IllegalStateException(
+                "Native EDT comparison editor requires SWT UI thread");
         }
-        return editorOpener.openComparisonEditor(
+
+        // Resolve the editor extension BEFORE creating the editor input or
+        // triggering comparison. A missing extension is a hard failure.
+        String editorId = findNativeComparisonEditorId();
+        IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+        if (window == null || window.getActivePage() == null) {
+            throw new PartInitException("No active Eclipse workbench page");
+        }
+
+        IDtComparisonEditorInput input = inputFactory.create(
             List.of(prepared), false,
-            "Текущий проект EDT", "Изменения из хранилища 1С",
+            "Текущий проект EDT", "Изменения из хранилища 1С");
+        input.setRunInitialComparison(true);
+        input.setMergeConfirmationMessage(
             "Применение меняет только выбранные изменения. "
             + "Перед подтверждением проверьте Документ1 и другие конфликты.");
+        return window.getActivePage().openEditor(input, editorId);
+    }
+
+    /**
+     * The implementation is intentionally identified by Eclipse's own
+     * org.eclipse.ui.editors declaration, not by a Java package import.
+     * Reject ambiguous/missing registrations; never choose a generic editor.
+     */
+    private static String findNativeComparisonEditorId() throws PartInitException {
+        String result = null;
+        for (IConfigurationElement extension : Platform.getExtensionRegistry()
+                .getConfigurationElementsFor("org.eclipse.ui.editors")) {
+            if (!"editor".equals(extension.getName())) {
+                continue;
+            }
+            String implementation = extension.getAttribute("class");
+            if (implementation == null
+                    || !implementation.contains("DtComparisonEditor")) {
+                continue;
+            }
+            String id = extension.getAttribute("id");
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            if (result != null && !result.equals(id)) {
+                throw new PartInitException(
+                    "Ambiguous native EDT comparison editor registrations");
+            }
+            result = id;
+        }
+        if (result == null) {
+            throw new PartInitException(
+                "Native EDT comparison editor not registered in this EDT installation");
+        }
+        return result;
     }
 
     private static void validateGitBaseline(Path root, Path relativeProject,
