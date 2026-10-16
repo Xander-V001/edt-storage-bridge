@@ -9,6 +9,14 @@
 - Guice/OSGi extension factory, read-only asynchronous project diagnosis.
 - Manual-only CI remains intact and now declares Java 25.
 
+## Static audit before validation
+
+- [x] Compare service wiring to 1C public Guice/OSGi contracts.
+- [x] Keep vendor service binding inside the `edt` adapter and delay service lookup to the background Job.
+- [x] Handle UI disposal and stopped plug-in logging without activator dereference.
+- [x] Review Eclipse localization properties and use portable Unicode escapes.
+- [ ] Runtime/compile confirmation — **not executed**, see `docs/AUDIT_PR6.md`.
+
 ## Next validation gate (only when explicitly requested)
 
 1. Resolve vendor 2026.2 p2 target; compare resolved bundle versions with installed EDT.

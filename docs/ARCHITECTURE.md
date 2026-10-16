@@ -3,8 +3,8 @@
 ## Component boundaries
 
 - **core**: immutable project/synchronization values, deterministic validation logic. No Eclipse UI, no 1C APIs, no Git.
-- **edt**: thin facade over the **public** 1C:EDT OSGi API. Current read-only `EdtProjectInspector` uses `IConfigurationProvider`; this bundle must not know about 1C storage command-line transport.
-- **ui**: Eclipse workbench, menu commands, background Jobs, user-facing diagnostics, Guice factory.
+- **edt**: thin facade over the **public** 1C:EDT OSGi API. Owns `EdtServiceModule` (OSGi service binding) and `EdtProjectInspector` (read-only `IConfigurationProvider`); this bundle must not know about 1C storage command-line transport.
+- **ui**: Eclipse workbench, menu commands, background Jobs, user-facing diagnostics, Guice extension factory. The handler injects a lazy provider and resolves EDT services only on the background Job thread; it does not import the vendor service interface.
 - **repository adapter (planned)**: 1C platform and repository operations, version-aware subprocess execution and safe read-only discovery first.
 - **Git adapter (planned)**: optional; classic 1C repository operations must not depend on Git.
 
