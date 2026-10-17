@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.LinkOption;
+import java.nio.charset.StandardCharsets;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -214,8 +215,11 @@ public final class EdtSelectiveReviewService {
                 status = importer.work(project, xml, target, monitor);
             }
         }
-        if (status == null || !status.isOK() || monitor.isCanceled()) {
-            throw new IOException("Selective external EDT conversion failed");
+        if (monitor.isCanceled()) {
+            throw new java.io.InterruptedIOException("EDT XML import cancelled");
+        }
+        if (status == null || !status.isOK()) {
+            throw NativeEdtImportFailure.from(status, initialFullReview);
         }
         List<String> scope = exactScope(target, explicitlySelectedObjects);
         // Language entries have no separate .mdo: do not count the root
@@ -235,6 +239,121 @@ public final class EdtSelectiveReviewService {
             .mainSideObjectsDeletionAllowed(false)
             .build();
         return new CompareMergeProcessDescriptor(handle, settings);
+    }
+
+    /**
+     * Native importer failures are not the same as missing .mdo owners.
+     * Preserve the native IStatus tree in a local temporary diagnostics file.
+     * It may contain project paths or metadata names: never upload/send/log it
+     * automatically or include native exception strings in an EDT popup.
+     */
+    public static final class NativeEdtImportFailure extends IOException {
+        private final int severity;
+        private final int code;
+        private final int descendants;
+        private final Path diagnosticsFile;
+        private final boolean fullReview;
+
+        private NativeEdtImportFailure(int severity, int code, int descendants,
+                Path diagnosticsFile, boolean fullReview) {
+            super("Native EDT importer returned non-OK status");
+            this.severity = severity;
+            this.code = code;
+            this.descendants = descendants;
+            this.diagnosticsFile = diagnosticsFile;
+            this.fullReview = fullReview;
+        }
+
+        public int severity() { return severity; }
+        public int code() { return code; }
+        public int descendants() { return descendants; }
+        public Path diagnosticsFile() { return diagnosticsFile; }
+        public boolean fullReview() { return fullReview; }
+
+        public static NativeEdtImportFailure from(IStatus status,
+                boolean fullReview) {
+            int severity = status == null ? -1 : status.getSeverity();
+            int code = status == null ? -1 : status.getCode();
+            int count = countDescendants(status, 0);
+            Path diagnostic = null;
+            try {
+                diagnostic = Files.createTempFile("edt-storage-import-error-", ".txt");
+                StringBuilder report = new StringBuilder(8192);
+                report.append("EDT native XML importer status tree\n")
+                    .append("Potentially confidential: review before sharing.\n")
+                    .append("Mode: ").append(fullReview ? "full" : "selective").append('\n');
+                appendStatus(report, status, 0);
+                // Bound retained diagnostics so a huge MultiStatus does not
+                // consume memory or fill the system temp directory.
+                if (report.length() > 1_000_000) {
+                    report.setLength(1_000_000);
+                    report.append("\n[truncated]\n");
+                }
+                Files.writeString(diagnostic, report.toString(), StandardCharsets.UTF_8);
+            } catch (IOException ex) {
+                if (diagnostic != null) {
+                    try { Files.deleteIfExists(diagnostic); }
+                    catch (IOException ignored) { /* best effort */ }
+                }
+                diagnostic = null;
+            }
+            return new NativeEdtImportFailure(severity, code, count,
+                diagnostic, fullReview);
+        }
+
+        private static int countDescendants(IStatus status, int depth) {
+            if (status == null || depth >= 12) {
+                return 0;
+            }
+            int count = 0;
+            for (IStatus child : status.getChildren()) {
+                count++;
+                count += countDescendants(child, depth + 1);
+                if (count >= 2000) {
+                    return 2000;
+                }
+            }
+            return count;
+        }
+
+        private static void appendStatus(StringBuilder report, IStatus status,
+                int depth) {
+            if (report.length() > 900_000 || depth > 12) {
+                return;
+            }
+            if (status == null) {
+                report.append("Native EDT IImportService.work() returned NULL\n");
+                return;
+            }
+            report.append("  ".repeat(depth))
+                .append("severity=").append(status.getSeverity())
+                .append(" code=").append(status.getCode())
+                .append(" plugin=").append(status.getPlugin())
+                .append(" message=").append(status.getMessage())
+                .append('\n');
+            if (status.getException() != null) {
+                Throwable ex = status.getException();
+                for (int i = 0; ex != null && i < 8; i++) {
+                    report.append("  ".repeat(depth + 1)).append("cause=")
+                        .append(ex.getClass().getName()).append(": ")
+                        .append(ex.getMessage()).append('\n');
+                    for (StackTraceElement frame : ex.getStackTrace()) {
+                        if (report.length() > 900_000) { break; }
+                        report.append("  ".repeat(depth + 1))
+                            .append("  at ").append(frame).append('\n');
+                    }
+                    ex = ex.getCause();
+                }
+            }
+            int childCount = 0;
+            for (IStatus child : status.getChildren()) {
+                if (childCount++ > 2000 || report.length() > 900_000) {
+                    report.append("[children truncated]\n");
+                    break;
+                }
+                appendStatus(report, child, depth + 1);
+            }
+        }
     }
 
     /** Report a lost embedded language without leaking its metadata name. */
