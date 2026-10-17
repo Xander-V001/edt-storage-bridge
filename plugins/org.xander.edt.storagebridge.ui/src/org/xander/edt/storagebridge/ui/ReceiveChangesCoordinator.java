@@ -286,7 +286,7 @@ public final class ReceiveChangesCoordinator {
             if (!MessageDialog.openConfirm(shell,
                     "Проверка перед объединением EDT",
                     "Подготовлено объектов для сравнения: "
-                    + selected.size() + ".\\n"
+                    + selected.size() + ".\n"
                     + "Это ДВУСТОРОННЕЕ сравнение, общий предок Git/хранилища "
                     + "не установлен. В EDT отличия второго источника могут "
                     + "быть отмечены для переноса ПО УМОЛЧАНИЮ. "
