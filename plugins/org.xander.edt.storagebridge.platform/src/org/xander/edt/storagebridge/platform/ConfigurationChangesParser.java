@@ -66,17 +66,27 @@ public final class ConfigurationChangesParser {
             // Nested subsystem paths can be arbitrarily deep; truncating
             // at the first child silently loses descendants' XML files.
             StringBuilder ownerPath = new StringBuilder(root);
+            descendants:
             for (int index = 2; index < parts.length; index++) {
                 String segment = parts[index];
                 switch (segment) {
-                    case "Form", "Форма", "Template", "Макет",
-                         "Recalculation", "Перерасчет", "Subsystem",
-                         "Подсистема" -> {
+                    case "Subsystem", "Подсистема" -> {
                         if (index + 1 < parts.length) {
                             ownerPath.append('.').append(segment)
                                 .append('.').append(parts[++index]);
                             export.add(ownerPath.toString());
                         }
+                    }
+                    case "Form", "Форма", "Template", "Макет",
+                         "Recalculation", "Перерасчет" -> {
+                        if (index + 1 < parts.length) {
+                            ownerPath.append('.').append(segment)
+                                .append('.').append(parts[index + 1]);
+                            export.add(ownerPath.toString());
+                        }
+                        // Payload suffixes like Form.Main.Form.Module are
+                        // NOT independently exported native metadata names.
+                        break descendants;
                     }
                     case "ManagerModule", "ObjectModule",
                          "RecordSetModule", "ValueManagerModule",
