@@ -112,7 +112,9 @@ public final class ReceiveChangesCoordinator {
                 + "или открыт редактор сравнения другого проекта.");
             return;
         }
-        Job job = new Job("1С: Получение изменений из хранилища — "
+        Job job = new Job((mode == ReceiveMode.FULL_REVIEW
+                ? "1С: Полная сверка с хранилищем — "
+                : "1С: Получение изменений из хранилища — ")
                 + project.getName()) {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
@@ -261,9 +263,9 @@ public final class ReceiveChangesCoordinator {
                           + "во временный каталог вне EDT и Git. "
                           + "Это не сброс и не перезапись проекта. "
                           + "Он может занять много времени и диска. "
-                          + "Проект EDT не перезаписывается; дальнейшие "
-                          + "обновления будут выборочными после открытия "
-                          + "первоначального сравнения. "
+                          + "Рабочий проект EDT не перезаписывается напрямую. "
+                          + "В редакторе EDT нужно вручную выбрать изменения. "
+                          + "Следующее обычное получение останется выборочным. "
                         : "Сравниваем с сохранённым состоянием хранилища "
                           + "для текущего проекта EDT и Git-ветки. ")
                     + "Изменится конфигурация только указанной базы, "
@@ -504,7 +506,7 @@ public final class ReceiveChangesCoordinator {
                 }
             }
             if (selectedList.isEmpty()) {
-                throw new IOException("No valid metadata names for initial review");
+                throw new IOException("No reviewable metadata remains in current source");
             }
             Set<String> selected = topObjects(selectedList);
             phase.set("Проверка типов метаданных 1С для EDT");
