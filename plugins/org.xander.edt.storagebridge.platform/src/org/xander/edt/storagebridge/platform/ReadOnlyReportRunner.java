@@ -15,8 +15,9 @@ import java.util.function.BooleanSupplier;
  * Controlled read-only Designer report runner.
  *
  * <p>Runs ONLY /ConfigurationRepositoryReport. Optional infobase credentials
- * are supplied via /N and /P just like the existing Designer update runner;
- * repository credentials are never needed here. No shell or mutation.
+ * use /N and /P; explicit repository credentials use
+ * /ConfigurationRepositoryF/N/P just like the existing Designer update runner.
+ * No shell or mutation.
  * Temporary reports and diagnostics are removed after exit.
  */
 public final class ReadOnlyReportRunner {
@@ -33,9 +34,32 @@ public final class ReadOnlyReportRunner {
     public RepositoryHistoryReport readHistory(RepositoryHistoryRequest request,
             BooleanSupplier cancelled, String ibUsername, String ibPassword)
             throws IOException, InterruptedException {
+        return readHistory(request, cancelled, ibUsername, ibPassword,
+            "", "", "");
+    }
+
+    /**
+     * Query the exact repository used by ConfigurationRepositoryUpdateCfg,
+     * even when the intermediary was bound to a different repository earlier.
+     * This uses Designer's documented /ConfigurationRepositoryF/N/P options.
+     */
+    public RepositoryHistoryReport readHistory(RepositoryHistoryRequest request,
+            BooleanSupplier cancelled, String ibUsername, String ibPassword,
+            String repositoryAddress, String repositoryUsername,
+            String repositoryPassword) throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(cancelled, "cancelled");
+        Objects.requireNonNull(repositoryAddress, "repositoryAddress");
+        Objects.requireNonNull(repositoryUsername, "repositoryUsername");
+        Objects.requireNonNull(repositoryPassword, "repositoryPassword");
         DesignerInfobaseAuth.validate(ibUsername, ibPassword);
+        if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
+                || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())
+                || repositoryAddress.indexOf('\n') >= 0
+                || repositoryUsername.indexOf('\n') >= 0
+                || repositoryPassword.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("Invalid repository credentials");
+        }
         Path executable = request.executable();
         if (!Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS)) {
             throw new ReportExecutionException(
@@ -63,11 +87,21 @@ public final class ReadOnlyReportRunner {
             List<String> baseArguments =
                 ReadOnlyReportCommand.arguments(request, report, log);
             var arguments = new java.util.ArrayList<String>(baseArguments);
-            if (!ibUsername.isBlank() || !ibPassword.isBlank()) {
-                var authentication = new java.util.ArrayList<String>();
-                DesignerInfobaseAuth.addTo(authentication, ibUsername, ibPassword);
-                arguments.addAll(4, authentication);
+            var authentication = new java.util.ArrayList<String>();
+            DesignerInfobaseAuth.addTo(authentication, ibUsername, ibPassword);
+            if (!repositoryAddress.isBlank()) {
+                authentication.add("/ConfigurationRepositoryF");
+                authentication.add(repositoryAddress);
             }
+            if (!repositoryUsername.isBlank()) {
+                authentication.add("/ConfigurationRepositoryN");
+                authentication.add(repositoryUsername);
+                if (!repositoryPassword.isEmpty()) {
+                    authentication.add("/ConfigurationRepositoryP");
+                    authentication.add(repositoryPassword);
+                }
+            }
+            arguments.addAll(4, authentication);
             Process process = new ProcessBuilder(arguments)
                 .directory(work.toFile())
                 .redirectOutput(stdout.toFile())
