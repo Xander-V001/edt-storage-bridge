@@ -49,17 +49,8 @@ public final class ReadOnlyReportRunner {
             String repositoryPassword) throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(cancelled, "cancelled");
-        Objects.requireNonNull(repositoryAddress, "repositoryAddress");
-        Objects.requireNonNull(repositoryUsername, "repositoryUsername");
-        Objects.requireNonNull(repositoryPassword, "repositoryPassword");
-        DesignerInfobaseAuth.validate(ibUsername, ibPassword);
-        if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
-                || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())
-                || repositoryAddress.indexOf('\n') >= 0
-                || repositoryUsername.indexOf('\n') >= 0
-                || repositoryPassword.indexOf('\n') >= 0) {
-            throw new IllegalArgumentException("Invalid repository credentials");
-        }
+        validateCredentials(ibUsername, ibPassword,
+            repositoryAddress, repositoryUsername, repositoryPassword);
         Path executable = request.executable();
         if (!Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS)) {
             throw new ReportExecutionException(
@@ -84,24 +75,9 @@ public final class ReadOnlyReportRunner {
             Path log = work.resolve("designer.txt");
             Path stdout = work.resolve("stdout.txt");
             Path stderr = work.resolve("stderr.txt");
-            List<String> baseArguments =
-                ReadOnlyReportCommand.arguments(request, report, log);
-            var arguments = new java.util.ArrayList<String>(baseArguments);
-            var authentication = new java.util.ArrayList<String>();
-            DesignerInfobaseAuth.addTo(authentication, ibUsername, ibPassword);
-            if (!repositoryAddress.isBlank()) {
-                authentication.add("/ConfigurationRepositoryF");
-                authentication.add(repositoryAddress);
-            }
-            if (!repositoryUsername.isBlank()) {
-                authentication.add("/ConfigurationRepositoryN");
-                authentication.add(repositoryUsername);
-                if (!repositoryPassword.isEmpty()) {
-                    authentication.add("/ConfigurationRepositoryP");
-                    authentication.add(repositoryPassword);
-                }
-            }
-            arguments.addAll(4, authentication);
+            List<String> arguments = commandArguments(request, report, log,
+                ibUsername, ibPassword, repositoryAddress,
+                repositoryUsername, repositoryPassword);
             Process process = new ProcessBuilder(arguments)
                 .directory(work.toFile())
                 .redirectOutput(stdout.toFile())
@@ -164,6 +140,50 @@ public final class ReadOnlyReportRunner {
             deleteQuietly(work.resolve("stdout.txt"));
             deleteQuietly(work.resolve("stderr.txt"));
             deleteQuietly(work);
+        }
+    }
+
+    /** Build an allowlisted read-only command without executing 1C. */
+    public static List<String> commandArguments(
+            RepositoryHistoryRequest request, Path report, Path log,
+            String ibUsername, String ibPassword,
+            String repositoryAddress, String repositoryUsername,
+            String repositoryPassword) {
+        validateCredentials(ibUsername, ibPassword,
+            repositoryAddress, repositoryUsername, repositoryPassword);
+        var arguments = new java.util.ArrayList<>(
+            ReadOnlyReportCommand.arguments(request, report, log));
+        var authentication = new java.util.ArrayList<String>();
+        DesignerInfobaseAuth.addTo(authentication, ibUsername, ibPassword);
+        if (!repositoryAddress.isBlank()) {
+            authentication.add("/ConfigurationRepositoryF");
+            authentication.add(repositoryAddress);
+        }
+        if (!repositoryUsername.isBlank()) {
+            authentication.add("/ConfigurationRepositoryN");
+            authentication.add(repositoryUsername);
+            if (!repositoryPassword.isEmpty()) {
+                authentication.add("/ConfigurationRepositoryP");
+                authentication.add(repositoryPassword);
+            }
+        }
+        arguments.addAll(4, authentication);
+        return List.copyOf(arguments);
+    }
+
+    private static void validateCredentials(String ibUsername, String ibPassword,
+            String repositoryAddress, String repositoryUsername,
+            String repositoryPassword) {
+        Objects.requireNonNull(repositoryAddress);
+        Objects.requireNonNull(repositoryUsername);
+        Objects.requireNonNull(repositoryPassword);
+        DesignerInfobaseAuth.validate(ibUsername, ibPassword);
+        if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
+                || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())
+                || repositoryAddress.indexOf('\\n') >= 0
+                || repositoryUsername.indexOf('\\n') >= 0
+                || repositoryPassword.indexOf('\\n') >= 0) {
+            throw new IllegalArgumentException("Invalid repository credentials");
         }
     }
 
