@@ -43,13 +43,13 @@ public final class VerifiedReceiveContent {
             Path convertedEdt) throws IOException, BackingStoreException {
         return verifyAndClear(project, repositoryAddress, branch,
             intermediaryIdentity, selectedRoots, selectedPendingNames,
-            Set.of(), convertedEdt);
+            Set.of(), Set.of(), convertedEdt);
     }
 
     public static Result verifyAndClear(IProject project,
             String repositoryAddress, String branch, String intermediaryIdentity,
             Set<String> selectedRoots, Set<String> selectedPendingNames,
-            Set<String> absentRemoteNames,
+            Set<String> absentRemoteNames, Set<String> fullImportedOwners,
             Path convertedEdt) throws IOException, BackingStoreException {
         if (project.getLocation() == null || !project.isAccessible()) {
             throw new IOException("EDT project is not available for verification");
@@ -63,13 +63,20 @@ public final class VerifiedReceiveContent {
         List<String> differences = new ArrayList<>();
         int matched = 0;
         int unresolvedOwners = 0;
+        // Full mode verifies ALL imported owners, not only versioned names
+        // in ConfigDumpInfo.xml. Selective mode stays limited to its actual
+        // selected owners; imported dependencies cannot widen acceptance.
+        Set<String> owners = new LinkedHashSet<>(fullImportedOwners);
         for (String root : selectedRoots) {
-            String owner = EdtSelectiveReviewService.edtOwner(root);
+            owners.add(EdtSelectiveReviewService.edtOwner(root));
+        }
+        for (String owner : owners) {
             if (EdtOwnerContentVerifier.isExactlyApplied(
                     projectRoot, stage, owner)) {
                 matched++;
                 for (String pendingName : selectedPendingNames) {
-                    if (ReceiveChangesCoordinator.topObject(pendingName).equals(root)) {
+                    if (EdtSelectiveReviewService.edtOwner(pendingName)
+                            .equals(owner)) {
                         verifiedNames.add(pendingName);
                     }
                 }
@@ -122,7 +129,7 @@ public final class VerifiedReceiveContent {
                 detail.append("1C EDT Storage Bridge: post-merge audit\n")
                     .append("Potentially confidential: review before sharing.\n")
                     .append("Editor closed; this does not prove Merge was clicked.\n")
-                    .append("Checked owners: ").append(selectedRoots.size()).append('\n')
+                    .append("Checked owners: ").append(owners.size()).append('\n')
                     .append("Exactly matching owners: ").append(matched).append('\n')
                     .append("Owner trees with differences: ").append(unresolvedOwners)
                     .append('\n')
@@ -147,7 +154,7 @@ public final class VerifiedReceiveContent {
                 report = null;
             }
         }
-        return new Result(selectedRoots.size(), matched,
+        return new Result(owners.size(), matched,
             verifiedNames.size(), remaining, report);
     }
 
