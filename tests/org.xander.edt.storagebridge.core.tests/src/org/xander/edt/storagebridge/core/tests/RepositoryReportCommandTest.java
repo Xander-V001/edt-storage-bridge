@@ -197,8 +197,12 @@ public class RepositoryReportCommandTest {
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
                 "Версия:\t29404\nКомментарий:\n// тестовые изменения"));
+        // Latest HEAD extraction must not depend on all change-list counts.
+        // The rich history parser still rejects these corrupt details.
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(
+            REAL_REPORT_SHAPE.replace("Изменены\t1", "Изменены\t99")));
         assertThrows(java.io.IOException.class, () ->
-            RepositoryLatestRevisionReader.parseLatest(
+            RepositoryVersionReportParser.parse(
                 REAL_REPORT_SHAPE.replace("Изменены\t1", "Изменены\t99")));
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
@@ -207,10 +211,61 @@ public class RepositoryReportCommandTest {
             RepositoryLatestRevisionReader.parseLatest(
                 REAL_REPORT_SHAPE.replace("Время создания:\t20:25:45",
                     "Время создания:\tinvalid")));
+        // The last-revision report is allowed to omit detailed change lists.
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(
+            REAL_REPORT_SHAPE.replace(
+                "Документ.НачислениеПоСреднему.Форма.ФормаДокумента", "")));
         assertThrows(java.io.IOException.class, () ->
-            RepositoryLatestRevisionReader.parseLatest(
+            RepositoryVersionReportParser.parse(
                 REAL_REPORT_SHAPE.replace(
                     "Документ.НачислениеПоСреднему.Форма.ФормаДокумента", "")));
+    }
+
+    @Test
+    public void nativeLastRevisionDoesNotDependOnCommentsOrChangeSections()
+            throws Exception {
+        String batch = """
+            Отчет по версиям хранилища:\ttcp://example.invalid/repo
+            Дата отчета:\t17.10.2026
+            Время отчета:\t21:00:00
+
+            Версия:\t29404
+            Версия конфигурации:\t5.0.113.3
+            Пользователь:\tРазработчик
+            Дата создания:\t17.10.2026
+            Время создания:\t20:25:45
+            Комментарий:
+            """;
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(batch));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryVersionReportParser.parse(batch));
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(
+            batch.replace("Отчет", "Отчёт")));
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(
+            batch.replace("Версия:\t29404", "Версия :\t29404")));
+        String cp1251Version = batch.replace("Разработчик", "Иванов")
+            .replace("29404", "29405");
+        assertEquals(29405L, RepositoryLatestRevisionReader.parseLatest(
+            cp1251Version.getBytes(java.nio.charset.Charset.forName("windows-1251"))));
+    }
+
+    @Test
+    public void rejectFakeVersionLinesInsideCommentsWithoutNativeHeaders()
+            throws Exception {
+        String report = REAL_REPORT_SHAPE.replace(
+            "// БРО 1.2.1.331",
+            "// БРО 1.2.1.331\nВерсия:\t99999\nПоменяли документ");
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(report));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                "Комментарий:\nВерсия:\t99999"));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                REAL_REPORT_SHAPE.replace("Версия:\t29404", "Версия:\t29403")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                REAL_REPORT_SHAPE.replace("Время создания:\t20:25:45",
+                    "Время создания:\t25:25:45")));
     }
 
     @Test
