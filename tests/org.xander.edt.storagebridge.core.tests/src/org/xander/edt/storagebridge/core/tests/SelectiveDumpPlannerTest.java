@@ -26,7 +26,8 @@ public final class SelectiveDumpPlannerTest {
             "Configuration.Payroll.ClientApplicationInterface",
             "Configuration.Payroll.ManagedApplicationModule",
             "Catalog.Products", "Document.Order.Form.Main"));
-        assertEquals(List.of("Catalog.Products", "Document.Order"),
+        assertEquals(List.of("Catalog.Products", "Document.Order",
+            "Document.Order.Form.Main"),
             plan.exportable());
         assertEquals(List.of(
             "Configuration.Payroll.HomePageWorkArea",
@@ -63,8 +64,9 @@ public final class SelectiveDumpPlannerTest {
             "CommonCommand.OpenPanel.CommandModule"));
         assertEquals(List.of(
             "Catalog.Б24_УП_НастройкиПодключения",
-            "Document.Doc1",
-            "CommonCommand.OpenPanel"), plan.exportable());
+            "Document.Doc1", "Document.Doc1.Form.MainForm",
+            "CommonCommand.OpenPanel", "CommonCommand.OpenPanel.CommandModule"),
+            plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
 
@@ -75,8 +77,33 @@ public final class SelectiveDumpPlannerTest {
             "Document.Order.ManagerModule", "Document.Order.Help",
             "Catalog.Products.Form.Item", "CommonModule.Utilities.Module",
             "Report.Sales.DataCompositionSchema"));
-        assertEquals(List.of("Document.Order", "Catalog.Products",
-            "CommonModule.Utilities", "Report.Sales"), plan.exportable());
+        assertEquals(List.of("Document.Order", "Document.Order.Form.Main",
+            "Document.Order.Template.Print", "Document.Order.ManagerModule",
+            "Document.Order.Help", "Catalog.Products",
+            "Catalog.Products.Form.Item", "CommonModule.Utilities",
+            "CommonModule.Utilities.Module", "Report.Sales"), plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
+    public void childChangesAreNotCollapsedEvenWhenParentAlreadyRequested() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Document.Invoice",
+            "Document.Invoice.Form.Main.Form",
+            "Document.Invoice.ObjectModule",
+            "Document.Invoice.Template.Print",
+            "Role.Accountant.Rights",
+            "CommonForm.Setup.Form",
+            "CommonTemplate.Print.Template"));
+        assertEquals(List.of(
+            "Document.Invoice",
+            "Document.Invoice.Form.Main",
+            "Document.Invoice.ObjectModule",
+            "Document.Invoice.Template.Print",
+            "Role.Accountant", "Role.Accountant.Rights",
+            "CommonForm.Setup", "CommonForm.Setup.Form",
+            "CommonTemplate.Print", "CommonTemplate.Print.Template"),
+            plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
 
@@ -95,7 +122,8 @@ public final class SelectiveDumpPlannerTest {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Catalog.Товары.ObjectModule", "Document.Заказ",
             "Document.Заказ.Form.Основная"));
-        assertEquals(List.of("Catalog.Товары", "Document.Заказ"),
+        assertEquals(List.of("Catalog.Товары", "Catalog.Товары.ObjectModule",
+            "Document.Заказ", "Document.Заказ.Form.Основная"),
             plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
