@@ -25,7 +25,11 @@ public final class RepositoryUpdateCommand {
         args.add("DESIGNER");
         args.add(request.infobase().switchName());
         args.add(request.infobase().address());
+        DesignerInfobaseAuth.addTo(args,
+            request.infobaseUsername(), request.infobasePassword());
         args.add("/DisableStartupDialogs");
+        args.add("/DisableStartupMessages");
+        args.add("/DisableUnrecoverableErrorMessage");
         // These are documented repository access parameters, not IB login.
         // Never emit the constructed command or its password into EDT logs.
         if (!request.repositoryAddress().isBlank()) {
