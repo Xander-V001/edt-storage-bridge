@@ -53,7 +53,7 @@ public record SelectiveDumpRequest(
             throw new IllegalArgumentException("Duplicate objects are not accepted");
         }
         if (timeout.compareTo(Duration.ofSeconds(10)) < 0
-                || timeout.compareTo(Duration.ofMinutes(30)) > 0) {
+                || timeout.compareTo(Duration.ofHours(2)) > 0) {
             throw new IllegalArgumentException("Invalid timeout");
         }
     }

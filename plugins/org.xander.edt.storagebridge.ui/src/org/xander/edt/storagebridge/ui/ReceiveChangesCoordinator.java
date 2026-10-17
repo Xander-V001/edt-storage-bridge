@@ -454,7 +454,9 @@ public final class ReceiveChangesCoordinator {
                     ? "Полная первичная XML-выгрузка в отдельный каталог"
                     : "Выгрузка только изменённых объектов", 1);
                 var dumpRequest = new SelectiveDumpRequest(executable, transport,
-                    selectedList, TIMEOUT, settings.infobaseUsername(),
+                    selectedList, initialFullReview
+                        ? Duration.ofHours(2) : TIMEOUT,
+                    settings.infobaseUsername(),
                     settings.infobasePassword());
                 var runner = new SelectiveDumpRunner();
                 var result = initialFullReview
@@ -714,6 +716,15 @@ public final class ReceiveChangesCoordinator {
             return "Конфигуратор 1С завершил создание снимка с кодом "
                 + snapshot.exitCode() + ". Сохранены диагностические журналы: "
                 + snapshot.diagnosticsDirectory();
+        }
+        if (failure instanceof EdtSelectiveReviewService.MissingConvertedOwnersException mismatch) {
+            return "После импорта XML в EDT не найдены основные файлы .mdo "
+                + "для всех запрошенных объектов. Ожидалось владельцев: "
+                + mismatch.expectedOwners() + ", найдено: "
+                + mismatch.matchedOwners() + ", всего основных .mdo: "
+                + mismatch.primaryDescriptors() + ". Отсутствуют по типам: "
+                + mismatch.missingTypes()
+                + ". Объекты остаются ожидающими; сравнение не запускалось.";
         }
         if (failure instanceof EdtSelectiveReviewService.UnsupportedMetadataTypesException types) {
             return "Нет соответствия типов метаданных 1С и EDT: "

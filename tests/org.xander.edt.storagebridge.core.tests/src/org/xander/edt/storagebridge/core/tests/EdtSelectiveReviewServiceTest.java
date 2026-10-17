@@ -123,6 +123,16 @@ public class EdtSelectiveReviewServiceTest {
     }
 
     @Test
+    public void missingOwnersAreGroupedWithoutExposingPrivateObjectNames() {
+        var requested = java.util.Set.of(
+            "Documents/SecretOne", "Documents/SecretTwo",
+            "Catalogs/PrivateItems", "CommonModules/Utilities");
+        var seen = java.util.Set.of("CommonModules/Utilities");
+        assertEquals(java.util.Map.of("Documents", 2, "Catalogs", 1),
+            EdtSelectiveReviewService.missingOwnersByType(requested, seen));
+    }
+
+    @Test
     public void unsupportedMetadataMustFailInsteadOfWideningMergeScope() {
         assertThrows(IOException.class,
             () -> EdtSelectiveReviewService.edtOwner("ImaginaryType.Test"));

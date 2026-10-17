@@ -270,6 +270,44 @@ public final class EdtSelectiveReviewService {
         }
     }
 
+    /** The exact scope is incomplete; no change may be marked as applied. */
+    public static final class MissingConvertedOwnersException extends IOException {
+        private final int expectedOwners;
+        private final int matchedOwners;
+        private final int primaryDescriptors;
+        private final Map<String, Integer> missingTypes;
+
+        public MissingConvertedOwnersException(int expectedOwners, int matchedOwners,
+                int primaryDescriptors, Map<String, Integer> missingTypes) {
+            super("EDT conversion did not materialize all requested owners");
+            this.expectedOwners = expectedOwners;
+            this.matchedOwners = matchedOwners;
+            this.primaryDescriptors = primaryDescriptors;
+            this.missingTypes = Map.copyOf(missingTypes);
+        }
+
+        public int expectedOwners() { return expectedOwners; }
+        public int matchedOwners() { return matchedOwners; }
+        public int primaryDescriptors() { return primaryDescriptors; }
+        public Map<String, Integer> missingTypes() { return missingTypes; }
+    }
+
+    /**
+     * Produce a safe grouped report without logging confidential metadata
+     * object names. All actual names stay in the existing pending journal.
+     */
+    public static Map<String, Integer> missingOwnersByType(
+            Set<String> requested, Set<String> seen) {
+        var missing = new java.util.TreeMap<String, Integer>();
+        for (String name : requested) {
+            if (!seen.contains(name)) {
+                String group = name.substring(0, name.indexOf('/'));
+                missing.merge(group, 1, Integer::sum);
+            }
+        }
+        return Map.copyOf(missing);
+    }
+
     /** Map only recognized classic metadata types to EDT source paths. */
     public static String edtOwner(String classicalObject) throws IOException {
         if (classicalObject == null) {
@@ -336,6 +374,7 @@ public final class EdtSelectiveReviewService {
         }
         Set<String> seen = new LinkedHashSet<>();
         Set<String> symlinks = new LinkedHashSet<>();
+        int[] totalDescriptors = {0};
         try (Stream<Path> files = Files.walk(edtRoot)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 Path relative = edtRoot.relativize(file);
@@ -343,6 +382,9 @@ public final class EdtSelectiveReviewService {
                 // scope. A nested Form.form/rights file is not an owner and
                 // may map to a different FQN or no FQN at all.
                 String owner = metadataOwnerForPath(relative);
+                if (owner != null) {
+                    totalDescriptors[0]++;
+                }
                 if (owner == null || !requested.contains(owner)) {
                     // The conversion is not allowed to widen the comparison
                     // scope with unrelated objects, even if the importer
@@ -359,10 +401,9 @@ public final class EdtSelectiveReviewService {
             }
         }
         if (!seen.containsAll(requested) || symlinks.isEmpty()) {
-            var missing = new LinkedHashSet<>(requested);
-            missing.removeAll(seen);
-            throw new IOException("Partial EDT conversion missed selected objects: "
-                + missing);
+            throw new MissingConvertedOwnersException(
+                requested.size(), seen.size(), totalDescriptors[0],
+                missingOwnersByType(requested, seen));
         }
         return new ArrayList<>(symlinks);
     }
