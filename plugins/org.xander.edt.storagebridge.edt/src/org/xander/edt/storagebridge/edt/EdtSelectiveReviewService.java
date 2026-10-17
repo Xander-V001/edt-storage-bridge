@@ -47,6 +47,8 @@ public final class EdtSelectiveReviewService {
     private static final Map<String, String> SOURCE_GROUPS = Map.ofEntries(
         Map.entry("Справочник", "Catalogs"),
         Map.entry("Catalog", "Catalogs"),
+        Map.entry("Язык", "Languages"),
+        Map.entry("Language", "Languages"),
         Map.entry("Документ", "Documents"),
         Map.entry("Document", "Documents"),
         Map.entry("ОбщийМодуль", "CommonModules"),
