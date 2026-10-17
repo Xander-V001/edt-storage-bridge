@@ -7,4 +7,5 @@ Bundle-RequiredExecutionEnvironment: JavaSE-25
 Require-Bundle: org.xander.edt.storagebridge.core,
  org.xander.edt.storagebridge.platform,
  org.xander.edt.storagebridge.edt,
+ org.eclipse.core.runtime,
  org.junit
