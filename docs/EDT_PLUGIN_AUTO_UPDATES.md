@@ -69,3 +69,43 @@ No code in this project silently replaces live EDT plugin jars.
 - Successful CI/publishing only proves packaging/deployment; it **does not**
   prove the classic 1C storage selective receive/merge mechanism works safely.
   The mandatory Document1/Document2 acceptance test is separate.
+
+
+## 2026-10-17: installation failure in EDT from build #31
+
+The user's actual Eclipse p2 log shows `Collect` failure: `No repository
+found containing` all four `org.xander.edt.storagebridge.*` bundles and
+the feature at version `0.1.0.202610171357`. The unrelated Eclipse
+`Disconnected before saving` generic-text-editor stack trace is not
+evidence that the bridge itself failed to compile or install.
+
+**Archive verified, do not falsely label it missing or corrupt:** downloaded
+the actual build #31 GitHub Actions artifact (`run 39038658393`), unwrapped
+its one nested p2 ZIP, and checked all 5 JAR entries and `artifacts.jar`.
+Their sizes, SHA-256 hashes, versions and ZIP CRC match. The failure concerns
+p2's ability to load/download artifacts from that installed `jar:file:`
+archive, **not missing physical JARs**. The exact Windows-specific mechanism
+is still unproven.
+
+Source-only corrections after run #31 (no unauthorized CI):
+- Normalize the generated p2 index to conventional JAR-backed
+  `content.xml` / `artifacts.xml` *factories*, which prefer `content.jar`
+  and `artifacts.jar`. This avoids relying on `.xml.xz` factories when
+  loading the offline ZIP; Eclipse p2 documents this factory selection.
+- Repackage the offline archive using exactly the validated site contents.
+  Verify all bundle/feature payload lengths and SHA-256 against the
+  `artifacts.jar` descriptors; reject mismatched versions, missing IUs,
+  missing JARs, duplicate paths or bad CRC.
+- Require an isolated **native Eclipse p2 Director** installation of the
+  self-contained core bundle from the `jar:file:...zip!/` path before
+  publishing the site and uploading ZIP. Core verifies actual p2 repository
+  loading/artifact retrieval; the other four JARs are checked against
+  artifact metadata. This does NOT prove native EDT feature compatibility,
+  nor the classic 1C receive/merge workflow.
+- The normal source workflow remains manual-only, `workflow_dispatch`.
+  Do not launch a build for this correction without a new explicit request.
+
+Until a successful approved build and p2 install smoke test, do not suggest
+the old #31 ZIP is a functional installable release. Once Pages is published,
+prefer the HTTPS p2 URL; unzipping an offline p2 ZIP and adding its extracted
+directory can be used for diagnosis if required.
