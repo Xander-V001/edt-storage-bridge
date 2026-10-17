@@ -87,6 +87,21 @@ public class ConfigurationChangesParserTest {
     }
 
     @Test
+    public void nestedSubsystemsAreNotTruncatedToTheirFirstChild() throws Exception {
+        var delta = ConfigurationChangesParser.parse(
+            "Modified: Subsystem.Кадры.Subsystem.Интеграция1СКС"
+            + ".Subsystem.Вложенная.Подсистема.ЕщёОдна\\n"
+            + "Modified: Document.Order.Form.Main.Form.Module\\n");
+        assertEquals(List.of(
+            "Subsystem.Кадры",
+            "Subsystem.Кадры.Subsystem.Интеграция1СКС",
+            "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная",
+            "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная.Подсистема.ЕщёОдна",
+            "Document.Order", "Document.Order.Form.Main"),
+            delta.objectsToExport());
+    }
+
+    @Test
     public void emptyResultMeansNoRemoteChanges() throws Exception {
         assertTrue(ConfigurationChangesParser.parse("").objectsToExport().isEmpty());
     }
