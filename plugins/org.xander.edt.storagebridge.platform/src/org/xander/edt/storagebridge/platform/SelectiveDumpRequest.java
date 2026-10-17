@@ -39,6 +39,8 @@ public record SelectiveDumpRequest(
         }
         for (String nameOfObject : objectNames) {
             if (nameOfObject == null || nameOfObject.length() > 1024
+                    || "Configuration".equals(nameOfObject)
+                    || "Language".equals(nameOfObject)
                     || nameOfObject.isBlank()
                     || (!nameOfObject.contains(".")
                         && !"Configuration".equals(nameOfObject)
