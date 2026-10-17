@@ -89,3 +89,38 @@ Only user-approved manual GitHub Actions build, then verify artifact installs in
 ## Immediate priority
 
 **Not another UI feature, CI run or general rewrite.** Start with P0/P1: verify the actual 1C command contract, authentication, version identity and recoverability; then P2 native EDT compare proof; then join those two already-proven components in P3. If P1/P2 cannot be demonstrated independently, stop and report the precise missing API/constraint instead of adding more scaffolding.
+
+
+## 2026-10-17: after real error at exactScope:357 (SOURCE ONLY)
+
+The installed plugin reached EdtSelectiveReviewService.exactScope and
+failed on its strict missing-owner check. This proves neither a complete
+XML conversion nor a successful user-controlled merge.
+
+- First run: separate InitialFullDumpRequest and InitialFullDumpCommand
+  perform a single full hierarchical XML export into a private folder,
+  without -listFile, and allow up to 2 hours.
+- Later runs: selective export still requires object names with a
+  30-minute limit, never automatically falls back to full export.
+- Durable initial state: per project, repository and actual Git branch,
+  initial-full-review-prepared is marked ONLY after the native compare
+  editor opens. Historical contexts without a marker require initial
+  full review. All not-yet-accepted remote objects remain pending.
+- Export consistency: a modified nested Form/Template/Module/Help/Command
+  is exported through its complete top-level owner, reducing missing
+  primary .mdo descriptors. Original child change names stay pending.
+- Full first import supplies root configuration Ext files; partial
+  imports still exclude root Ext and defer their changes.
+- exactScope continues to fail closed for missing .mdo owners, but now
+  reports counts grouped by missing metadata category, not object names.
+- VerifyReceiveContent delegates to EdtOwnerContentVerifier for
+  byte-for-byte two-way checking. Root Configuration verification now
+  checks Configuration.mdo AND every sibling module and external file.
+- Final verification and potentially large staging cleanup run in an
+  Eclipse background Job, not the UI thread.
+
+Unverified requirements: compilation/runtime in EDT 2026.2.1.3,
+native full XML root conversion, actual compare-editor acceptance,
+verified classic storage repository revision, safe Git conflict merge,
+deletion/rename support and measured large-project performance.
+No CI build or user infobase operation was executed for these changes.
