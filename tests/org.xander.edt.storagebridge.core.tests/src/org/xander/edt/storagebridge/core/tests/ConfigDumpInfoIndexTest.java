@@ -152,6 +152,28 @@ public final class ConfigDumpInfoIndexTest {
     }
 
     @Test
+    public void replacedUuidUnderSameNameMustNotBeMergedByName() throws Exception {
+        Path before = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Order" id="first-uuid" configVersion="old"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        Path replaced = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Order" id="second-uuid" configVersion="new"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertThrows(IOException.class,
+            () -> ConfigDumpInfoIndex.changedSince(before, replaced));
+    }
+
+    @Test
     public void duplicateMetadataNamesAreRejected() throws Exception {
         Path duplicate = fixture("""
             <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
