@@ -78,6 +78,9 @@ public final class EdtOwnerContentVerifierTest {
                 project, stage, "Documents/Order");
             assertTrue(mismatch.contains("различается содержимое"));
             assertTrue(mismatch.contains("Form.form"));
+            assertTrue(mismatch.contains("первое отличие, байт"));
+            assertTrue(mismatch.contains("источник"));
+            assertTrue(mismatch.contains("EDT"));
         } finally {
             remove(project); remove(stage);
         }
