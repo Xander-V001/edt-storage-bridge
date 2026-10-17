@@ -109,3 +109,11 @@ No new GitHub Actions build was dispatched by these source-only changes.
 2. Verify the new CLI combinations and actual 1C returns on disposable data; include errors, cancellation and missing IB login credentials.
 3. Validate partial XML-to-EDT conversion and native EDT compare/merge in EDT 2026.2.1.3 with Document1/Document2, child forms/templates and committed Git divergence.
 4. Do not retry using the installed #24 on working data. The new source fixes are **uncompiled**, do not constitute a usable release or prove safe runtime behavior.
+
+
+## 2026-10-17: background progress in Eclipse / EDT (source only)
+
+- `ReceiveChangesCoordinator.receive` now schedules a user-visible `org.eclipse.core.runtime.jobs.Job` (`setUser(true)`), with `SubMonitor` allocations across Git preflight, existing intermediary update/change detection, selective export, and external EDT conversion. Standard Eclipse **Progress** view/status area displays the job and subtask information. EDT code editors are no longer held behind a long-running modal `ProgressMonitorDialog`.
+- Designer operations, Git checks and external-format conversion run in the Job worker. User confirmations, the explicit object-selection dialog, and native EDT compare editor opening/listener setup are marshalled to SWT via `Display.syncExec`, while completion/error notices are posted asynchronously.
+- Cancellation is cooperative via `IProgressMonitor.isCanceled()`; an already started native Designer update has uncertain outcome if interrupted and remains protected by the existing durable retry guard. Neither cancellation nor a Job status grants authorization to use a production intermediary.
+- Source change has not been compiled, installed, or accepted in EDT 2026.2. Do **not** mistake visible Job progress for a verified correct receive/merge algorithm. The Document1/Document2 disposable acceptance test remains mandatory.
