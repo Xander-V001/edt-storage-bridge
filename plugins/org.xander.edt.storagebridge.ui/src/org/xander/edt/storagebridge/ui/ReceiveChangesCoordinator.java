@@ -674,6 +674,12 @@ public final class ReceiveChangesCoordinator {
                 + snapshot.exitCode() + ". Сохранены диагностические журналы: "
                 + snapshot.diagnosticsDirectory();
         }
+        if (failure instanceof EdtSelectiveReviewService.UnsupportedMetadataTypesException types) {
+            return "Нет соответствия типов метаданных 1С и EDT: "
+                + String.join(", ", types.types())
+                + ". Конвертация остановлена до импорта. "
+                + "Ожидающие изменения сохранены.";
+        }
         if (failure instanceof IOException) {
             String reason = failure.getMessage();
             if (reason != null && (

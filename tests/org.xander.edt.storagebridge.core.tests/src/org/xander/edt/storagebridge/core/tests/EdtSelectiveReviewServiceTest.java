@@ -65,6 +65,63 @@ public class EdtSelectiveReviewServiceTest {
             "../other/src/Documents/Документ1.mdo")));
     }
 
+
+    @Test
+    public void realPayrollConfigurationTypesMapToNativeEdtFolders() throws Exception {
+        assertEquals("SettingsStorages/НастройкиПользователей",
+            EdtSelectiveReviewService.edtOwner(
+                "SettingsStorage.НастройкиПользователей.ManagerModule"));
+        assertEquals("CommandGroups/Печать",
+            EdtSelectiveReviewService.edtOwner("CommandGroup.Печать"));
+        assertEquals("IntegrationServices/ОбменСообщениями",
+            EdtSelectiveReviewService.edtOwner(
+                "IntegrationService.ОбменСообщениями.Module"));
+        assertEquals("SettingsStorages/Настройки",
+            EdtSelectiveReviewService.edtOwner("ХранилищеНастроек.Настройки"));
+        assertEquals("CommandGroups/Печать",
+            EdtSelectiveReviewService.edtOwner("ГруппаКоманд.Печать"));
+        assertEquals("IntegrationServices/Обмен",
+            EdtSelectiveReviewService.edtOwner("СервисИнтеграции.Обмен"));
+    }
+
+    @Test
+    public void everyMetadataCategoryFromTheUserExportIsSupported() throws Exception {
+        // Distinct prefixes from a real 16,945-line Designer object list.
+        var categories = java.util.List.of(
+            "CommonModule", "CommonPicture", "Document", "DataProcessor",
+            "InformationRegister", "Catalog", "Report", "Constant",
+            "CommonForm", "Enum", "Role", "CommonCommand", "StyleItem",
+            "Subsystem", "EventSubscription", "FunctionalOption",
+            "DefinedType", "ScheduledJob", "XDTOPackage",
+            "AccumulationRegister", "ExchangePlan", "SessionParameter",
+            "CommonTemplate", "DocumentJournal", "WebService",
+            "ChartOfCharacteristicTypes", "SettingsStorage",
+            "BusinessProcess", "Task", "CommandGroup", "HTTPService",
+            "FunctionalOptionsParameter", "CommonAttribute",
+            "CalculationRegister", "FilterCriterion",
+            "ChartOfCalculationTypes", "IntegrationService",
+            "Language", "WSReference");
+        var objects = categories.stream().map(x -> x + ".Example").toList();
+        EdtSelectiveReviewService.requireSupportedObjectTypes(objects);
+        for (String category : categories) {
+            org.junit.Assert.assertFalse(
+                EdtSelectiveReviewService.edtOwner(category + ".Example").isBlank());
+        }
+    }
+
+    @Test
+    public void unknownCategoriesFailBeforeXmlConversionAndShowOnlyTypeNames() {
+        var failure = assertThrows(
+            EdtSelectiveReviewService.UnsupportedMetadataTypesException.class,
+            () -> EdtSelectiveReviewService.requireSupportedObjectTypes(
+                java.util.List.of("UnknownKind.Secret",
+                    "OtherKind.AnotherSecret", "UnknownKind.Third")));
+        assertEquals(java.util.List.of("UnknownKind", "OtherKind"),
+            failure.types());
+        org.junit.Assert.assertFalse(
+            failure.getMessage().contains("Secret"));
+    }
+
     @Test
     public void unsupportedMetadataMustFailInsteadOfWideningMergeScope() {
         assertThrows(IOException.class,

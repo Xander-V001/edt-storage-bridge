@@ -79,6 +79,8 @@ public final class EdtSelectiveReviewService {
         Map.entry("Constant", "Constants"),
         Map.entry("ОбщаяКоманда", "CommonCommands"),
         Map.entry("CommonCommand", "CommonCommands"),
+        Map.entry("ГруппаКоманд", "CommandGroups"),
+        Map.entry("CommandGroup", "CommandGroups"),
         Map.entry("ОбщаяФорма", "CommonForms"),
         Map.entry("CommonForm", "CommonForms"),
         Map.entry("ОбщийМакет", "CommonTemplates"),
@@ -105,6 +107,8 @@ public final class EdtSelectiveReviewService {
         Map.entry("Language", "Languages"),
         Map.entry("ОбщийРеквизит", "CommonAttributes"),
         Map.entry("CommonAttribute", "CommonAttributes"),
+        Map.entry("ХранилищеНастроек", "SettingsStorages"),
+        Map.entry("SettingsStorage", "SettingsStorages"),
         Map.entry("ЖурналДокументов", "DocumentJournals"),
         Map.entry("DocumentJournal", "DocumentJournals"),
         Map.entry("ПланОбмена", "ExchangePlans"),
@@ -125,6 +129,8 @@ public final class EdtSelectiveReviewService {
         Map.entry("WSReference", "WSReferences"),
         Map.entry("ВнешнийИсточникДанных", "ExternalDataSources"),
         Map.entry("ExternalDataSource", "ExternalDataSources"),
+        Map.entry("СервисИнтеграции", "IntegrationServices"),
+        Map.entry("IntegrationService", "IntegrationServices"),
         Map.entry("ЭлементСтиля", "StyleItems"),
         Map.entry("StyleItem", "StyleItems"),
         Map.entry("Стиль", "Styles"),
@@ -180,6 +186,10 @@ public final class EdtSelectiveReviewService {
         } catch (Exception ex) {
             throw new IOException("No EDT XML importer for this project's 1C version", ex);
         }
+        // Fail before an expensive native XML import if an unexpected
+        // storage metadata category has no safe EDT source mapping.
+        // This preflight never edits the user's EDT project or Git worktree.
+        requireSupportedObjectTypes(explicitlySelectedObjects);
         IStatus status;
         // In a selective object dump, the top-level Ext directory belongs
         // to Configuration, NOT to the requested Catalogs/Documents/etc.
@@ -211,6 +221,48 @@ public final class EdtSelectiveReviewService {
         return new CompareMergeProcessDescriptor(handle, settings);
     }
 
+    /** Missing metadata type names only; never expose native object names. */
+    public static final class UnsupportedMetadataTypesException extends IOException {
+        private final List<String> types;
+
+        public UnsupportedMetadataTypesException(Set<String> unknownTypes) {
+            super("Unsupported storage metadata types");
+            this.types = List.copyOf(unknownTypes);
+        }
+
+        public List<String> types() {
+            return types;
+        }
+    }
+
+    /** Preflight all requested object types; do not import until they map. */
+    public static void requireSupportedObjectTypes(List<String> objectNames)
+            throws IOException {
+        Objects.requireNonNull(objectNames);
+        Set<String> missing = new LinkedHashSet<>();
+        for (String object : objectNames) {
+            if (object == null || object.isBlank()) {
+                throw new IOException("Empty storage metadata name");
+            }
+            if ("Configuration".equals(object)
+                    || object.startsWith("Configuration.")) {
+                continue;
+            }
+            String[] parts = object.split("\\.");
+            if (parts.length < 2 || parts[1].isBlank()) {
+                throw new IOException("Incomplete storage metadata name");
+            }
+            if (!SOURCE_GROUPS.containsKey(parts[0])) {
+                // Only a metadata TYPE may appear in a user-facing error.
+                missing.add(parts[0].matches("[A-Za-z]{1,64}")
+                    ? parts[0] : "UNKNOWN");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new UnsupportedMetadataTypesException(missing);
+        }
+    }
+
     /** Map only recognized classic metadata types to EDT source paths. */
     public static String edtOwner(String classicalObject) throws IOException {
         if (classicalObject == null) {
@@ -229,8 +281,12 @@ public final class EdtSelectiveReviewService {
             throw new IOException("Incomplete metadata name: " + classicalObject);
         }
         String folder = SOURCE_GROUPS.get(parts[0]);
-        if (folder == null || parts[1].isBlank()) {
-            throw new IOException("Unsupported storage metadata type: " + classicalObject);
+        if (folder == null) {
+            throw new UnsupportedMetadataTypesException(Set.of(
+                parts[0].matches("[A-Za-z]{1,64}") ? parts[0] : "UNKNOWN"));
+        }
+        if (parts[1].isBlank()) {
+            throw new IOException("Incomplete storage metadata name");
         }
         return folder + "/" + parts[1];
     }
