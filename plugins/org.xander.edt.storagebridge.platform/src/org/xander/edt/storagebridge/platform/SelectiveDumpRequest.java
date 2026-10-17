@@ -11,13 +11,20 @@ import java.util.Objects;
  */
 public record SelectiveDumpRequest(
         Path executable, InfobaseLocation infobase,
-        List<String> objectNames, Duration timeout) {
+        List<String> objectNames, Duration timeout,
+        String infobaseUsername, String infobasePassword) {
+
+    public SelectiveDumpRequest(Path executable, InfobaseLocation infobase,
+            List<String> objectNames, Duration timeout) {
+        this(executable, infobase, objectNames, timeout, "", "");
+    }
 
     public SelectiveDumpRequest {
         Objects.requireNonNull(executable, "executable");
         Objects.requireNonNull(infobase, "infobase");
         Objects.requireNonNull(objectNames, "objectNames");
         Objects.requireNonNull(timeout, "timeout");
+        DesignerInfobaseAuth.validate(infobaseUsername, infobasePassword);
         if (!executable.isAbsolute()) {
             throw new IllegalArgumentException("Executable path must be absolute");
         }
