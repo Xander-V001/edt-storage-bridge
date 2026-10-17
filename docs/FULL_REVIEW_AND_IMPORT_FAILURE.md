@@ -83,3 +83,33 @@ Do not claim the partial-import defect has been fixed in EDT.
 Operational note: avoid running a simultaneous EDT upload/synchronization
 of the project's *own* connected infobase during a 2+ GB native XML import.
 The repository intermediary remains separate from the EDT-connected base.
+
+## 2026-10-17: Do not suppress native EDT merge deletions
+
+The user demonstrated full comparison where local-only nested report forms appeared
+orange ("В 'Текущий проект EDT'") but could not be removed by "Объединить".
+The cause in the **active** `EdtSelectiveReviewService.prepare` was
+`ComparisonProcessSettings.builder(...).mainSideObjectsDeletionAllowed(false)`.
+It intentionally disabled the native editor's checkbox/delete behavior.
+
+It is now `mainSideObjectsDeletionAllowed(true)` in BOTH normal selective
+receives and forced full reviews. No extra application toggle is added.
+According to the native EDT comparison rules, objects present ONLY on the
+main (left) side are still unchecked by default: the user can explicitly
+check the local-only rows in the standard EDT editor and merge to delete
+them. Enabled deletion is NOT unconditional auto-deletion.
+
+**Separate unresolved limitation:** currently `ComparisonScope(scope, scope)`
+is populated from **remote** top-level owner descriptors. Nested local-only
+forms/resources INSIDE a scoped object are compared and can now be removed,
+but a wholly local-only top-level object (e.g. a local-only report) may
+not be present in the comparison scope at all. The FULL source XML dump does
+not itself prove a FULL two-sided inventory comparison. A future enhancement
+must include local-only top-level owners in the main-side scope, and verify
+those deletions before claiming that an entire repository revision was
+fully applied. Do not silently mark them as accepted solely from a
+successful merge-editor close.
+
+The newly enabled deletion setting remains **source-only until built and
+smoke-tested** in installed EDT 2026.2. Previously opened comparison editor
+instances must be closed and reopened with the updated plugin.
