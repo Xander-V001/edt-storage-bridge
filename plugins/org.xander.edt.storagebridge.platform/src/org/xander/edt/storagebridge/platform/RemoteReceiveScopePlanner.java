@@ -24,6 +24,19 @@ public final class RemoteReceiveScopePlanner {
                 List.copyOf(names), List.of()).objectsToExport()));
     }
 
+    /** Full reviews must preserve identities deleted from the repository. */
+    public static Set<String> removedSince(Path previousInfo, Path currentInfo)
+            throws IOException {
+        if (previousInfo == null) {
+            return Set.of();
+        }
+        var oldNames = ConfigDumpInfoIndex.readVersions(previousInfo).keySet();
+        var newNames = ConfigDumpInfoIndex.readVersions(currentInfo).keySet();
+        var deleted = new LinkedHashSet<>(oldNames);
+        deleted.removeAll(newNames);
+        return Set.copyOf(deleted);
+    }
+
     /**
      * Stale pending object identities cannot be staged from the current full
      * source: do not silently mark them received and do not let them make
