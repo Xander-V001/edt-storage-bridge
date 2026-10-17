@@ -90,8 +90,8 @@ public class ConfigurationChangesParserTest {
     public void nestedSubsystemsAreNotTruncatedToTheirFirstChild() throws Exception {
         var delta = ConfigurationChangesParser.parse(
             "Modified: Subsystem.Кадры.Subsystem.Интеграция1СКС"
-            + ".Subsystem.Вложенная.Подсистема.ЕщёОдна\\n"
-            + "Modified: Document.Order.Form.Main.Form.Module\\n");
+            + ".Subsystem.Вложенная.Подсистема.ЕщёОдна\n"
+            + "Modified: Document.Order.Form.Main.Form.Module\n");
         assertEquals(List.of(
             "Subsystem.Кадры",
             "Subsystem.Кадры.Subsystem.Интеграция1СКС",
