@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.Test;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.ReadOnlyReportCommand;
+import org.xander.edt.storagebridge.platform.ReadOnlyReportRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryReport;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
@@ -81,6 +82,30 @@ public class RepositoryReportCommandTest {
         assertEquals(3, report.byteCount());
         assertThrows(IllegalArgumentException.class, () ->
             new RepositoryHistoryReport(new byte[0], -1, null));
+    }
+
+    @Test
+    public void latestReportTargetsSameRepositoryAsDesignerUpdate() {
+        var request = RepositoryHistoryRequest.latest(EXE,
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "/workspace/ib"),
+            Duration.ofMinutes(5));
+        var cmd = ReadOnlyReportRunner.commandArguments(request, REPORT, LOG,
+            "ib-admin", "ib-password",
+            "tcp://example.invalid:1542/Payroll", "storage-user", "storage-secret");
+        assertEquals("/F", cmd.get(2));
+        assertEquals("ib-admin", cmd.get(cmd.indexOf("/N") + 1));
+        assertEquals("ib-password", cmd.get(cmd.indexOf("/P") + 1));
+        assertEquals("tcp://example.invalid:1542/Payroll",
+            cmd.get(cmd.indexOf("/ConfigurationRepositoryF") + 1));
+        assertEquals("storage-user",
+            cmd.get(cmd.indexOf("/ConfigurationRepositoryN") + 1));
+        assertEquals("storage-secret",
+            cmd.get(cmd.indexOf("/ConfigurationRepositoryP") + 1));
+        assertEquals("-1", cmd.get(cmd.indexOf("-NBegin") + 1));
+        assertFalse(cmd.contains("/ConfigurationRepositoryUpdateCfg"));
+        assertFalse(cmd.contains("/ConfigurationRepositoryCommit"));
+        assertThrows(UnsupportedOperationException.class,
+            () -> cmd.add("/ConfigurationRepositoryCommit"));
     }
 
     @Test
