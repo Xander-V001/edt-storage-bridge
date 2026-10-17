@@ -24,6 +24,7 @@ import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 public final class ReceiveBaselineJournal {
     private final Path baselineFile;
     private final Path lastScannedFile;
+    private final Path initialReviewMarker;
     private final ReceiveAttemptLedger ledger;
     private final Path intermediaryFingerprintFile;
     private final String intermediaryFingerprint;
@@ -46,9 +47,39 @@ public final class ReceiveBaselineJournal {
         Path folder = workspaceState.resolve("receive").resolve(digest(identity));
         this.baselineFile = folder.resolve("previous-ConfigDumpInfo.xml");
         this.lastScannedFile = folder.resolve("last-scanned-ConfigDumpInfo.xml");
+        this.initialReviewMarker = folder.resolve("initial-full-review-prepared");
         this.ledger = new ReceiveAttemptLedger(folder);
         this.intermediaryFingerprintFile = folder.resolve("intermediary.sha256");
         this.intermediaryFingerprint = digest(intermediaryIdentity.trim());
+    }
+
+    /**
+     * A fresh or legacy receiving branch has no proven initial review. A
+     * successful initial XML conversion alone is not enough: mark only after
+     * the native comparison editor opens. Pending changes stay independent.
+     */
+    public boolean requiresInitialFullReview() throws IOException {
+        verifyIntermediary();
+        if (Files.exists(initialReviewMarker)
+                && !Files.isRegularFile(initialReviewMarker)) {
+            throw new IOException("Corrupt initial review marker");
+        }
+        return !Files.exists(initialReviewMarker);
+    }
+
+    public void markInitialReviewPrepared() throws IOException {
+        verifyIntermediary();
+        if (lastScannedInfo() == null) {
+            throw new IOException("Cannot finish initial review without remote snapshot");
+        }
+        Files.createDirectories(initialReviewMarker.getParent());
+        try {
+            Files.createFile(initialReviewMarker);
+        } catch (java.nio.file.FileAlreadyExistsException already) {
+            if (!Files.isRegularFile(initialReviewMarker)) {
+                throw already;
+            }
+        }
     }
 
     public boolean exists() throws IOException {

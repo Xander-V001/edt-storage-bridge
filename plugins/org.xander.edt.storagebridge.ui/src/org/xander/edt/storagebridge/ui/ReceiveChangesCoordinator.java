@@ -209,6 +209,9 @@ public final class ReceiveChangesCoordinator {
             }
             Path previousInventory = journal.lastScannedInfo();
             boolean firstInventory = previousInventory == null;
+            // Existing historical pending state without a proof marker is
+            // migrated conservatively to an initial full review once.
+            boolean initialFullReview = journal.requiresInitialFullReview();
             // A failed selective dump has ALREADY persisted the remote
             // changed-object list. Retrying it must not force another native
             // repository update. Require a read-only intermediary version
@@ -218,21 +221,23 @@ public final class ReceiveChangesCoordinator {
                     branch, intermediaryIdentity).isEmpty()
                 && confirmOnUi(shell, "Повторная выгрузка уже найденных объектов",
                     "Есть объекты хранилища, оставшиеся после предыдущего "
-                    + "получения. Повторить только их выборочную выгрузку "
-                    + "БЕЗ обновления базы-посредника? Сначала будет выполнена "
+                    + "получения. Повторить "
+                    + (initialFullReview ? "первоначальную полную выгрузку"
+                        : "только их выборочную выгрузку")
+                    + " БЕЗ обновления базы-посредника? Сначала будет выполнена "
                     + "проверка, что конфигурация базы не изменилась.");
             phase.set("Подтверждение получения из хранилища");
             if (!retryPendingOnly && (!recovery || resumePrepared) && !confirmOnUi(shell,
                     "Получить изменения из хранилища 1С",
                     "База-посредник: " + settings.infobaseAddress() + "\n"
                     + "Хранилище: " + settings.address() + "\n"
-                    + (firstInventory
-                        ? "ПЕРВАЯ СВЕРКА: предыдущая подтверждённая точка "
-                          + "получения EDT неизвестна. Будут подготовлены ВСЕ "
-                          + "объекты текущего хранилища для полного начального "
-                          + "сравнения с EDT. Это долгая операция, но не "
-                          + "замена проекта. Последующие сверки используют "
-                          + "инкрементальный список изменений. "
+                    + (initialFullReview
+                        ? "ПЕРВАЯ СВЕРКА: будет ОДИН полный XML-дамп "
+                          + "конфигурации во временный каталог вне EDT и Git. "
+                          + "Он может занять много времени и диска. "
+                          + "Проект EDT не перезаписывается; дальнейшие "
+                          + "обновления будут выборочными после открытия "
+                          + "первоначального сравнения. "
                         : "Сравниваем с сохранённым состоянием хранилища "
                           + "для текущего проекта EDT и Git-ветки. ")
                     + "Изменится конфигурация только указанной базы, "
@@ -393,14 +398,14 @@ public final class ReceiveChangesCoordinator {
             // markers to Designer -listFile: affected 1C versions reject
             // these as non-object names. They remain pending, NOT applied.
             var exportPlan = SelectiveDumpPlanner.plan(pending);
-            if (exportPlan.exportable().isEmpty()) {
+            if (exportPlan.exportable().isEmpty() && !initialFullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Найдены только изменения корня конфигурации или языка. "
                     + "Безопасное сравнение этих ресурсов пока не реализовано; "
                     + "изменения сохранены в очереди ожидания.");
                 return;
             }
-            if (!exportPlan.deferred().isEmpty()) {
+            if (!exportPlan.deferred().isEmpty() && !initialFullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Отложено корневых изменений: "
                     + exportPlan.deferred().size()
@@ -414,21 +419,47 @@ public final class ReceiveChangesCoordinator {
             // cleared until that owner's EDT contents have been verified.
             Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
             selectedPendingNames.removeAll(exportPlan.deferred());
-            Set<String> selected = topObjects(exportPlan.exportable());
-            List<String> selectedList = exportPlan.exportable();
+            List<String> selectedList = new ArrayList<>(exportPlan.exportable());
+            if (initialFullReview) {
+                // Initial dump contains the real Configuration root. Use an
+                // actual manifest name for its scope; NEVER invent a dummy
+                // -listFile object. The transport below ignores the list.
+                for (String name : pending) {
+                    if (name.startsWith("Configuration.")) {
+                        selectedList.add(name);
+                        for (String rootChange : pending) {
+                            if (rootChange.startsWith("Configuration.")) {
+                                selectedPendingNames.add(rootChange);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            if (selectedList.isEmpty()) {
+                throw new IOException("No valid metadata names for initial review");
+            }
+            Set<String> selected = topObjects(selectedList);
             phase.set("Проверка типов метаданных 1С для EDT");
             // An unmapped type must fail BEFORE the costly Designer
             // selective dump, not after minutes spent importing XML.
             EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
-            phase.set("Выборочная выгрузка объектов 1С");
+            phase.set(initialFullReview
+                ? "Первоначальная полная выгрузка XML (однократно)"
+                : "Выборочная выгрузка объектов 1С");
             export = progress(jobProgress, 20, monitor -> {
-                monitor.beginTask("Выгрузка только выбранных объектов", 1);
-                var result = new SelectiveDumpRunner().export(
-                    new SelectiveDumpRequest(executable, transport,
-                        selectedList, TIMEOUT, settings.infobaseUsername(),
-                        settings.infobasePassword()), monitor::isCanceled);
+                monitor.beginTask(initialFullReview
+                    ? "Полная первичная XML-выгрузка в отдельный каталог"
+                    : "Выгрузка только изменённых объектов", 1);
+                var dumpRequest = new SelectiveDumpRequest(executable, transport,
+                    selectedList, TIMEOUT, settings.infobaseUsername(),
+                    settings.infobasePassword());
+                var runner = new SelectiveDumpRunner();
+                var result = initialFullReview
+                    ? runner.exportInitialFull(dumpRequest, monitor::isCanceled)
+                    : runner.export(dumpRequest, monitor::isCanceled);
                 monitor.worked(1);
                 return result;
             });
@@ -443,7 +474,8 @@ public final class ReceiveChangesCoordinator {
             var nativeDescriptor = progress(jobProgress, 25, monitor -> {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
                 var descriptor = EdtPublicServiceBridge.prepare(project,
-                    selectedExport.xmlDirectory(), converted, selectedList, monitor);
+                    selectedExport.xmlDirectory(), converted, selectedList,
+                    initialFullReview, monitor);
                 monitor.worked(1);
                 return descriptor;
             });
@@ -526,6 +558,11 @@ public final class ReceiveChangesCoordinator {
                 return null;
             });
             editorOwnsStaging = true;
+            if (initialFullReview) {
+                // Mark only once the native review editor is actually open,
+                // not after a successful dump, conversion or user cancellation.
+                journal.markInitialReviewPrepared();
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logFailure(phase.get(), ex);

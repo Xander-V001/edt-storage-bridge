@@ -153,7 +153,8 @@ public final class EdtSelectiveReviewService {
      */
     public CompareMergeProcessDescriptor prepare(IProject project,
             Path platformXml, Path convertedEdtDestination,
-            List<String> explicitlySelectedObjects, IProgressMonitor monitor)
+            List<String> explicitlySelectedObjects, boolean initialFullReview,
+            IProgressMonitor monitor)
             throws IOException {
         Objects.requireNonNull(project);
         Objects.requireNonNull(monitor);
@@ -197,9 +198,15 @@ public final class EdtSelectiveReviewService {
         // fails resolving their path for the detached target folder.
         // Park them OUTSIDE the importer input only while converting other
         // objects. The original XML is restored on every exit path.
-        try (var ignored = EdtRootXmlGuard.hideUnselectedRootExt(
-                xml, explicitlySelectedObjects)) {
+        if (initialFullReview) {
+            // Full Designer XML contains the configuration root/Ext context;
+            // do not suppress its resources or claim root comparison succeeded.
             status = importer.work(project, xml, target, monitor);
+        } else {
+            try (var ignored = EdtRootXmlGuard.hideUnselectedRootExt(
+                    xml, explicitlySelectedObjects)) {
+                status = importer.work(project, xml, target, monitor);
+            }
         }
         if (status == null || !status.isOK() || monitor.isCanceled()) {
             throw new IOException("Selective external EDT conversion failed");

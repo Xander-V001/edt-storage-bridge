@@ -32,7 +32,8 @@ public final class EdtPublicServiceBridge {
     /** Prepare external comparison without writing to the open EDT project. */
     public static CompareMergeProcessDescriptor prepare(IProject project,
             Path platformXml, Path convertedEdtDestination,
-            List<String> selectedObjects, IProgressMonitor monitor)
+            List<String> selectedObjects, boolean initialFullReview,
+            IProgressMonitor monitor)
             throws IOException {
         // ServiceAccess.get is explicitly supported by the EDT SDK for
         // infrequent, short-lived calls outside Guice. Do not store its result.
@@ -41,7 +42,7 @@ public final class EdtPublicServiceBridge {
         var converter = ServiceAccess.get(IQualifiedNameFilePathConverter.class);
         return new EdtSelectiveReviewService(projectManager, imports, converter)
             .prepare(project, platformXml, convertedEdtDestination,
-                selectedObjects, monitor);
+                selectedObjects, initialFullReview, monitor);
     }
 
     /** Must run on SWT UI thread; the public EDT editor factory is resolved on demand. */
