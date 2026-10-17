@@ -40,8 +40,13 @@ public final class OutgoingSafetyGate {
             blockers = List.copyOf(Objects.requireNonNull(blockers));
         }
 
-        /** Whether prerequisites to a future outbound write have been proven. */
-        public boolean permitsWrite() {
+        /**
+         * ONLY preliminary read-only prerequisites. This is NOT permission
+         * to run LoadConfigFromFiles, Lock or Commit: a future operation must
+         * independently re-check revision, exact selection, current locks,
+         * backup, preview and user confirmation immediately before writing.
+         */
+        public boolean prerequisitesSatisfied() {
             return blockers.isEmpty();
         }
     }
