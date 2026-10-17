@@ -110,19 +110,27 @@ public final class ConfigDumpInfoIndex {
             factory.setExpandEntityReferences(false);
             Element root = factory.newDocumentBuilder().parse(
                 configDumpInfo.toFile()).getDocumentElement();
+            // The OFFICIAL 1C ConfigDumpInfo.xml example has no XML
+            // namespace at all. Some 1C-format producers use the explicit
+            // dumpinfo namespace. Accept only those two forms and require
+            // the descendants to use the SAME namespace as the root.
+            String ns = root == null ? null : root.getNamespaceURI();
             if (root == null || !"ConfigDumpInfo".equals(root.getLocalName())
-                    || !DUMPINFO_NS.equals(root.getNamespaceURI())
+                    || (ns != null && !ns.isEmpty() && !DUMPINFO_NS.equals(ns))
                     || !"Hierarchical".equals(root.getAttribute("format"))
                     || root.getAttribute("version").isBlank()) {
                 throw new IOException("Unknown ConfigDumpInfo.xml schema");
             }
-            NodeList versions = root.getElementsByTagNameNS(DUMPINFO_NS,
-                "ConfigVersions");
-            if (versions.getLength() != 1) {
+            NodeList versions = ns == null || ns.isEmpty()
+                ? root.getElementsByTagName("ConfigVersions")
+                : root.getElementsByTagNameNS(ns, "ConfigVersions");
+            if (versions.getLength() != 1
+                    || versions.item(0).getParentNode() != root) {
                 throw new IOException("ConfigDumpInfo contains no unique version list");
             }
-            NodeList metadata = ((Element) versions.item(0))
-                .getElementsByTagNameNS(DUMPINFO_NS, "Metadata");
+            NodeList metadata = ns == null || ns.isEmpty()
+                ? ((Element) versions.item(0)).getElementsByTagName("Metadata")
+                : ((Element) versions.item(0)).getElementsByTagNameNS(ns, "Metadata");
             Map<String, Version> result = new LinkedHashMap<>();
             for (int i = 0; i < metadata.getLength(); i++) {
                 Element item = (Element) metadata.item(i);
