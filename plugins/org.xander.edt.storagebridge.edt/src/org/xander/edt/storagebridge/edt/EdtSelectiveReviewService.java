@@ -199,11 +199,16 @@ public final class EdtSelectiveReviewService {
 
     /** Map only recognized classic metadata types to EDT source paths. */
     public static String edtOwner(String classicalObject) throws IOException {
-        if ("Configuration".equals(classicalObject)) {
-            return "Configuration/Configuration";
-        }
         if (classicalObject == null) {
             throw new IOException("Unknown storage metadata object");
+        }
+        // Designer's Configuration.<real-name>.* version records refer to
+        // external properties of the single EDT configuration root. 1C
+        // explicitly allows the short "Configuration" spelling in -listFile.
+        // Do not mistake these records for an unsupported metadata type.
+        if ("Configuration".equals(classicalObject)
+                || classicalObject.startsWith("Configuration.")) {
+            return "Configuration/Configuration";
         }
         String[] parts = classicalObject.split("\\.");
         if (parts.length < 2) {
