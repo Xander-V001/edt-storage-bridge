@@ -10,12 +10,20 @@ import java.util.Objects;
  */
 public record RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
         Duration timeout, String repositoryAddress, String repositoryUsername,
-        String repositoryPassword) {
+        String repositoryPassword, String infobaseUsername,
+        String infobasePassword) {
 
     /** No explicit repository authentication (e.g. bound base uses saved auth). */
     public RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
             Duration timeout) {
-        this(executable, infobase, timeout, "", "", "");
+        this(executable, infobase, timeout, "", "", "", "", "");
+    }
+
+    public RepositoryUpdateRequest(Path executable, InfobaseLocation infobase,
+            Duration timeout, String repositoryAddress, String repositoryUsername,
+            String repositoryPassword) {
+        this(executable, infobase, timeout, repositoryAddress,
+            repositoryUsername, repositoryPassword, "", "");
     }
 
     public RepositoryUpdateRequest {
@@ -25,6 +33,7 @@ public record RepositoryUpdateRequest(Path executable, InfobaseLocation infobase
         Objects.requireNonNull(repositoryAddress, "repositoryAddress");
         Objects.requireNonNull(repositoryUsername, "repositoryUsername");
         Objects.requireNonNull(repositoryPassword, "repositoryPassword");
+        DesignerInfobaseAuth.validate(infobaseUsername, infobasePassword);
         if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
                 || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())) {
             throw new IllegalArgumentException(
