@@ -149,6 +149,20 @@ public class EdtSelectiveReviewServiceTest {
 
 
     @Test
+    public void fullReviewUsesTheOfficialGlobalScopeWithoutAnyExclusions() {
+        var scope = EdtSelectiveReviewService.globalScope();
+        org.junit.Assert.assertSame(
+            com._1c.g5.v8.dt.compare.core.ComparisonScope.EMPTY_SCOPE,
+            scope);
+        org.junit.Assert.assertTrue(scope.getInputScope(
+            com._1c.g5.v8.dt.compare.model.ComparisonSide.MAIN).isEmpty());
+        org.junit.Assert.assertTrue(scope.getInputScope(
+            com._1c.g5.v8.dt.compare.model.ComparisonSide.OTHER).isEmpty());
+        org.junit.Assert.assertTrue(scope.getExclusions().isEmpty());
+        org.junit.Assert.assertFalse(scope.isLockRemovableObjects());
+    }
+
+    @Test
     public void fullScopeIncludesAllRemoteAndLocalOnlyTopLevelOwners()
             throws Exception {
         Path local = Files.createTempDirectory("edt-full-local-");
