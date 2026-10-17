@@ -607,7 +607,7 @@ public final class ReceiveChangesCoordinator {
         if ("Configuration".equals(name) || name.startsWith("Configuration.")) {
             return "Configuration";
         }
-        if ("Language".equals(name) || name.startsWith("Language.")) {
+        if ("Language".equals(name)) {
             return "Language";
         }
         String[] parts = name.split("\\.");
