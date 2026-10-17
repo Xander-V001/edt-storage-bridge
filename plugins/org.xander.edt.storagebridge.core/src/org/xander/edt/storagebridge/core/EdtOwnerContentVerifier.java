@@ -189,8 +189,17 @@ public final class EdtOwnerContentVerifier {
             if (leftFile != rightFile) {
                 return "различается тип ресурса: " + rel;
             }
-            if (leftFile && Files.mismatch(left, right) != -1) {
-                return "различается содержимое: " + rel;
+            if (leftFile) {
+                long offset = Files.mismatch(left, right);
+                if (offset >= 0) {
+                    // Exact offset + sizes, no confidential XML/BSL content
+                    // in an ordinary diagnostic. Useful for confirming
+                    // whether a Form.form was reserialized by native EDT.
+                    return "различается содержимое: " + rel
+                        + " (первое отличие, байт " + offset
+                        + "; источник " + Files.size(left)
+                        + " Б, EDT " + Files.size(right) + " Б)";
+                }
             }
         }
         return null;
