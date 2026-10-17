@@ -469,71 +469,39 @@ public final class ReceiveChangesCoordinator {
                     + "не подтверждается до проверки итогового сравнения.");
                 return;
             }
-            // ALL pending objects are candidates for native EDT review.
-            // Do not send bare Configuration/Language version-inventory
-            // markers to Designer -listFile: affected 1C versions reject
-            // these as non-object names. They remain pending, NOT applied.
-            var exportPlan = SelectiveDumpPlanner.plan(reviewCandidates);
-            if (exportPlan.exportable().isEmpty() && !fullReview) {
-                informationOnUi(shell, "Работа с хранилищем",
-                    "Найдены только изменения корня конфигурации или языка. "
-                    + "Безопасное сравнение этих ресурсов пока не реализовано; "
-                    + "изменения сохранены в очереди ожидания.");
-                return;
-            }
-            if (!exportPlan.deferred().isEmpty() && !fullReview) {
-                informationOnUi(shell, "Работа с хранилищем",
-                    "Отложено корневых изменений: "
-                    + exportPlan.deferred().size()
-                    + ". Для них ещё не подтверждена безопасная конвертация "
-                    + "XML в EDT (Configuration/Language). "
-                    + "Они остаются ожидающими, остальные объекты "
-                    + "будут переданы в штатное сравнение EDT.");
-            }
-            // Preserve the ORIGINAL pending object names for verification.
-            // A nested Command is exported through its owner, but is not
-            // cleared until that owner's EDT contents have been verified.
-            Set<String> selectedPendingNames = new LinkedHashSet<>(reviewCandidates);
-            selectedPendingNames.removeAll(exportPlan.deferred());
-            List<String> selectedList = new ArrayList<>(exportPlan.exportable());
+            // The FULL workflow must not build any metadata selection:
+            // full Designer XML -> full native EDT import -> GLOBAL native
+            // comparison. ConfigDumpInfo is the durable pending journal,
+            // NOT a filter over the real imported configuration contents.
+            //
+            // Selective mode alone retains explicit roots to limit work.
+            Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
+            List<String> selectedList = new ArrayList<>();
+            Set<String> selected;
             if (fullReview) {
-                // Both Configuration.* and Language.* live inside the EDT
-                // Configuration root. Language metadata is serialized as
-                // <languages> entries in Configuration.mdo: it has no own
-                // Languages/<name>.mdo descriptor. The FULL XML export can
-                // review this root; partial dumps defer it safely.
-                // "Configuration" is scope-only, never a -listFile entry.
-                if (reviewCandidates.stream().anyMatch(
-                        ReceiveChangesCoordinator::isConfigurationRootRecord)) {
-                    if (!selectedList.contains("Configuration")) {
-                        selectedList.add("Configuration");
-                    }
-                    for (String name : reviewCandidates) {
-                        if (isConfigurationRootRecord(name)) {
-                            selectedPendingNames.add(name);
-                            // Full dump does not use -listFile. Include named
-                            // language identities in the REVIEW selection so
-                            // requireEmbeddedLanguages validates their actual
-                            // presence in Configuration.mdo before compare.
-                            if (name.startsWith("Language.")
-                                    || name.startsWith("Язык.")) {
-                                selectedList.add(name);
-                            }
-                        }
-                    }
+                selected = Set.of();
+            } else {
+                var exportPlan = SelectiveDumpPlanner.plan(reviewCandidates);
+                if (exportPlan.exportable().isEmpty()) {
+                    informationOnUi(shell, "Работа с хранилищем",
+                        "Найдены только изменения корня конфигурации или языка. "
+                        + "Для них выполняется полная сверка; ожидающие "
+                        + "записи сохранены без изменения.");
+                    return;
                 }
+                if (!exportPlan.deferred().isEmpty()) {
+                    informationOnUi(shell, "Работа с хранилищем",
+                        "Отложено корневых изменений: "
+                        + exportPlan.deferred().size()
+                        + ". Их следует принять через полную сверку. "
+                        + "Остальные объекты будут переданы в сравнение.");
+                }
+                selectedPendingNames.removeAll(exportPlan.deferred());
+                selectedList.addAll(exportPlan.exportable());
+                selected = topObjects(selectedList);
+                phase.set("Проверка типов выборочно выгружаемых объектов 1С");
+                EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             }
-            if (fullReview) {
-                selectedPendingNames.addAll(deletedPendingNames);
-            }
-            if (selectedList.isEmpty()) {
-                throw new IOException("No reviewable metadata remains in current source");
-            }
-            Set<String> selected = topObjects(selectedList);
-            phase.set("Проверка типов метаданных 1С для EDT");
-            // An unmapped type must fail BEFORE the costly Designer
-            // selective dump, not after minutes spent importing XML.
-            EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
             phase.set(fullReview
@@ -582,14 +550,14 @@ public final class ReceiveChangesCoordinator {
             // Force a separate, explicit acknowledgement before opening it.
             if (!confirmOnUi(shell,
                     "Проверка перед объединением EDT",
-                    "Подготовлено владельцев из хранилища: "
-                    + selected.size() + ".\n"
-                    + (fullReview
-                        ? "ПОЛНАЯ СВЕРКА: дополнительно сравниваются все "
-                          + "импортированные объекты и объекты, имеющиеся "
-                          + "только слева в EDT. Отсутствующие справа можно "
-                          + "явно отметить для удаления.\n"
-                        : "")
+                    (fullReview
+                        ? "ПОЛНАЯ СВЕРКА: сравниваются ВСЕ объекты и ресурсы "
+                          + "обоих проектов штатным глобальным механизмом EDT. "
+                          + "Вложенные формы, модули, подсистемы, изображения "
+                          + "и объекты только одной стороны НЕ исключаются. "
+                          + "Отсутствующие справа можно отметить для удаления.\n"
+                        : "Подготовлено владельцев для выборочного "
+                          + "сравнения: " + selected.size() + ".\n")
                     + "Это ДВУСТОРОННЕЕ сравнение, общий предок Git/хранилища "
                     + "не установлен. В EDT отличия второго источника могут "
                     + "быть отмечены для переноса ПО УМОЛЧАНИЮ. "
