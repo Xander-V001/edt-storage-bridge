@@ -46,6 +46,7 @@ import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
+import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
 
 /**
  * Receive from ONE existing repository-connected intermediary directly into
