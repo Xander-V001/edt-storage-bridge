@@ -24,7 +24,8 @@ import org.xander.edt.storagebridge.ui.StorageProjectSettings.InfobaseType;
 
 /**
  * Per-project settings and persisted revision status.
- * No remote connection or repository mutation is initiated from this dialog.
+ * A separate explicitly clicked read-only status query is available here.
+ * Neither opening the dialog nor saving settings starts the 1C platform.
  */
 public final class StorageSettingsDialog extends TitleAreaDialog {
 
@@ -38,6 +39,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Text infobasePassword;
     private Text platformExecutable;
     private StorageProjectSettings.Snapshot saved;
+    private Label observedRevisionLabel;
+    private Label appliedRevisionLabel;
+    private Button refreshVersionsButton;
+    private String activeBranch;
 
     public StorageSettingsDialog(Shell shell, IProject project) {
         super(shell);
@@ -158,7 +163,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         GridData revisionsData = new GridData(SWT.FILL, SWT.TOP, true, false);
         revisionsData.horizontalSpan = 2;
         revisions.setLayoutData(revisionsData);
-        String activeBranch = null;
+        activeBranch = null;
         try {
             activeBranch = GitReceiveGuard.currentBranch(project);
         } catch (IOException ex) {
@@ -179,11 +184,22 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     project, saved.address(), intermediary, activeBranch);
             }
         }
-        addReadOnly(revisions, "Последняя обнаруженная версия хранилища:",
+        observedRevisionLabel = addReadOnly(revisions,
+            "Последняя обнаруженная версия хранилища:",
             formatVersion(observedRevision));
-        addReadOnly(revisions, "Версия, полностью применённая к EDT"
-            + (activeBranch == null ? "" : " (" + activeBranch + ")") + ":",
+        appliedRevisionLabel = addReadOnly(revisions,
+            "Версия, полностью применённая к EDT"
+                + (activeBranch == null ? "" : " (" + activeBranch + ")") + ":",
             formatVersion(appliedRevision));
+        refreshVersionsButton = new Button(revisions, SWT.PUSH);
+        refreshVersionsButton.setText("Проверить версию хранилища");
+        refreshVersionsButton.setLayoutData(new GridData(
+            SWT.LEFT, SWT.CENTER, false, false, 2, 1));
+        refreshVersionsButton.setEnabled(saved != null);
+        refreshVersionsButton.setToolTipText(
+            "Только чтение последней версии через штатный отчёт 1С. "
+            + "XML не выгружается, рабочий проект EDT не изменяется.");
+        refreshVersionsButton.addListener(SWT.Selection, event -> refreshVersions());
 
         Label note = new Label(content, SWT.WRAP);
         note.setText("Получение обновит только существующую базу хранилища "
@@ -205,11 +221,67 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         return input;
     }
 
-    private static void addReadOnly(Composite parent, String caption, String value) {
+    private static Label addReadOnly(Composite parent, String caption, String value) {
         new Label(parent, SWT.NONE).setText(caption);
         Label display = new Label(parent, SWT.NONE);
         display.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         display.setText(value);
+        return display;
+    }
+
+    private void refreshVersions() {
+        if (!saveSettings()) {
+            return;
+        }
+        final StorageProjectSettings.Snapshot connection;
+        try {
+            connection = StorageProjectSettings.load(project);
+        } catch (StorageException ex) {
+            setErrorMessage("Не удалось прочитать сохранённые настройки из Secure Storage.");
+            return;
+        }
+        if (connection.platformExecutable().isBlank()
+                || connection.infobaseAddress().isBlank()
+                || connection.address().isBlank()) {
+            setErrorMessage("Заполните платформу, базу-посредник и адрес хранилища.");
+            return;
+        }
+        refreshVersionsButton.setEnabled(false);
+        setErrorMessage(null);
+        setMessage("Запрашивается последняя версия хранилища (только чтение)...");
+        RepositoryRevisionRefreshCoordinator.refresh(
+            getShell(), project, connection,
+            revision -> {
+                if (observedRevisionLabel.isDisposed()) {
+                    return;
+                }
+                // Never show a result read from obsolete connection fields.
+                if (!connection.address().equals(address.getText().trim())
+                        || !connection.infobaseAddress().equals(
+                            infobaseAddress.getText().trim())) {
+                    setErrorMessage("Параметры подключения изменены во время проверки. "
+                        + "Повторите запрос версии.");
+                } else {
+                    observedRevisionLabel.setText(formatVersion(revision));
+                    long applied = ReceiveRevisionStore.UNKNOWN;
+                    if (activeBranch != null) {
+                        String intermediary = connection.infobaseType().name()
+                            + ":" + connection.infobaseAddress().trim();
+                        applied = ReceiveRevisionStore.applied(
+                            project, connection.address(), intermediary, activeBranch);
+                    }
+                    appliedRevisionLabel.setText(formatVersion(applied));
+                    setMessage("Последняя версия хранилища прочитана: "
+                        + revision + ". Применённая версия EDT подтверждается отдельно.");
+                }
+                refreshVersionsButton.setEnabled(true);
+            },
+            reason -> {
+                if (!refreshVersionsButton.isDisposed()) {
+                    refreshVersionsButton.setEnabled(true);
+                    setErrorMessage(reason);
+                }
+            });
     }
 
     private static String formatVersion(long version) {
