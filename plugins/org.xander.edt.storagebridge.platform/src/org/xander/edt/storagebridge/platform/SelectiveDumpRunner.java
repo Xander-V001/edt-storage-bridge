@@ -100,6 +100,15 @@ public final class SelectiveDumpRunner {
             }
             succeeded = true;
             return new ExportResult(temporaryRoot, target);
+        } catch (IOException ex) {
+            if (launched && !(ex instanceof DumpFailure)) {
+                // Even a filesystem/timeout error after Designer start needs
+                // a discoverable local diagnostic folder. Do not surface raw
+                // IOException messages; native logs may contain passwords.
+                throw new DumpFailure(-1, temporaryRoot,
+                    "incomplete native process or output", ex);
+            }
+            throw ex;
         } finally {
             if (!succeeded) {
                 if (launched) {
@@ -124,7 +133,12 @@ public final class SelectiveDumpRunner {
         private final Path diagnosticsDirectory;
 
         public DumpFailure(int exitCode, Path diagnosticsDirectory, String kind) {
-            super("Designer selective XML dump failed: " + kind);
+            this(exitCode, diagnosticsDirectory, kind, null);
+        }
+
+        public DumpFailure(int exitCode, Path diagnosticsDirectory, String kind,
+                Throwable cause) {
+            super("Designer selective XML dump failed: " + kind, cause);
             this.exitCode = exitCode;
             this.diagnosticsDirectory = diagnosticsDirectory.toAbsolutePath();
         }
