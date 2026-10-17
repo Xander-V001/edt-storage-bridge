@@ -74,6 +74,17 @@ public final class EdtSelectedResourceVerifierTest {
             assertFalse(EdtSelectedResourceVerifier.isIndependentlyApplied(
                 live, stage, "Documents/НачислениеПоСреднему",
                 "Document.НачислениеПоСреднему.Form.ФормаПомощника"));
+            // Different owner primary descriptor could even mean another
+            // metadata UUID with the same human-readable name.
+            Files.writeString(stage.resolve(
+                "src/Documents/НачислениеПоСреднему/НачислениеПоСреднему.mdo"),
+                "different metadata identity");
+            assertFalse(EdtSelectedResourceVerifier.isIndependentlyApplied(
+                live, stage, "Documents/НачислениеПоСреднему",
+                "Document.НачислениеПоСреднему.ManagerModule"));
+            Files.writeString(stage.resolve(
+                "src/Documents/НачислениеПоСреднему/НачислениеПоСреднему.mdo"),
+                "document metadata");
             Files.delete(stage.resolve(
                 "src/Documents/НачислениеПоСреднему/ManagerModule.bsl"));
             assertFalse(EdtSelectedResourceVerifier.isIndependentlyApplied(
