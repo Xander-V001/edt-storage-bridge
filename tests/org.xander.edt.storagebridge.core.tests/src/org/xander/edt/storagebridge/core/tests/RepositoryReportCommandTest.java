@@ -166,6 +166,33 @@ public class RepositoryReportCommandTest {
     }
 
     @Test
+    public void nativeBatchReportAcceptsValidatedWindowsAndUnicodeEncodings()
+            throws Exception {
+        byte[] cp1251 = REAL_REPORT_SHAPE.getBytes(
+            java.nio.charset.Charset.forName("windows-1251"));
+        assertEquals(29404L,
+            RepositoryLatestRevisionReader.parseLatest(cp1251));
+        byte[] utf16le = REAL_REPORT_SHAPE.getBytes(
+            java.nio.charset.StandardCharsets.UTF_16LE);
+        assertEquals(29404L,
+            RepositoryLatestRevisionReader.parseLatest(utf16le));
+        byte[] utf8 = REAL_REPORT_SHAPE.getBytes(
+            java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(29404L,
+            RepositoryLatestRevisionReader.parseLatest(utf8));
+        byte[] utf8bom = new byte[utf8.length + 3];
+        utf8bom[0] = (byte) 0xef;
+        utf8bom[1] = (byte) 0xbb;
+        utf8bom[2] = (byte) 0xbf;
+        System.arraycopy(utf8, 0, utf8bom, 3, utf8.length);
+        assertEquals(29404L,
+            RepositoryLatestRevisionReader.parseLatest(utf8bom));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                "Версия: 9999".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    @Test
     public void malformedOrSpoofedReportNeverSetsRevision() {
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
