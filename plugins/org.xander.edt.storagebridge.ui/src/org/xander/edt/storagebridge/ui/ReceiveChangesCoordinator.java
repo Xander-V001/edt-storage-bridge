@@ -1,7 +1,6 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -17,11 +16,15 @@ import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
@@ -61,6 +64,11 @@ public final class ReceiveChangesCoordinator {
 
     private ReceiveChangesCoordinator() {}
 
+    /**
+     * Invoked only from SWT UI. All long-running operations are executed by
+     * the standard Eclipse Jobs framework and shown in its Progress view.
+     * The settings dialog closes before calling this method.
+     */
     public static void receive(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings) {
         if (project == null || project.getLocationURI() == null) {
@@ -75,6 +83,37 @@ public final class ReceiveChangesCoordinator {
                 + "редактор объединения.");
             return;
         }
+        Job job = new Job("1С: Получение изменений из хранилища — "
+                + project.getName()) {
+            @Override
+            protected IStatus run(IProgressMonitor monitor) {
+                AtomicReference<IStatus> outcome =
+                    new AtomicReference<>(Status.OK_STATUS);
+                try {
+                    receiveInBackground(shell, project, settings, operationKey,
+                        SubMonitor.convert(monitor, 100), outcome);
+                } catch (RuntimeException ex) {
+                    // A failure must never leave the project permanently busy.
+                    ACTIVE.remove(operationKey);
+                    return new Status(IStatus.ERROR,
+                        "org.xander.edt.storagebridge.ui",
+                        "Получение прервалось: "
+                        + ex.getClass().getSimpleName());
+                } finally {
+                    monitor.done();
+                }
+                return outcome.get();
+            }
+        };
+        job.setUser(true);
+        job.setPriority(Job.LONG);
+        job.schedule();
+    }
+
+    /** Background-only: SWT widgets are accessed via UI-thread helpers. */
+    private static void receiveInBackground(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings, String operationKey,
+            SubMonitor jobProgress, AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
@@ -100,7 +139,7 @@ public final class ReceiveChangesCoordinator {
                 }
             }
             phase.set("Проверка Git и незакоммиченных изменений");
-            GitReceiveGuard.Baseline git = progress(shell, monitor -> {
+            GitReceiveGuard.Baseline git = progress(jobProgress, 10, monitor -> {
                 monitor.beginTask("Проверка локальной ветки Git", 1);
                 var baseline = GitReceiveGuard.requireCleanBranch(project);
                 monitor.worked(1);
@@ -156,7 +195,7 @@ public final class ReceiveChangesCoordinator {
                 return;
             }
 
-            var changes = progress(shell, monitor -> {
+            var changes = progress(jobProgress, 45, monitor -> {
                 BooleanSupplier canceled = monitor::isCanceled;
                 monitor.beginTask("Получение изменений из хранилища 1С", 3);
                 if (!journal.exists()) {
@@ -252,7 +291,7 @@ public final class ReceiveChangesCoordinator {
             }
             List<String> selectedList = new ArrayList<>(selectedPendingNames);
             phase.set("Выборочная выгрузка объектов 1С");
-            export = progress(shell, monitor -> {
+            export = progress(jobProgress, 20, monitor -> {
                 monitor.beginTask("Выгрузка только выбранных объектов", 1);
                 var result = new SelectiveDumpRunner().export(
                     new SelectiveDumpRequest(executable, transport,
@@ -268,7 +307,7 @@ public final class ReceiveChangesCoordinator {
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
-            var nativeDescriptor = progress(shell, monitor -> {
+            var nativeDescriptor = progress(jobProgress, 25, monitor -> {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
                 var service = BridgeActivator.getDefault().getInjector()
                     .getInstance(EdtSelectiveReviewService.class);
@@ -438,25 +477,17 @@ public final class ReceiveChangesCoordinator {
         T execute(IProgressMonitor monitor) throws Exception;
     }
 
-    private static <T> T progress(Shell shell, ProgressStage<T> action)
-            throws Exception {
-        AtomicReference<T> result = new AtomicReference<>();
-        try {
-            new ProgressMonitorDialog(shell).run(true, true, monitor -> {
-                try {
-                    result.set(action.execute(monitor));
-                } catch (Exception ex) {
-                    throw new InvocationTargetException(ex);
-                }
-            });
-        } catch (InvocationTargetException wrapped) {
-            Throwable cause = wrapped.getCause();
-            if (cause instanceof Exception failure) {
-                throw failure;
-            }
-            throw new IOException("Unexpected receive failure", cause);
+    private static <T> T progress(SubMonitor parent, int ticks,
+            ProgressStage<T> action) throws Exception {
+        if (parent.isCanceled()) {
+            throw new InterruptedException("Получение отменено пользователем");
         }
-        return result.get();
+        SubMonitor stage = parent.split(ticks);
+        try {
+            return action.execute(stage);
+        } finally {
+            stage.done();
+        }
     }
 
     private static Set<String> topObjects(List<String> objectNames) {
