@@ -621,6 +621,11 @@ public final class ReceiveChangesCoordinator {
                                             intermediaryIdentity, selected,
                                             selectedPendingNames,
                                             retainedConverted.resolve("edt"));
+                                        // Owner verification can take minutes
+                                        // on a large project; reject a Git HEAD
+                                        // or branch switch during the scan too.
+                                        GitReceiveGuard.requireSameBranchAndHead(
+                                            project, git);
                                         // A selected checkbox or closing the
                                         // native editor NEVER certifies a merge.
                                         // Partial, rejected or unresolved objects
