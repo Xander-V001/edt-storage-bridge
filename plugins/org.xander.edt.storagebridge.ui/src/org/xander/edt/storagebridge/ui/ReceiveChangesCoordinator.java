@@ -602,6 +602,13 @@ public final class ReceiveChangesCoordinator {
 
     /** Only explicitly vetted own error messages may appear in the dialog. */
     private static String safeReason(Throwable failure) {
+        if (failure instanceof SelectiveDumpRunner.DumpFailure dump) {
+            return "Конфигуратор 1С не выполнил выборочную выгрузку. "
+                + "Код завершения: " + dump.exitCode()
+                + ". Диагностика: " + dump.diagnosticsDirectory()
+                + " (designer.txt, stdout.txt, objects.txt). "
+                + "Файлы могут содержать служебные или конфиденциальные данные.";
+        }
         if (failure instanceof ConfigVersionSnapshotRunner.SnapshotFailure snapshot) {
             return "Конфигуратор 1С завершил создание снимка с кодом "
                 + snapshot.exitCode() + ". Сохранены диагностические журналы: "
