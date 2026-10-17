@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -40,6 +41,8 @@ import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.InitialFullDumpRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
+import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
+import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
@@ -140,6 +143,9 @@ public final class ReceiveChangesCoordinator {
         AtomicBoolean updateAttempted = new AtomicBoolean(false);
         // Native exit=0 is not yet a verified post-update base inventory.
         AtomicBoolean updateNeedsSnapshot = new AtomicBoolean(false);
+        // A real native repository revision, NEVER a ConfigDumpInfo token.
+        // Unknown revision must not block the existing XML receiving flow.
+        AtomicLong revisionForReview = new AtomicLong(ReceiveRevisionStore.UNKNOWN);
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -384,6 +390,19 @@ public final class ReceiveChangesCoordinator {
             });
             }
 
+            // The native /ConfigurationRepositoryReport -NBegin -1 is
+            // read-only. It is deliberately optional: unsupported report
+            // formats or unavailable repository credentials cannot be
+            // substituted with fabricated 1C revision numbers.
+            phase.set("Чтение номера последней версии хранилища");
+            long observedRevision = readLatestRevisionOrUnknown(
+                executable, transport, settings, jobProgress::isCanceled);
+            if (observedRevision > 0) {
+                ReceiveRevisionStore.recordObserved(project, settings.address(),
+                    intermediaryIdentity, observedRevision);
+                revisionForReview.set(observedRevision);
+            }
+
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
@@ -561,6 +580,31 @@ public final class ReceiveChangesCoordinator {
                                             intermediaryIdentity, selected,
                                             selectedPendingNames,
                                             retainedConverted.resolve("edt"));
+                                        // Partial acceptance never advances a
+                                        // repository-wide "fully applied" version.
+                                        if (ReceivePendingStore.get(
+                                                project, settings.address(), branch,
+                                                intermediaryIdentity).isEmpty()
+                                                && revisionForReview.get() > 0) {
+                                            // Repository must not change while
+                                            // user works in the compare editor.
+                                            // Otherwise this staging cannot
+                                            // substantiate the new HEAD revision.
+                                            long latestNow = readLatestRevisionOrUnknown(
+                                                executable, transport, settings,
+                                                monitor::isCanceled);
+                                            if (latestNow > 0) {
+                                                ReceiveRevisionStore.recordObserved(
+                                                    project, settings.address(),
+                                                    intermediaryIdentity, latestNow);
+                                            }
+                                            if (latestNow == revisionForReview.get()) {
+                                                ReceiveRevisionStore.recordApplied(
+                                                    project, settings.address(),
+                                                    intermediaryIdentity, branch,
+                                                    latestNow);
+                                            }
+                                        }
                                         return Status.OK_STATUS;
                                     } catch (Exception ex) {
                                         BridgeActivator.getDefault().getLog().warn(
@@ -734,6 +778,36 @@ public final class ReceiveChangesCoordinator {
             current = current.getCause();
         }
         BridgeActivator.getDefault().getLog().error(diagnostic.toString());
+    }
+
+    /**
+     * Best-effort native latest revision from the existing connected base.
+     * Report syntax and encoding vary between 1C platform builds; unknown is
+     * never treated as the current repository version or an applied version.
+     */
+    private static long readLatestRevisionOrUnknown(Path executable,
+            InfobaseLocation intermediary,
+            StorageProjectSettings.Snapshot settings,
+            BooleanSupplier canceled) {
+        if (canceled.getAsBoolean()) {
+            return ReceiveRevisionStore.UNKNOWN;
+        }
+        try {
+            return RepositoryLatestRevisionReader.latest(
+                RepositoryHistoryRequest.latest(executable, intermediary,
+                    Duration.ofMinutes(5)),
+                settings.infobaseUsername(), settings.infobasePassword(),
+                canceled);
+        } catch (IOException | InterruptedException | IllegalArgumentException ex) {
+            // Neither Designer report text nor credentials may enter logs.
+            BridgeActivator.getDefault().getLog().warn(
+                "Native 1C repository revision is unavailable; "
+                + "version fields remain unverified.");
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return ReceiveRevisionStore.UNKNOWN;
+        }
     }
 
     /** Only explicitly vetted own error messages may appear in the dialog. */
