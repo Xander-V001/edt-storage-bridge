@@ -167,7 +167,8 @@ public final class EdtSelectiveReviewService {
         Objects.requireNonNull(monitor);
         Objects.requireNonNull(explicitlySelectedObjects);
         if (!project.isAccessible() || project.getLocation() == null
-                || explicitlySelectedObjects.isEmpty() || monitor.isCanceled()) {
+                || (!initialFullReview && explicitlySelectedObjects.isEmpty())
+                || monitor.isCanceled()) {
             throw new IOException("No active EDT project or selected remote objects");
         }
         IV8Project active = projects.getProject(project);
@@ -194,10 +195,13 @@ public final class EdtSelectiveReviewService {
         } catch (Exception ex) {
             throw new IOException("No EDT XML importer for this project's 1C version", ex);
         }
-        // Fail before an expensive native XML import if an unexpected
-        // storage metadata category has no safe EDT source mapping.
-        // This preflight never edits the user's EDT project or Git worktree.
-        requireSupportedObjectTypes(explicitlySelectedObjects);
+        // Full conversion has no manual metadata type allowlist. Let the
+        // native 1C:EDT importer decide what its current version supports.
+        // A partial comparison still requires a known mapping to validate
+        // explicitly selected owners; it never widens scope on failure.
+        if (!initialFullReview) {
+            requireSupportedObjectTypes(explicitlySelectedObjects);
+        }
         IStatus status;
         // In a selective object dump, the top-level Ext directory belongs
         // to Configuration, NOT to the requested Catalogs/Documents/etc.
@@ -221,26 +225,22 @@ public final class EdtSelectiveReviewService {
         if (status == null || !status.isOK()) {
             throw NativeEdtImportFailure.from(status, initialFullReview);
         }
-        List<String> requestedScope = exactScope(target, explicitlySelectedObjects);
-        // Language entries have no separate .mdo: do not count the root
-        // descriptor as proof that the requested languages survived import.
-        requireEmbeddedLanguages(target, explicitlySelectedObjects);
         var main = new V8ProjectComparisonDataSourceDescriptor(active);
         var delta = new FileSystemComparisonDataSourceDescriptor(
             target, project.getName());
         final ComparisonScope comparisonScope;
         if (initialFullReview) {
-            // The full XML importer may create more owners than the
-            // ConfigDumpInfo version inventory enumerates. Include every
-            // primary descriptor from the imported source, plus objects that
-            // exist ONLY in the user's EDT project (remote deletions and
-            // local additions). Otherwise EDT cannot even display those
-            // local-only objects for the user's own deletion decision.
-            // Do not infer a deletion solely from an absent configVersion.
-            FullPrimaryScopes inventories = fullPrimaryScopes(projectDirectory, target);
-            comparisonScope = new ComparisonScope(
-                toNativeFqns(inventories.main()), toNativeFqns(inventories.other()));
+            // The supported native comparison session interprets NO scope
+            // objects on EITHER side as GLOBAL comparison. This is the only
+            // correct full-review path: EDT itself enumerates both complete
+            // models, including nested forms, subsystems, pictures, deletions
+            // and objects unknown to our own type/filename mappings.
+            // Do not call exactScope(), requireEmbeddedLanguages(), or a
+            // home-grown EDT descriptor inventory for a full review.
+            comparisonScope = globalScope();
         } else {
+            List<String> requestedScope = exactScope(target, explicitlySelectedObjects);
+            requireEmbeddedLanguages(target, explicitlySelectedObjects);
             comparisonScope = new ComparisonScope(requestedScope, requestedScope);
         }
         var handle = new ComparisonProcessHandle(main, delta, comparisonScope);
@@ -615,6 +615,11 @@ public final class EdtSelectiveReviewService {
      * to native comparison symbolic links happens through EDT's own path
      * converter and never through guessed names.
      */
+    /** Empty on BOTH sides means native EDT GLOBAL comparison. */
+    public static ComparisonScope globalScope() {
+        return new ComparisonScope(List.of(), List.of());
+    }
+
     public record FullPrimaryScopes(List<Path> main, List<Path> other) {
         public FullPrimaryScopes {
             main = List.copyOf(main);
