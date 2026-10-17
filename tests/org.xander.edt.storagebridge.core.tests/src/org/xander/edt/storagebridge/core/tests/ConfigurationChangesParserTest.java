@@ -41,10 +41,10 @@ public class ConfigurationChangesParserTest {
     @Test
     public void separatelyVersionedModulesAndRightsMustBeExported() throws Exception {
         var changes = ConfigurationChangesParser.parse(
-            "Modified: Catalog.Товары.ObjectModule\\n"
-            + "Modified: Role.Бухгалтер.Rights\\n"
-            + "Modified: CommonModule.Утилиты.Module\\n"
-            + "Modified: Report.ФормаП4.Form.Основная.Form\\n");
+            "Modified: Catalog.Товары.ObjectModule\n"
+            + "Modified: Role.Бухгалтер.Rights\n"
+            + "Modified: CommonModule.Утилиты.Module\n"
+            + "Modified: Report.ФормаП4.Form.Основная.Form\n");
         assertEquals(List.of(
             "Catalog.Товары", "Catalog.Товары.ObjectModule",
             "Role.Бухгалтер", "Role.Бухгалтер.Rights",
@@ -57,11 +57,11 @@ public class ConfigurationChangesParserTest {
     public void configurationAndTopLevelIndependentFilesKeepValidNames()
             throws Exception {
         var changes = ConfigurationChangesParser.parse(
-            "Modified: Configuration.Основная.SessionModule\\n"
-            + "Modified: CommonForm.ФормаП.Form\\n"
-            + "Modified: CommonTemplate.Бланк.Template\\n"
-            + "Modified: CommonPicture.Эмблема.Picture\\n"
-            + "Modified: Catalog.Товары.Command.Подбор.CommandModule\\n");
+            "Modified: Configuration.Основная.SessionModule\n"
+            + "Modified: CommonForm.ФормаП.Form\n"
+            + "Modified: CommonTemplate.Бланк.Template\n"
+            + "Modified: CommonPicture.Эмблема.Picture\n"
+            + "Modified: Catalog.Товары.Command.Подбор.CommandModule\n");
         assertEquals(List.of(
             "Configuration", "Configuration.Основная.SessionModule",
             "CommonForm.ФормаП", "CommonForm.ФормаП.Form",
