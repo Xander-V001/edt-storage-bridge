@@ -86,7 +86,7 @@ public final class EdtOwnerContentVerifier {
      */
     public static String firstMismatch(Path projectRoot, Path stage,
             String edtOwner) throws IOException {
-        if (edtOwner == null || !edtOwner.matches("[^/\\\\\\\\]+/[^/\\\\\\\\]+")
+        if (edtOwner == null || !edtOwner.matches("[^/\\\\]+/[^/\\\\]+")
                 || edtOwner.contains("..")) {
             throw new IOException("Invalid metadata owner path");
         }
