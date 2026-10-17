@@ -166,7 +166,14 @@ public final class ReceiveChangesCoordinator {
                 storedPhase = Phase.NONE;
             }
             boolean recovery = journal.exists();
-            if (recovery && storedPhase != Phase.UPDATE_COMPLETED) {
+            // SNAPSHOT_READY means the mutation flag was not yet written:
+            // the previous operation was interrupted BEFORE Designer start.
+            // It is safe to continue only after verifying the intermediary
+            // still matches the durable pre-update snapshot (below).
+            final boolean resumePrepared = recovery
+                && storedPhase == Phase.SNAPSHOT_READY;
+            if (recovery && storedPhase != Phase.UPDATE_COMPLETED
+                    && !resumePrepared) {
                 throw new IOException(
                     "Предыдущая попытка получения не завершена, результат "
                     + "обновления базы неизвестен. Повторный запуск заблокирован.");
@@ -176,12 +183,12 @@ public final class ReceiveChangesCoordinator {
                     "Найден незавершённый журнал обновления без исходного "
                     + "снимка. Повторный запуск заблокирован.");
             }
-            if (recovery) {
+            if (recovery && !resumePrepared) {
                 updateAttempted.set(true);
             }
             boolean firstInventory = journal.lastScannedInfo() == null;
             phase.set("Подтверждение получения из хранилища");
-            if (!recovery && !confirmOnUi(shell,
+            if ((!recovery || resumePrepared) && !confirmOnUi(shell,
                     "Получить изменения из хранилища 1С",
                     "База-посредник: " + settings.infobaseAddress() + "\n"
                     + "Хранилище: " + settings.address() + "\n"
@@ -212,12 +219,27 @@ public final class ReceiveChangesCoordinator {
             progress(jobProgress, 45, monitor -> {
                 BooleanSupplier canceled = monitor::isCanceled;
                 monitor.beginTask("Получение состояния хранилища 1С", 4);
-                if (!journal.exists()) {
-                    phase.set("Фиксация состояния базы перед обновлением");
-                    monitor.subTask("Защита от повторного обновления после сбоя");
-                    try (var snapshot = new ConfigVersionSnapshotRunner()
-                            .capture(detect, canceled)) {
-                        journal.persist(snapshot.configDumpInfo());
+                if (!recovery || resumePrepared) {
+                    if (!recovery) {
+                        phase.set("Фиксация состояния базы перед обновлением");
+                        monitor.subTask("Защита от повторного обновления после сбоя");
+                        try (var snapshot = new ConfigVersionSnapshotRunner()
+                                .capture(detect, canceled)) {
+                            journal.persist(snapshot.configDumpInfo());
+                        }
+                    } else {
+                        phase.set("Проверка базы после прерванной подготовки");
+                        monitor.subTask("Сравнение с сохранённым снимком до обновления");
+                        try (var current = new ConfigVersionSnapshotRunner()
+                                .capture(detect, canceled)) {
+                            if (!ConfigDumpInfoIndex.readVersions(journal.path())
+                                    .equals(ConfigDumpInfoIndex.readVersions(
+                                        current.configDumpInfo()))) {
+                                throw new IOException(
+                                    "База-посредник изменилась после подготовки. "
+                                    + "Автоматическое повторное обновление запрещено.");
+                            }
+                        }
                     }
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
