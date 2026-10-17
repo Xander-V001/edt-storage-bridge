@@ -121,9 +121,11 @@ public final class ConfigurationChangesParser {
             throw new IllegalArgumentException("Invalid metadata object name");
         }
         String[] parts = fqName.split("\\.");
-        if ("Configuration".equals(parts[0]) || "Language".equals(parts[0])) {
-            return parts[0];
+        if ("Configuration".equals(parts[0])) {
+            return "Configuration";
         }
+        // Each Language.<name> is an independent metadata object.
+        // Collapsing all languages to "Language" drops real changes.
         return parts[0] + "." + parts[1];
     }
 }
