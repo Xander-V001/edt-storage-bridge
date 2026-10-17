@@ -23,19 +23,57 @@ public final class SelectiveDumpPlanner {
     }
 
     public static Plan plan(Iterable<String> objectNames) {
+        return planIncludingRelated(objectNames, List.of());
+    }
+
+    /**
+     * Expand each changed top-level owner with EVERY independently versioned
+     * descendant recorded by the CURRENT native ConfigDumpInfo inventory.
+     * E.g. changing Document.X.ObjectModule still exports its unchanged
+     * Form, Template and other separate development files: EDT receives a
+     * complete owner rather than a partial surrogate model.
+     *
+     * The final -listFile uses only names produced by the same canonical
+     * native names mapper used for change records (embedded properties map
+     * to parents). Full receive does NOT call this planner.
+     */
+    public static Plan planIncludingRelated(Iterable<String> objectNames,
+            Iterable<String> remoteVersionedNames) {
         Objects.requireNonNull(objectNames, "objectNames");
-        var exportable = new LinkedHashSet<String>();
-        var deferred = new LinkedHashSet<String>();
+        Objects.requireNonNull(remoteVersionedNames, "remoteVersionedNames");
+        var requested = new LinkedHashSet<String>();
+        var requestedOwners = new LinkedHashSet<String>();
         for (String name : objectNames) {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("Invalid metadata object");
             }
-            if ("Configuration".equals(name)
-                    || name.startsWith("Configuration.")
-                    || "Language".equals(name)
-                    || name.startsWith("Language.")
-                    || "Язык".equals(name)
-                    || name.startsWith("Язык.")) {
+            requested.add(name);
+            if (!isDeferredRoot(name)) {
+                String[] parts = name.split("\\.");
+                if (parts.length >= 2) {
+                    requestedOwners.add(parts[0] + "." + parts[1]);
+                }
+            }
+        }
+        var included = new LinkedHashSet<String>(requested);
+        for (String name : remoteVersionedNames) {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Invalid native metadata inventory name");
+            }
+            for (String owner : requestedOwners) {
+                if (name.equals(owner) || name.startsWith(owner + ".")) {
+                    included.add(name);
+                    break;
+                }
+            }
+        }
+        var exportable = new LinkedHashSet<String>();
+        var deferred = new LinkedHashSet<String>();
+        for (String name : included) {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Invalid metadata object");
+            }
+            if (isDeferredRoot(name)) {
                 // Language is embedded in Configuration.mdo, not in Languages/*.mdo.
                 // Root ConfigDumpInfo entries cannot safely be converted to
                 // isolated EDT resources with the existing partial importer:
@@ -54,5 +92,14 @@ public final class SelectiveDumpPlanner {
             }
         }
         return new Plan(List.copyOf(exportable), List.copyOf(deferred));
+    }
+
+    private static boolean isDeferredRoot(String name) {
+        return "Configuration".equals(name)
+            || name.startsWith("Configuration.")
+            || "Language".equals(name)
+            || name.startsWith("Language.")
+            || "Язык".equals(name)
+            || name.startsWith("Язык.");
     }
 }
