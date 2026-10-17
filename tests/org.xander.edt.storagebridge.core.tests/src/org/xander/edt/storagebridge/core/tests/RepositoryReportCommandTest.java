@@ -15,6 +15,7 @@ import org.xander.edt.storagebridge.platform.ReadOnlyReportRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryReport;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
+import org.xander.edt.storagebridge.platform.RepositoryVersionReportParser;
 
 /** Unit checks: NEVER execute or connect to the 1C platform. */
 public class RepositoryReportCommandTest {
@@ -108,22 +109,81 @@ public class RepositoryReportCommandTest {
             () -> cmd.add("/ConfigurationRepositoryCommit"));
     }
 
+    private static final String REAL_REPORT_SHAPE = """
+        Отчет по версиям хранилища:\ttcp://example.invalid:1542/Payroll
+        Дата отчета:\t17.10.2026
+        Время отчета:\t20:32:01
+
+        Версия:\t29403
+        Версия конфигурации:\t5.0.113.3
+        Пользователь:\tDeveloper One
+        Дата создания:\t16.10.2026
+        Время создания:\t17:52:38
+        Комментарий:
+        // БРО 1.2.1.331
+
+        \tДобавлены\t2
+        \tДокумент.НовыйДокумент
+        \tОбработка.НоваяОбработка.Форма.Основная
+
+        \tИзменены\t2
+        \tДокумент.А.Форма.Основная
+        \tКаминЗарплата
+
+        \tУдалены\t1
+        \tОтчет.Устаревший
+
+        Версия:\t29404
+        Версия конфигурации:\t5.0.113.3
+        Пользователь:\tDeveloper Two
+        Дата создания:\t17.10.2026
+        Время создания:\t20:25:45
+        Комментарий:
+        // тестовые изменения
+
+        \tИзменены\t1
+        \tДокумент.НачислениеПоСреднему.Форма.ФормаДокумента
+        """;
+
     @Test
-    public void latestRevisionMustComeFromSingleNativeVersionHeading()
+    public void realTxtReportShapeReturnsActualLatestRevisionAndHistory()
             throws Exception {
-        assertEquals(29397L, RepositoryLatestRevisionReader.parseLatest(
-            "Отчёт по истории хранилища\r\nВерсия: 29397\r\nДата: 17.10.2026\r\n"));
-        assertEquals(101L, RepositoryLatestRevisionReader.parseLatest(
-            "Repository history\nVersion:\t101\n"));
+        var entries = RepositoryVersionReportParser.parse(REAL_REPORT_SHAPE);
+        assertEquals(2, entries.size());
+        assertEquals(29404L, RepositoryLatestRevisionReader.parseLatest(REAL_REPORT_SHAPE));
+        assertEquals(29403L, entries.get(0).number());
+        assertEquals("5.0.113.3", entries.get(0).configurationVersion());
+        assertEquals("// БРО 1.2.1.331", entries.get(0).comment());
+        assertEquals(2, entries.get(0).added().size());
+        assertEquals(2, entries.get(0).modified().size());
+        assertEquals(1, entries.get(0).deleted().size());
+        assertEquals("Developer Two", entries.get(1).username());
+        assertEquals("// тестовые изменения", entries.get(1).comment());
+        assertEquals("Документ.НачислениеПоСреднему.Форма.ФормаДокумента",
+            entries.get(1).modified().get(0));
+        assertThrows(UnsupportedOperationException.class,
+            () -> entries.get(1).modified().add("Документ.Вставка"));
+    }
+
+    @Test
+    public void malformedOrSpoofedReportNeverSetsRevision() {
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
-                "Configuration version 8.3.27\nLast processed object: 101\n"));
+                "Версия:\t29404\nКомментарий:\n// тестовые изменения"));
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
-                "Версия: 101\nКомментарий:\nВерсия: 999\n"));
+                REAL_REPORT_SHAPE.replace("Изменены\t1", "Изменены\t99")));
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
-                "Версия: 0\n"));
+                REAL_REPORT_SHAPE.replace("Версия:\t29404", "Версия:\t29403")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                REAL_REPORT_SHAPE.replace("Время создания:\t20:25:45",
+                    "Время создания:\tinvalid")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                REAL_REPORT_SHAPE.replace(
+                    "Документ.НачислениеПоСреднему.Форма.ФормаДокумента", "")));
     }
 
     @Test
