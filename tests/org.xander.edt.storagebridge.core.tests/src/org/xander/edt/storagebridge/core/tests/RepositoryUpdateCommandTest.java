@@ -65,6 +65,36 @@ public class RepositoryUpdateCommandTest {
     }
 
     @Test
+    public void repositoryAndInfobaseCredentialsRemainSeparate() {
+        var req = new RepositoryUpdateRequest(Path.of("/opt/bin/1cv8.exe"),
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "/test/ib"),
+            Duration.ofMinutes(5), "repo-path", "storage-user",
+            "storage-secret", "base-user", "base-secret");
+        var args = RepositoryUpdateCommand.arguments(req, Path.of("/tmp/1c-log"));
+        assertEquals("base-user", args.get(args.indexOf("/N") + 1));
+        assertEquals("base-secret", args.get(args.indexOf("/P") + 1));
+        assertEquals("storage-user",
+            args.get(args.indexOf("/ConfigurationRepositoryN") + 1));
+        assertEquals("storage-secret",
+            args.get(args.indexOf("/ConfigurationRepositoryP") + 1));
+        assertTrue(args.indexOf("/N") < args.indexOf("/ConfigurationRepositoryF"));
+        assertTrue(args.contains("/DisableStartupDialogs"));
+        assertTrue(args.contains("/DisableStartupMessages"));
+        assertTrue(args.contains("/DisableUnrecoverableErrorMessage"));
+        assertFalse(req.toString().contains("base-secret"));
+        assertFalse(req.toString().contains("storage-secret"));
+    }
+
+    @Test
+    public void invalidInfobaseCredentialsFailBeforeLaunchingDesigner() {
+        assertThrows(IllegalArgumentException.class, () ->
+            new RepositoryUpdateRequest(Path.of("/opt/bin/1cv8.exe"),
+                new InfobaseLocation(InfobaseLocation.Kind.FILE, "/test/ib"),
+                Duration.ofMinutes(5), "repo-path", "storage-user", "",
+                "", "base-secret"));
+    }
+
+    @Test
     public void credentialsCannotBeUsedWithoutRepositoryIdentity() {
         assertThrows(IllegalArgumentException.class, () -> new RepositoryUpdateRequest(
             Path.of("/opt/bin/1cv8.exe"),
