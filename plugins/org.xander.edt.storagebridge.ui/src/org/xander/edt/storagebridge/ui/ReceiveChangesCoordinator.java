@@ -550,6 +550,11 @@ public final class ReceiveChangesCoordinator {
 
     /** Only explicitly vetted own error messages may appear in the dialog. */
     private static String safeReason(Throwable failure) {
+        if (failure instanceof ConfigVersionSnapshotRunner.SnapshotFailure snapshot) {
+            return "Конфигуратор 1С завершил создание снимка с кодом "
+                + snapshot.exitCode() + ". Сохранены диагностические журналы: "
+                + snapshot.diagnosticsDirectory();
+        }
         if (failure instanceof IOException) {
             String reason = failure.getMessage();
             if (reason != null && (
