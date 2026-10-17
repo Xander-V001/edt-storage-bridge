@@ -33,7 +33,6 @@ import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
-import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
@@ -265,9 +264,15 @@ public final class ReceiveChangesCoordinator {
                     } else {
                         phase.set("Поиск изменений со времени предыдущей сверки EDT");
                         monitor.subTask("Сравнение с сохранённой версией для EDT/Git-ветки");
+                        // Two immutable, project-scoped manifests; no second
+                        // Designer batch operation or intermediary-delta guess.
+                        // Refuse deleted/renamed metadata until native EDT
+                        // deletion merge is separately proven.
+                        Set<String> changed = ConfigDumpInfoIndex.changedSince(
+                            lastScanned, remote.configDumpInfo());
                         remoteNames = new LinkedHashSet<>(
-                            new ChangedObjectsProbe().detect(
-                                detect, lastScanned, canceled).objectsToExport());
+                            new ConfigurationChangesParser.ChangeSet(
+                                List.copyOf(changed), List.of()).objectsToExport());
                     }
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
