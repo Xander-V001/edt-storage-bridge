@@ -3,9 +3,7 @@ package org.xander.edt.storagebridge.platform;
 import java.io.IOException;
 import java.nio.charset.CharacterCodingException;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
-import java.util.regex.Pattern;
 
 /**
  * Fail-closed read of the latest numeric classic repository revision.
@@ -14,35 +12,17 @@ import java.util.regex.Pattern;
  * stored revision. Do not infer repository numbers from ConfigDumpInfo
  * configVersion tokens or from a successful repository update process.
  *
- * TXT report layouts depend on platform and compatibility mode. Only a
- * single unambiguous standalone "Версия: N" / "Version: N" heading is
- * accepted. An unknown report leaves the version UNKNOWN (never invented).
+ * Read the actual native Russian TXT report fields and validate counted
+ * changes per version. Reject unknown formats instead of inventing values.
  */
 public final class RepositoryLatestRevisionReader {
-    private static final Pattern HEADING = Pattern.compile(
-        "(?iu)^[ \\t]*(?:Версия|Version)[ \\t]*:[ \\t]*([1-9][0-9]{0,15})[ \\t]*$",
-        Pattern.MULTILINE);
-
     private RepositoryLatestRevisionReader() {}
 
     public static long parseLatest(String report) throws IOException {
-        Objects.requireNonNull(report, "report");
-        var matcher = HEADING.matcher(report);
-        AtomicInteger count = new AtomicInteger();
-        long latest = -1;
-        while (matcher.find()) {
-            count.incrementAndGet();
-            try {
-                latest = Long.parseLong(matcher.group(1));
-            } catch (NumberFormatException ex) {
-                throw new IOException("Invalid repository report revision", ex);
-            }
-        }
-        if (count.get() != 1 || latest < 1) {
-            throw new IOException(
-                "Cannot unambiguously identify latest revision in native 1C report");
-        }
-        return latest;
+        // Parse all native revision blocks, preserving chronology. In a range
+        // report the final parsed revision is the greatest one; when invoked
+        // with -NBegin -1 the Designer query itself selects repository HEAD.
+        return RepositoryVersionReportParser.latest(report);
     }
 
     public static long latest(RepositoryHistoryRequest request, String ibUsername,
