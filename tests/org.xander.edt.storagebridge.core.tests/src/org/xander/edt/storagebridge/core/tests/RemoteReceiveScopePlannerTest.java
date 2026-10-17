@@ -60,6 +60,10 @@ public final class RemoteReceiveScopePlannerTest {
                 () -> RemoteReceiveScopePlanner.candidates(old, next, false));
             assertEquals(Set.of("Document.Kept"),
                 RemoteReceiveScopePlanner.candidates(old, next, true));
+            assertEquals(Set.of("Document.Deleted"),
+                RemoteReceiveScopePlanner.removedSince(old, next));
+            assertEquals(Set.of(),
+                RemoteReceiveScopePlanner.removedSince(null, next));
             var current = Set.of("Document.Kept");
             var pending = Set.of("Document.Deleted", "Document.Kept");
             var review = RemoteReceiveScopePlanner.availableInFullReview(
