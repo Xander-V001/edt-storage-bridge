@@ -91,6 +91,7 @@ jobs:
         with:
           path: repository/org.xander.edt.storagebridge.p2/target/repository
           retention-days: 1
+          include-hidden-files: true
       - name: Upload p2 installation archive
         if: success()
         uses: actions/upload-artifact@v4
