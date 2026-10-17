@@ -15,12 +15,24 @@ import java.util.stream.Stream;
  * Non-mutating selective transport for changes from a SINGLE pre-existing
  * classical-repository-connected IB. Never accesses EDT-connected infobases.
  *
- * <p>Caller MUST supply precisely the changed objects, obtained from
- * trustworthy repository history. No full configuration fallback is allowed.
+ * Selective export never falls back to full export.
+ * The separate explicit full operation is ONLY for first-time review.
  */
 public final class SelectiveDumpRunner {
 
     public ExportResult export(SelectiveDumpRequest request, BooleanSupplier cancelled)
+            throws IOException, InterruptedException {
+        return exportInternal(request, cancelled, false);
+    }
+
+    /** One-time initial review; never a fallback after selective failure. */
+    public ExportResult exportInitialFull(SelectiveDumpRequest request,
+            BooleanSupplier cancelled) throws IOException, InterruptedException {
+        return exportInternal(request, cancelled, true);
+    }
+
+    private ExportResult exportInternal(SelectiveDumpRequest request,
+            BooleanSupplier cancelled, boolean initialFull)
             throws IOException, InterruptedException {
         if (!Files.isRegularFile(request.executable(), LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("1C executable not found");
@@ -28,7 +40,8 @@ public final class SelectiveDumpRunner {
         if (cancelled.getAsBoolean()) {
             throw new IOException("Export cancelled");
         }
-        Path temporaryRoot = Files.createTempDirectory("edt-storage-selective-");
+        Path temporaryRoot = Files.createTempDirectory(
+            initialFull ? "edt-storage-initial-" : "edt-storage-selective-");
         Path target = temporaryRoot.resolve("objects");
         boolean succeeded = false;
         boolean launched = false;
@@ -37,17 +50,20 @@ public final class SelectiveDumpRunner {
             Path list = temporaryRoot.resolve("objects.txt");
             Path log = temporaryRoot.resolve("designer.txt");
             Path output = temporaryRoot.resolve("stdout.txt");
-            // UTF-8 BOM and CRLF are supported for 1C metadata object list files.
-            String lines = String.join("\r\n", request.objectNames()) + "\r\n";
-            byte[] content = lines.getBytes(StandardCharsets.UTF_8);
-            byte[] withBom = new byte[content.length + 3];
-            withBom[0] = (byte) 0xEF;
-            withBom[1] = (byte) 0xBB;
-            withBom[2] = (byte) 0xBF;
-            System.arraycopy(content, 0, withBom, 3, content.length);
-            Files.write(list, withBom);
-            Process process = new ProcessBuilder(
-                    SelectiveDumpCommand.arguments(request, target, list, log))
+            if (!initialFull) {
+                // UTF-8 BOM and CRLF for native 1C -listFile.
+                String lines = String.join("\r\n", request.objectNames()) + "\r\n";
+                byte[] content = lines.getBytes(StandardCharsets.UTF_8);
+                byte[] withBom = new byte[content.length + 3];
+                withBom[0] = (byte) 0xEF;
+                withBom[1] = (byte) 0xBB;
+                withBom[2] = (byte) 0xBF;
+                System.arraycopy(content, 0, withBom, 3, content.length);
+                Files.write(list, withBom);
+            }
+            Process process = new ProcessBuilder(initialFull
+                    ? InitialFullDumpCommand.arguments(request, target, log)
+                    : SelectiveDumpCommand.arguments(request, target, list, log))
                 .directory(temporaryRoot.toFile())
                 .redirectOutput(output.toFile())
                 .redirectErrorStream(true)
@@ -57,10 +73,10 @@ public final class SelectiveDumpRunner {
                 long startedAt = System.nanoTime();
                 while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
                     if (cancelled.getAsBoolean()) {
-                        throw new IOException("Selective export cancelled");
+                        throw new IOException("Designer XML export cancelled");
                     }
                     if (System.nanoTime() - startedAt > request.timeout().toNanos()) {
-                        throw new IOException("Selective export timed out");
+                        throw new IOException("Designer XML export timed out");
                     }
                     if (tooLarge(log) || tooLarge(output)) {
                         throw new IOException("Diagnostics exceeded size limit");
