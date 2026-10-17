@@ -148,3 +148,66 @@ unknown converted owners and incomplete import, preserving pending entries
 until independently verified, and requiring explicit merge selections.
 These are not restrictions on which valid configuration objects a user may
 choose to transfer.
+
+## 2026-10-17: No application-defined restrictions on FULL native comparison
+
+**Critical correction to the prior design**: manual `ComparisonScope(main,other)`
+selection based on `ConfigDumpInfo.xml` or scans of top-level `.mdo`
+owners is **not** a full native comparison. It can omit native model
+differences in nested objects, form properties, pictures, support files or
+metadata that have no separately versioned owner token.
+
+The full receive pipeline now explicitly uses:
+
+```text
+1C intermediary: /DumpConfigToFiles <folder> -Format Hierarchical
+    NO -listFile
+  -> EDT IImportService.work(project, wholeXmlFolder, cleanStage, monitor)
+    NO EdtRootXmlGuard / NO application-defined type allowlist
+  -> ComparisonProcessHandle(
+       V8ProjectComparisonDataSourceDescriptor(activeProject),
+       FileSystemComparisonDataSourceDescriptor(cleanStage, projectName),
+       ComparisonScope.EMPTY_SCOPE)
+  -> ComparisonProcessSettings:
+       parseBslModuleStructure(true),
+       mainSideObjectsDeletionAllowed(true)
+  -> unmodified native EDT compare/merge editor
+  -> read-only independent resource verification and pending journal
+```
+
+`ComparisonScope.EMPTY_SCOPE` is the **official native EDT scope** with
+no objects on either side, zero exclusions, and no locked removable objects.
+`IComparisonSession.isGlobalScope()` defines a GLOBAL comparison session as
+one without any scoped object on either side. This allows EDT itself to
+enumerate all objects, including remote-only and local-only metadata and
+their complete nested resources. Do not reintroduce a manually generated
+owner/metadata scope in the full path.
+
+Authoritative EDT API documentation:
+- https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/compare/core/ComparisonScope.html
+- https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/compare/core/IComparisonSession.html
+
+The full-mode incoming journal still reads native `ConfigDumpInfo.xml` to
+track version deltas, but it MUST NOT determine what native EDT is allowed
+to import or compare. Unknown names in that inventory must not be excluded
+from a full comparison. EDT importer failure, cancelled operations and unsafe
+temporary directories still fail closed to avoid corrupting the project.
+
+**Selective receive** keeps a narrow native comparison scope, but now builds
+its listFile from all current independently versioned descendants under
+each changed top-level owner: this includes additional unchanged forms,
+modules and templates needed to represent the whole changed object. Nested
+Subsystem paths retain their actual full hierarchical names. The separate
+Configuration-root/Language partial-import limitation is unchanged; those
+resources are handled by the unrestricted full-review path.
+
+A full result may still DIFFER from a repository CF even after an
+unrestricted comparison: the user must explicitly choose what to merge, and
+the native importer/EDT-to-CF conversion may have its own limitations.
+Five historical source-vs-live differences, including `Picture.png`,
+remain under investigation. Never falsely mark a revision as fully received
+until results are independently verified.
+
+**Validation**: source edits and offline regression tests added, but no
+Tycho/OSGi CI build or installed EDT smoke test has yet been run for this
+commit. Manual-only workflow, no VPS usage.
