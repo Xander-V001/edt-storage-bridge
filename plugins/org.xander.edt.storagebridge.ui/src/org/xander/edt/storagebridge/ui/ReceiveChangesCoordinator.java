@@ -648,6 +648,10 @@ public final class ReceiveChangesCoordinator {
                                             intermediaryIdentity, selected,
                                             selectedPendingNames,
                                             deletedPendingNames,
+                                            fullReview
+                                                ? EdtSelectiveReviewService.primaryDescriptors(
+                                                    retainedConverted.resolve("edt")).keySet()
+                                                : Set.of(),
                                             retainedConverted.resolve("edt"));
                                         // Owner verification can take minutes
                                         // on a large project; reject a Git HEAD
