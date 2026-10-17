@@ -30,6 +30,7 @@ public final class SelectiveDumpRunner {
         }
         Path temporaryRoot = Files.createTempDirectory("edt-storage-selective-");
         boolean succeeded = false;
+        boolean launched = false;
         try {
             Path target = Files.createDirectory(temporaryRoot.resolve("objects"));
             Path list = temporaryRoot.resolve("objects.txt");
@@ -50,6 +51,7 @@ public final class SelectiveDumpRunner {
                 .redirectOutput(output.toFile())
                 .redirectErrorStream(true)
                 .start();
+            launched = true;
             try {
                 long startedAt = System.nanoTime();
                 while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
@@ -63,8 +65,15 @@ public final class SelectiveDumpRunner {
                         throw new IOException("Diagnostics exceeded size limit");
                     }
                 }
-                if (process.exitValue() != 0 || cancelled.getAsBoolean()) {
-                    throw new IOException("Selective Designer dump did not finish successfully");
+                if (cancelled.getAsBoolean()) {
+                    throw new DumpFailure(-1, temporaryRoot, "cancelled");
+                }
+                if (process.exitValue() != 0) {
+                    // Preserve the REAL Designer diagnostics and the exact
+                    // UTF-8 metadata list. Without /Out an exit=1 reveals
+                    // nothing about an invalid -listFile entry.
+                    throw new DumpFailure(process.exitValue(), temporaryRoot,
+                        "nonzero exit");
                 }
             } finally {
                 if (process.isAlive()) {
@@ -86,8 +95,39 @@ public final class SelectiveDumpRunner {
             return new ExportResult(temporaryRoot, target);
         } finally {
             if (!succeeded) {
-                deleteTree(temporaryRoot);
+                if (launched) {
+                    // Retain designer.txt, stdout.txt, objects.txt locally
+                    // after failure; avoid keeping partial XML/BSL output
+                    // which can be very large or contain confidential code.
+                    deleteTree(target);
+                } else {
+                    deleteTree(temporaryRoot);
+                }
             }
+        }
+    }
+
+    /**
+     * Only sanitized exit status and the location of retained evidence are
+     * exposed in EDT. Native 1C logs may contain sensitive data: do not copy
+     * their contents to Eclipse logs, UI, Git or CI.
+     */
+    public static final class DumpFailure extends IOException {
+        private final int exitCode;
+        private final Path diagnosticsDirectory;
+
+        public DumpFailure(int exitCode, Path diagnosticsDirectory, String kind) {
+            super("Designer selective XML dump failed: " + kind);
+            this.exitCode = exitCode;
+            this.diagnosticsDirectory = diagnosticsDirectory.toAbsolutePath();
+        }
+
+        public int exitCode() {
+            return exitCode;
+        }
+
+        public Path diagnosticsDirectory() {
+            return diagnosticsDirectory;
         }
     }
 
