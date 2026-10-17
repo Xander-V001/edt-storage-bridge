@@ -65,3 +65,41 @@ isolated compilation and a minimal runtime reproduction passed in the assistant
 container. A full Tycho/OSGi CI build and actual EDT 2026.2 smoke test have
 NOT been run after these changes: the project's GitHub Actions workflow runs
 only with manual approval. Do not claim the form itself is resolved.
+
+## Generic native BSL resource verification
+
+The original `EdtSelectedResourceVerifier` made a mistake: it hardcoded
+five leaf names (`ManagerModule`, `ObjectModule`, `RecordSetModule`,
+`ValueManagerModule`, `Module`). That was not a scalable strategy for the
+1C metadata model. The replacement does **not** enumerate the 1C metadata
+object kind or BSL module kind. Instead, for an independently versioned
+`<MetadataKind>.<Name>.<ResourceLeaf>` identity, it:
+
+1. Converts its enclosing top owner through the EXISTING canonical
+   1C-to-EDT owner resolver in the EDT integration bundle.
+2. Checks that the staging and active EDT owner primary `.mdo` descriptor
+   files are byte-identical (same actual owner; names alone are unsafe).
+3. Checks that the staged owner ACTUALLY has a direct child resource
+   `<ResourceLeaf>.bsl`. Never fabricate a BSL filename or use an object
+   kind allowlist.
+4. Compares that resource in the stage and active project exactly.
+5. Records a pending identity as applied only when its real resource matched.
+   Otherwise keeps it pending. The full native-revision checkpoint still
+   requires whole-owner equality.
+
+These rules cover `Document.X.ObjectModule`,
+`Catalog.X.ManagerModule`, `CommonModule.X.Module`,
+`InformationRegister.X.RecordSetModule`, `CommonCommand.X.CommandModule`
+and other actual direct native BSL resource leaves identically.
+
+`CommonModule.X` WITHOUT a leaf suffix is itself a top-level metadata
+owner: it is verified by existing full-owner logic rather than guessing the
+name of its internal BSL module.
+
+**Important remaining architectural limitation**: The above is a
+generic *BSL resource* verifier, not an all-objects semantic 1C change
+verifier. Form metadata, non-BSL resources, versioned inline properties,
+resources with nonstandard native layouts and objects whose primary
+descriptors differ still require validated native EDT comparison-model
+support. No unrecognized resource is automatically acknowledged. This
+must not be marketed as a universal semantic-merge completion check.
