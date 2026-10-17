@@ -137,6 +137,8 @@ public final class ReceiveChangesCoordinator {
         boolean editorOwnsStaging = false;
         AtomicReference<String> phase = new AtomicReference<>("Проверка настроек");
         AtomicBoolean updateAttempted = new AtomicBoolean(false);
+        // Native exit=0 is not yet a verified post-update base inventory.
+        AtomicBoolean updateNeedsSnapshot = new AtomicBoolean(false);
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -306,7 +308,9 @@ public final class ReceiveChangesCoordinator {
                             settings.password(), settings.infobaseUsername(),
                             settings.infobasePassword()),
                         canceled);
-                    journal.markUpdateCompleted();
+                    // Do not mark the base updated on exit code alone.
+                    // The next read-only ConfigDumpInfo must succeed first.
+                    updateNeedsSnapshot.set(true);
                 } else {
                     phase.set("Восстановление незавершённого получения");
                     monitor.subTask("База уже обновлена: повторный запуск запрещён");
@@ -320,14 +324,22 @@ public final class ReceiveChangesCoordinator {
                 monitor.subTask("Получение актуального ConfigDumpInfo.xml");
                 try (var remote = new ConfigVersionSnapshotRunner()
                         .capture(detect, canceled)) {
+                    // Validate the current base metadata AFTER the native
+                    // repository update and BEFORE advancing the durable
+                    // completion marker or starting selective export.
+                    Set<String> verifiedInventory =
+                        ConfigDumpInfoIndex.exportableNames(remote.configDumpInfo());
+                    if (updateNeedsSnapshot.get()) {
+                        journal.markUpdateCompleted();
+                        updateNeedsSnapshot.set(false);
+                    }
                     Path lastScanned = journal.lastScannedInfo();
                     Set<String> remoteNames;
                     if (lastScanned == null) {
                         phase.set("Первичная сверка со всем хранилищем");
                         monitor.subTask(
                             "Первая сверка: все объекты хранилища, не только последнее обновление базы");
-                        var manifest = ConfigDumpInfoIndex.exportableNames(
-                            remote.configDumpInfo());
+                        var manifest = verifiedInventory;
                         // A version index does not contain the XML objects.
                         // Only after explicit -listFile export can EDT compare.
                         remoteNames = new LinkedHashSet<>(
