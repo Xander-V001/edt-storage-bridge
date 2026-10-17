@@ -165,3 +165,38 @@ Real-world references examined: 1C-Company/GitConverter (remote-revision history
 - Regression tests cover root vs nested metadata paths and replacement of an object with a new UUID.
 
 **Current limitations:** native EDT 2026.2 XML-conversion/compare editor opening and selected object merge have not been smoke-tested after these fixes. A verified Git-storage common ancestor is still unavailable; the only merge mode wired to receive is manual native two-way compare, **not** conflict-free three-way Git-aware merge. The repository's latest successfully built revision (#29) predates the above source changes. This text does not authorize a GitHub Actions build or any operation on an existing 1C infobase.
+
+
+## 2026-10-17: real EDT selective-export failure at 16:38
+
+Actual user runtime evidence in installed EDT:
+`SelectiveDumpRunner.export:67` at stage `Выборочная выгрузка объектов 1С`.
+The code for build #30 threw a generic IOException whenever Designer returned a nonzero
+exit code or cancellation; it then DELETED `designer.txt`, `stdout.txt`,
+`objects.txt`. Thus this particular real failure's precise native cause
+cannot be inferred from EDT log alone. Do not claim the invalid metadata-list
+hypothesis was proven by that log.
+
+Source fixes AFTER build #30 (unbuilt):
+- Retain the native `/Out` log, captured stdout/stderr, and BOM UTF-8
+  `-listFile` on native errors; show exact exit code + local folder, but never
+  include raw log contents or passwords in EDT logs.
+- Treat a directory containing ONLY `ConfigDumpInfo.xml` as an empty failed
+  selective export, rather than a successful metadata export.
+- Defer bare `Configuration` / `Language` version-inventory tokens:
+  the bare `Configuration` token is known to have been rejected as a list
+  object by some Designer versions. They remain pending, never acknowledged
+  as applied. Do not silently map them to Help/Splash or another unrelated
+  property; native exact root mapping remains unresolved.
+- Allow explicit **pending-only retry**: after the failed selective dump, read
+  current ConfigDumpInfo.xml and compare its object IDs/version tokens to the
+  last-scanned snapshot. Only if identical, dump already-pending objects
+  WITHOUT repeating ConfigurationRepositoryUpdateCfg against the existing
+  repository-bound infobase. A different/unknown state aborts.
+- Added isolated regression tests using a fake exit=101 `1cv8` process (with
+  `/Out` and `objects.txt`) and exit=0 that produces only
+  `ConfigDumpInfo.xml`, plus unit tests covering deferred root tokens.
+
+No CI run or installation verifies these changes yet; user must explicitly
+authorize build #31. Do NOT touch an actual repository-connected base or VPS
+for testing without permission. Three-way EDT merge remains unproven.
