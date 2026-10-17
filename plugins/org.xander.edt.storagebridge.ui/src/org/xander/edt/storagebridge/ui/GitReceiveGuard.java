@@ -16,6 +16,20 @@ public final class GitReceiveGuard {
 
     public record Baseline(String branch, String head) {}
 
+    /** Branch lookup only; never require a clean working copy to show status. */
+    public static String currentBranch(IProject project)
+            throws IOException, InterruptedException {
+        if (project == null || project.getLocation() == null) {
+            throw new IOException("Project directory not available");
+        }
+        String branch = call(Path.of(project.getLocation().toOSString()),
+            "branch", "--show-current").trim();
+        if (branch.isBlank()) {
+            throw new IOException("Git branch not available");
+        }
+        return branch;
+    }
+
     public static Baseline requireCleanBranch(IProject project)
             throws IOException, InterruptedException {
         if (project.getLocation() == null) {
