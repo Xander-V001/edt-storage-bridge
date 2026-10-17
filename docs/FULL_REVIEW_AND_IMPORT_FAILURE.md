@@ -27,13 +27,14 @@ ordinary future receives remain incremental. A full review is a fresh
 operation, NOT a pending-only retry. Pending debt survives cancellation and
 does not disappear merely because the full XML export completed.
 
-A stale pending name absent from the **current** repository inventory
-(e.g. remotely deleted metadata) is excluded from the full EDT import
-scope but remains pending, explicitly announced as unresolved deletion/rename.
-This avoids inventing a descriptor for a deleted object. Actual deletion
-resolution and detecting local-only additions remain separate unfinished work.
-"Full" denotes full SOURCE inventory comparison, not a guaranteed
-byte-identical mirror or an automatic deleting reset of the user's EDT project.
+Metadata removed in the repository has no XML descriptor and must
+NEVER be fabricated as a right-side object. It remains pending while the
+full two-sided comparison exposes the original object on the EDT main side.
+Only a verified deletion or a full match of a surviving parent can clear
+the corresponding pending change. Local-only additions are also visible
+in the editor, but are not deleted automatically.
+"Full" means a complete source inventory and a complete main-side
+inventory; it is not an automatic destructive mirror of the repository.
 
 ## Failure at 2026-10-17 21:01:50
 
@@ -99,17 +100,51 @@ main (left) side are still unchecked by default: the user can explicitly
 check the local-only rows in the standard EDT editor and merge to delete
 them. Enabled deletion is NOT unconditional auto-deletion.
 
-**Separate unresolved limitation:** currently `ComparisonScope(scope, scope)`
-is populated from **remote** top-level owner descriptors. Nested local-only
-forms/resources INSIDE a scoped object are compared and can now be removed,
-but a wholly local-only top-level object (e.g. a local-only report) may
-not be present in the comparison scope at all. The FULL source XML dump does
-not itself prove a FULL two-sided inventory comparison. A future enhancement
-must include local-only top-level owners in the main-side scope, and verify
-those deletions before claiming that an entire repository revision was
-fully applied. Do not silently mark them as accepted solely from a
-successful merge-editor close.
+**Resolved in source**: The full comparison now scans the actual top-level
+EDT `.mdo` descriptors from BOTH the project and imported staging. The
+main scope is their union and the other scope contains the imported source.
+This exposes main-only objects for the native editor's explicit deletion.
+The verifier checks all imported primary owners, not just the subset that
+has a `configVersion` token. Missing source objects still need an actual
+verified removal before the incoming pending journal can clear.
+
+Unlike full mode, selective mode retains a limited scope by design: it
+now places separately versioned form, module, rights and template names
+**together with their parent** in Designer `-listFile`, instead of dropping
+the child identity. Configuration-root/Language special resources remain
+deferred to the complete mode, with an explicit pending marker.
 
 The newly enabled deletion setting remains **source-only until built and
 smoke-tested** in installed EDT 2026.2. Previously opened comparison editor
 instances must be closed and reopened with the updated plugin.
+
+## October 17 completeness changes (source-only, build pending)
+
+- `SelectiveDumpPlanner` preserves all separately versioned resources
+  recognized by `ConfigurationChangesParser`: owner + exact child.
+  Embedded attributes/commands still use their owner.
+- The full native EDT comparison uses a UNION of local and remote primary
+  metadata descriptors, not remote-only `ComparisonScope(scope, scope)`.
+  This allows normal EDT deletion of local-only objects without an app toggle.
+- Full import still calls `IImportService.work()` on the **whole** XML folder
+  without hiding root `Ext` resources. Only selective import has the scoped
+  root-`Ext` workaround.
+- Deleted metadata from a previous `ConfigDumpInfo.xml` remains in the
+  incoming journal. Once EDT removes it, the verifier can confirm absence of
+  both directory and flat `.mdo`. Nested deleted objects are checked through
+  their surviving parent owner.
+- A full receive verifies every primary descriptor materialized in the
+  temporary imported EDT tree before raising the applied-revision checkpoint.
+  A checked merge option or closing the editor is not a substitute for
+  content verification.
+- Correctness has **not** been validated by installed EDT 2026.2, and CI
+  remains manual by project policy. Tests were added but not yet executed.
+  The two-sided full-scope semantics and real 1C selective -listFile
+  behavior must be exercised with actual new/deleted forms before release.
+
+Safety restrictions still intentionally in place: verified connection,
+Git branch/HEAD stability, failing closed on invalid 1C metadata,
+unknown converted owners and incomplete import, preserving pending entries
+until independently verified, and requiring explicit merge selections.
+These are not restrictions on which valid configuration objects a user may
+choose to transfer.
