@@ -154,3 +154,14 @@ The previous deployed path compared **intermediary infobase before vs. after its
 Real-world references examined: 1C-Company/GitConverter (remote-revision history with incremental dumps), marmyshev/edt_git_sync (repository-to-EDT-format representation), official 1C incremental XML export docs and official EDT compare/merge docs. They confirm the need for a separate versioned remote representation and native compare; they do NOT prove this plugin's EDT conversion stage works.
 
 **Known gaps:** an initial all-object export can be expensive; the first comparison and partial XML conversion have not yet been tested in EDT 2026.2; unsupported metadata types and deletions may cause a safe stop; neither last-scanned snapshot nor a clean Git worktree proves local committed changes match storage; no verified three-way ancestor yet; full equivalence after native merge is not proven. No CI build and no operations on production intermediary or user's VPS. Test with a disposable configuration and native EDT before trusting the feature.
+
+
+## 2026-10-17: further fixes to native scope and interrupted receives (source, unbuilt)
+
+- The official EDT `IQualifiedNameFilePathConverter.getFqn(IPath)` is now applied **only** to each selected object's primary `.mdo` descriptor (`src/<group>/<name>.mdo` or `src/<group>/<name>/<name>.mdo`). Nested form, rights and module files cannot accidentally broaden the native comparison scope; missing primary metadata fails closed.
+- A repeated 1C metadata *name* with a different immutable 1C `id` is now treated as deletion/recreation and **blocked** instead of being merged by matching only the name. Deletion and rename remain blocked until native handling is proven.
+- After a crash in `SNAPSHOT_READY` (Designer **not yet started**), retry is permitted **only** after a fresh read-only `ConfigDumpInfo.xml` inventory matches the durable pre-update intermediary snapshot exactly and the user confirms the write. `UPDATE_ATTEMPTED` remains blocked because the native update outcome can be uncertain. No second mutation is inferred from a bare snapshot.
+- Parallel receives from *different EDT projects pointing to the same existing intermediary* are serialized through the native comparison editor's lifecycle; this prevents overlapping Designer sessions against one database.
+- Regression tests cover root vs nested metadata paths and replacement of an object with a new UUID.
+
+**Current limitations:** native EDT 2026.2 XML-conversion/compare editor opening and selected object merge have not been smoke-tested after these fixes. A verified Git-storage common ancestor is still unavailable; the only merge mode wired to receive is manual native two-way compare, **not** conflict-free three-way Git-aware merge. The repository's latest successfully built revision (#29) predates the above source changes. This text does not authorize a GitHub Actions build or any operation on an existing 1C infobase.
