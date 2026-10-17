@@ -68,6 +68,15 @@ public final class ConfigDumpInfoIndex {
                 throw new IOException("1C metadata rename requires explicit merge");
             }
             Version oldVersion = before.get(entry.getKey());
+            if (oldVersion != null
+                    && !oldVersion.id().equals(newVersion.id())) {
+                // Same human-readable name but DIFFERENT 1C UUID is a
+                // deletion + new object, not a simple content modification.
+                // MatchingStrategy.UUID_THEN_NAME could silently pair them by
+                // name and overwrite unrelated locally committed metadata.
+                throw new IOException(
+                    "1C metadata object replacement requires explicit merge");
+            }
             if (oldVersion == null || !oldVersion.equals(newVersion)) {
                 changed.add(entry.getKey());
             }
