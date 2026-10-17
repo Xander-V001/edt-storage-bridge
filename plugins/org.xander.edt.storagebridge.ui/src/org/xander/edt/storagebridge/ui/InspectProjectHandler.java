@@ -20,9 +20,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.xander.edt.storagebridge.core.ProjectSnapshot;
-import org.xander.edt.storagebridge.edt.EdtProjectInspector;
-import com._1c.g5.v8.dt.core.platform.IConfigurationProvider;
-import com._1c.g5.wiring.ServiceAccess;
+import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 
 
 /**
@@ -67,12 +65,10 @@ public final class InspectProjectHandler extends AbstractHandler {
                     return Status.CANCEL_STATUS;
                 }
                 try {
-                    // Use EDT's public service accessor, as the native
-                    // receive/compare path already does. Creating a separate
-                    // Guice injector through BridgeExtensionFactory caused
-                    // ArrayStoreException in the user's EDT runtime.
-                    boolean available = new EdtProjectInspector(
-                        ServiceAccess.get(IConfigurationProvider.class))
+                    // Keep EDT's internal IConfigurationProvider completely
+                    // inside the EDT bundle, resolving it through ServiceAccess
+                    // on this Job thread instead of a custom Guice injector.
+                    boolean available = EdtPublicServiceBridge
                         .hasConfigurationModel(project);
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
