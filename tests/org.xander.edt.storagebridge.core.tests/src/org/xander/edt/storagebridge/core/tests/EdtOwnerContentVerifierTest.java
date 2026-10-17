@@ -57,6 +57,48 @@ public final class EdtOwnerContentVerifierTest {
         }
     }
 
+    @Test
+    public void diagnosticsPinpointDifferentFormResourceWithoutClearingAnything()
+            throws Exception {
+        Path project = Files.createTempDirectory("edt-owner-active-");
+        Path stage = Files.createTempDirectory("edt-owner-stage-");
+        try {
+            for (Path root : new Path[]{project, stage}) {
+                Path forms = Files.createDirectories(
+                    root.resolve("src/Documents/Order/Forms/Main"));
+                Files.writeString(root.resolve("src/Documents/Order/Order.mdo"),
+                    "same");
+                Files.writeString(forms.resolve("Form.form"), "old command");
+            }
+            Files.writeString(stage.resolve(
+                "src/Documents/Order/Forms/Main/Form.form"), "new command");
+            assertFalse(EdtOwnerContentVerifier.isExactlyApplied(
+                project, stage, "Documents/Order"));
+            String mismatch = EdtOwnerContentVerifier.firstMismatch(
+                project, stage, "Documents/Order");
+            assertTrue(mismatch.contains("различается содержимое"));
+            assertTrue(mismatch.contains("Form.form"));
+        } finally {
+            remove(project); remove(stage);
+        }
+    }
+
+    @Test
+    public void diagnosticsNeverTreatMissingStageDescriptorAsApplied()
+            throws Exception {
+        Path project = Files.createTempDirectory("edt-owner-active-");
+        Path stage = Files.createTempDirectory("edt-owner-stage-");
+        try {
+            assertFalse(EdtOwnerContentVerifier.isExactlyApplied(
+                project, stage, "Documents/Order"));
+            assertTrue(EdtOwnerContentVerifier.firstMismatch(
+                project, stage, "Documents/Order")
+                .contains("основной .mdo отсутствует"));
+        } finally {
+            remove(project); remove(stage);
+        }
+    }
+
     private static void remove(Path root) throws Exception {
         try (Stream<Path> files = Files.walk(root)) {
             for (Path file : files.sorted(Comparator.reverseOrder()).toList()) {
