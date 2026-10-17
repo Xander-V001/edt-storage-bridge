@@ -11,6 +11,7 @@ import java.util.Set;
 import org.eclipse.core.resources.IProject;
 import org.osgi.service.prefs.BackingStoreException;
 import org.xander.edt.storagebridge.core.EdtOwnerContentVerifier;
+import org.xander.edt.storagebridge.core.IncomingPictureAudit;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 
 /**
@@ -51,6 +52,17 @@ public final class VerifiedReceiveContent {
             Set<String> selectedRoots, Set<String> selectedPendingNames,
             Set<String> absentRemoteNames, Set<String> fullImportedOwners,
             Path convertedEdt) throws IOException, BackingStoreException {
+        return verifyAndClear(project, repositoryAddress, branch,
+            intermediaryIdentity, selectedRoots, selectedPendingNames,
+            absentRemoteNames, fullImportedOwners, convertedEdt, null);
+    }
+
+    public static Result verifyAndClear(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> selectedRoots, Set<String> selectedPendingNames,
+            Set<String> absentRemoteNames, Set<String> fullImportedOwners,
+            Path convertedEdt, Path originalDesignerXml)
+            throws IOException, BackingStoreException {
         if (project.getLocation() == null || !project.isAccessible()) {
             throw new IOException("EDT project is not available for verification");
         }
@@ -87,6 +99,20 @@ public final class VerifiedReceiveContent {
                         projectRoot, stage, owner);
                     differences.add(owner + " — " + (mismatch == null
                         ? "не удалось установить первую разницу" : mismatch));
+                    // Classify picture loss at the exact conversion boundary.
+                    // This is diagnostic only; never copy or auto-accept a
+                    // binary that the user's native merge left unchanged.
+                    if (originalDesignerXml != null
+                            && owner.startsWith("CommonPictures/")) {
+                        try {
+                            differences.add("  1C XML → временный EDT → рабочий EDT: "
+                                + IncomingPictureAudit.inspect(originalDesignerXml,
+                                    stage, projectRoot, owner));
+                        } catch (IOException ex) {
+                            differences.add("  Проверка этапов переноса изображения "
+                                + "не завершена: " + ex.getClass().getSimpleName());
+                        }
+                    }
                 }
             }
         }
