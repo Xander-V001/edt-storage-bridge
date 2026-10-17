@@ -11,7 +11,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(29405, 29405, 0,
                 true, false, false));
-        assertFalse(result.permitsWrite());
+        assertFalse(result.prerequisitesSatisfied());
         assertTrue(result.blockers().contains(
             OutgoingSafetyGate.Blocker.VERIFIED_CONTENT_BASELINE_MISSING));
         assertTrue(result.blockers().contains(
@@ -23,7 +23,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(29406, 29405, 0,
                 true, true, true));
-        assertFalse(result.permitsWrite());
+        assertFalse(result.prerequisitesSatisfied());
         assertTrue(result.blockers().contains(
             OutgoingSafetyGate.Blocker.REVISION_DIVERGED));
     }
@@ -33,7 +33,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(-1, 29405, 0,
                 true, true, true));
-        assertFalse(result.permitsWrite());
+        assertFalse(result.prerequisitesSatisfied());
         assertTrue(result.blockers().contains(
             OutgoingSafetyGate.Blocker.NATIVE_HEAD_UNKNOWN));
     }
@@ -43,7 +43,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(29405, -1, 0,
                 true, true, true));
-        assertFalse(result.permitsWrite());
+        assertFalse(result.prerequisitesSatisfied());
         assertTrue(result.blockers().contains(
             OutgoingSafetyGate.Blocker.APPLIED_REVISION_UNKNOWN));
     }
@@ -53,7 +53,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(29405, 29405, 2,
                 false, true, true));
-        assertFalse(result.permitsWrite());
+        assertFalse(result.prerequisitesSatisfied());
         assertTrue(result.blockers().contains(
             OutgoingSafetyGate.Blocker.INCOMING_PENDING));
         assertTrue(result.blockers().contains(
@@ -65,7 +65,7 @@ public final class OutgoingSafetyGateTest {
         var result = OutgoingSafetyGate.evaluate(
             new OutgoingSafetyGate.Evidence(29405, 29405, 0,
                 true, true, true));
-        assertTrue(result.permitsWrite());
+        assertTrue(result.prerequisitesSatisfied());
         assertTrue(result.blockers().isEmpty());
     }
 
