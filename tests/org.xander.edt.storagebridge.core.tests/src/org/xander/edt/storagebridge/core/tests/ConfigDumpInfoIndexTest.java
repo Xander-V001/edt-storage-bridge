@@ -66,6 +66,54 @@ public final class ConfigDumpInfoIndexTest {
     }
 
     @Test
+    public void officialNamespaceFreeConfigDumpInfoIsAccepted() throws Exception {
+        // 1C official incremental XML export sample is namespace-free.
+        Path info = fixture("""
+            <ConfigDumpInfo format="Hierarchical" version="2.1">
+              <ConfigVersions>
+                <Metadata name="CommonAttribute.DataAreaMainData"
+                    id="5BDAD865-F2C5-434B-8041-BA4AAD3B6687"
+                    configVersion="0x230b7fe18c916f0cf161734d63ba5cfc6bda9cfc"/>
+                <Metadata name="Role.SystemAdministrator.Rights"
+                    id="5BDAD865-F2C5-434B-8041-BA4AAD3B6689.1"
+                    configVersion="0xf543960146ba71301564ab0331f5f4a754fd450"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertEquals(Set.of("CommonAttribute.DataAreaMainData",
+                "Role.SystemAdministrator.Rights"),
+            ConfigDumpInfoIndex.exportableNames(info));
+    }
+
+    @Test
+    public void namespaceFreeManifestKeepsVersionsOfNestedForms() throws Exception {
+        Path first = fixture("""
+            <ConfigDumpInfo format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Doc1"
+                    id="1" configVersion="previous">
+                  <Metadata name="Document.Doc1.Form.Main"
+                      id="2" configVersion="first"/>
+                </Metadata>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        Path second = fixture("""
+            <ConfigDumpInfo format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Doc1"
+                    id="1" configVersion="previous">
+                  <Metadata name="Document.Doc1.Form.Main"
+                      id="2" configVersion="second"/>
+                </Metadata>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertEquals(Set.of("Document.Doc1.Form.Main"),
+            ConfigDumpInfoIndex.changedSince(first, second));
+    }
+
+    @Test
     public void unknownSchemaCannotBeMistakenForEmptyRemoteInventory() throws Exception {
         Path malformed = fixture("<ConfigDumpInfo version=\"2.17\"/>");
         assertThrows(IOException.class, () -> ConfigDumpInfoIndex.exportableNames(malformed));
