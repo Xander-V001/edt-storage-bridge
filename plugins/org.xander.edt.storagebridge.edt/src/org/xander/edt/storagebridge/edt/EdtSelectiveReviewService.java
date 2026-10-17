@@ -615,9 +615,9 @@ public final class EdtSelectiveReviewService {
      * to native comparison symbolic links happens through EDT's own path
      * converter and never through guessed names.
      */
-    /** Empty on BOTH sides means native EDT GLOBAL comparison. */
+    /** Native EDT's exact, official no-restrictions comparison scope. */
     public static ComparisonScope globalScope() {
-        return new ComparisonScope(List.of(), List.of());
+        return ComparisonScope.EMPTY_SCOPE;
     }
 
     public record FullPrimaryScopes(List<Path> main, List<Path> other) {
