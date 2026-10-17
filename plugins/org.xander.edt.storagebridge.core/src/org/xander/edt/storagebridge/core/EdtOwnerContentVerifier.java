@@ -97,9 +97,15 @@ public final class EdtOwnerContentVerifier {
         }
         Path relative = Path.of("src").resolve(edtOwner);
         if ("Configuration/Configuration".equals(edtOwner)) {
-            return firstTreeDifference(
+            String difference = firstTreeDifference(
                 incoming.resolve("src/Configuration"),
                 project.resolve("src/Configuration"));
+            if (difference != null) {
+                return difference;
+            }
+            return firstFileDifference(
+                incoming.resolve("src/Configuration/Configuration.mdo"),
+                project.resolve("src/Configuration/Configuration.mdo"));
         }
         String dir = firstTreeDifference(incoming.resolve(relative),
             project.resolve(relative));
