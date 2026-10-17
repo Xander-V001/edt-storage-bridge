@@ -436,6 +436,14 @@ public final class ReceiveChangesCoordinator {
                     for (String name : pending) {
                         if (isConfigurationRootRecord(name)) {
                             selectedPendingNames.add(name);
+                            // Full dump does not use -listFile. Include named
+                            // language identities in the REVIEW selection so
+                            // requireEmbeddedLanguages validates their actual
+                            // presence in Configuration.mdo before compare.
+                            if (name.startsWith("Language.")
+                                    || name.startsWith("Язык.")) {
+                                selectedList.add(name);
+                            }
                         }
                     }
                 }
