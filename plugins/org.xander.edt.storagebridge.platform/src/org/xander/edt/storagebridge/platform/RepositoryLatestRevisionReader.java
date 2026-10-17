@@ -46,14 +46,16 @@ public final class RepositoryLatestRevisionReader {
     }
 
     public static long latest(RepositoryHistoryRequest request, String ibUsername,
-            String ibPassword, BooleanSupplier canceled)
+            String ibPassword, String repositoryAddress, String repositoryUsername,
+            String repositoryPassword, BooleanSupplier canceled)
             throws IOException, InterruptedException {
         Objects.requireNonNull(request);
         if (request.beginVersion() != -1 || request.endVersion() != null) {
             throw new IllegalArgumentException("Latest report request required");
         }
         var report = new ReadOnlyReportRunner()
-            .readHistory(request, canceled, ibUsername, ibPassword);
+            .readHistory(request, canceled, ibUsername, ibPassword,
+                repositoryAddress, repositoryUsername, repositoryPassword);
         try {
             return parseLatest(TextReportDecoder.decode(report.bytes()));
         } catch (CharacterCodingException ex) {
