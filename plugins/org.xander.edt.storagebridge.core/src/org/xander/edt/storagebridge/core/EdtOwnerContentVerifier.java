@@ -36,6 +36,10 @@ public final class EdtOwnerContentVerifier {
             Path right = project.resolve("src/Configuration");
             return Files.isDirectory(left, LinkOption.NOFOLLOW_LINKS)
                 && Files.isDirectory(right, LinkOption.NOFOLLOW_LINKS)
+                && Files.isRegularFile(left.resolve("Configuration.mdo"),
+                    LinkOption.NOFOLLOW_LINKS)
+                && Files.isRegularFile(right.resolve("Configuration.mdo"),
+                    LinkOption.NOFOLLOW_LINKS)
                 && equalTrees(left, right);
         }
 

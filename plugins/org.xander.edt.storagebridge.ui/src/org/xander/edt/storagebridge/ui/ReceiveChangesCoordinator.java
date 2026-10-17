@@ -421,18 +421,18 @@ public final class ReceiveChangesCoordinator {
             selectedPendingNames.removeAll(exportPlan.deferred());
             List<String> selectedList = new ArrayList<>(exportPlan.exportable());
             if (initialFullReview) {
-                // Initial dump contains the real Configuration root. Use an
-                // actual manifest name for its scope; NEVER invent a dummy
-                // -listFile object. The transport below ignores the list.
-                for (String name : pending) {
-                    if (name.startsWith("Configuration.")) {
-                        selectedList.add(name);
-                        for (String rootChange : pending) {
-                            if (rootChange.startsWith("Configuration.")) {
-                                selectedPendingNames.add(rootChange);
-                            }
+                // The full XML export has the real configuration root even
+                // when ConfigDumpInfo has only a bare Configuration marker.
+                // It is scope-only and never supplied to -listFile.
+                if (pending.stream().anyMatch(name ->
+                        "Configuration".equals(name)
+                            || name.startsWith("Configuration."))) {
+                    selectedList.add("Configuration");
+                    for (String name : pending) {
+                        if ("Configuration".equals(name)
+                                || name.startsWith("Configuration.")) {
+                            selectedPendingNames.add(name);
                         }
-                        break;
                     }
                 }
             }
@@ -453,15 +453,16 @@ public final class ReceiveChangesCoordinator {
                 monitor.beginTask(initialFullReview
                     ? "Полная первичная XML-выгрузка в отдельный каталог"
                     : "Выгрузка только изменённых объектов", 1);
-                var dumpRequest = new SelectiveDumpRequest(executable, transport,
-                    selectedList, initialFullReview
-                        ? Duration.ofHours(2) : TIMEOUT,
-                    settings.infobaseUsername(),
-                    settings.infobasePassword());
                 var runner = new SelectiveDumpRunner();
                 var result = initialFullReview
-                    ? runner.exportInitialFull(dumpRequest, monitor::isCanceled)
-                    : runner.export(dumpRequest, monitor::isCanceled);
+                    ? runner.exportInitialFull(
+                        new InitialFullDumpRequest(executable, transport,
+                            Duration.ofHours(2), settings.infobaseUsername(),
+                            settings.infobasePassword()), monitor::isCanceled)
+                    : runner.export(
+                        new SelectiveDumpRequest(executable, transport,
+                            selectedList, TIMEOUT, settings.infobaseUsername(),
+                            settings.infobasePassword()), monitor::isCanceled);
                 monitor.worked(1);
                 return result;
             });

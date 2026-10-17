@@ -114,6 +114,7 @@ public final class ReceiveBaselineJournal {
                     + "получения. Для продолжения требуется ручная сверка.");
             }
         } else if (Files.exists(baselineFile) || Files.exists(lastScannedFile)
+                || Files.exists(initialReviewMarker)
                 || ledger.read() != Phase.NONE) {
             throw new IOException(
                 "Осталось получение прежней версии плагина без "

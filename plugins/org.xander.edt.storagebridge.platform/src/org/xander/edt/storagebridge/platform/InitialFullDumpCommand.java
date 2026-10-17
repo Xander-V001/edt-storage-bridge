@@ -9,7 +9,7 @@ import java.util.Objects;
 public final class InitialFullDumpCommand {
     private InitialFullDumpCommand() {}
 
-    public static List<String> arguments(SelectiveDumpRequest request,
+    public static List<String> arguments(InitialFullDumpRequest request,
             Path destination, Path serviceLog) {
         Objects.requireNonNull(request);
         if (!Objects.requireNonNull(destination).isAbsolute()

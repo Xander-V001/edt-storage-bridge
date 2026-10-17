@@ -10,9 +10,9 @@ import org.xander.edt.storagebridge.platform.*;
 public class InitialFullDumpCommandTest {
     @Test
     public void explicitInitialExportHasFullHierarchicalModeAndNoListFile() {
-        var request = new SelectiveDumpRequest(Path.of("/opt/1cv8.exe"),
+        var request = new InitialFullDumpRequest(Path.of("/opt/1cv8.exe"),
             new InfobaseLocation(InfobaseLocation.Kind.FILE, "/existing-base"),
-            List.of("Document.Order"), Duration.ofMinutes(30),
+            Duration.ofHours(2),
             "ib-user", "ib-password");
         List<String> args = InitialFullDumpCommand.arguments(request,
             Path.of("/temp/full-xml"), Path.of("/temp/full-log"));

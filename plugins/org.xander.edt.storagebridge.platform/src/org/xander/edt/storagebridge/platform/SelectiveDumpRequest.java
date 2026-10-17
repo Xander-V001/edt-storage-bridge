@@ -12,7 +12,8 @@ import java.util.Objects;
 public record SelectiveDumpRequest(
         Path executable, InfobaseLocation infobase,
         List<String> objectNames, Duration timeout,
-        String infobaseUsername, String infobasePassword) {
+        String infobaseUsername, String infobasePassword)
+        implements XmlDumpConnection {
 
     public SelectiveDumpRequest(Path executable, InfobaseLocation infobase,
             List<String> objectNames, Duration timeout) {
@@ -53,7 +54,7 @@ public record SelectiveDumpRequest(
             throw new IllegalArgumentException("Duplicate objects are not accepted");
         }
         if (timeout.compareTo(Duration.ofSeconds(10)) < 0
-                || timeout.compareTo(Duration.ofHours(2)) > 0) {
+                || timeout.compareTo(Duration.ofMinutes(30)) > 0) {
             throw new IllegalArgumentException("Invalid timeout");
         }
     }

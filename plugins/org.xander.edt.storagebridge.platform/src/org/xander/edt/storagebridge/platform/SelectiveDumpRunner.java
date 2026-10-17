@@ -22,18 +22,18 @@ public final class SelectiveDumpRunner {
 
     public ExportResult export(SelectiveDumpRequest request, BooleanSupplier cancelled)
             throws IOException, InterruptedException {
-        return exportInternal(request, cancelled, false);
+        return exportInternal(request, cancelled);
     }
 
     /** One-time initial review; never a fallback after selective failure. */
-    public ExportResult exportInitialFull(SelectiveDumpRequest request,
+    public ExportResult exportInitialFull(InitialFullDumpRequest request,
             BooleanSupplier cancelled) throws IOException, InterruptedException {
-        return exportInternal(request, cancelled, true);
+        return exportInternal(request, cancelled);
     }
 
-    private ExportResult exportInternal(SelectiveDumpRequest request,
-            BooleanSupplier cancelled, boolean initialFull)
-            throws IOException, InterruptedException {
+    private ExportResult exportInternal(XmlDumpConnection request,
+            BooleanSupplier cancelled) throws IOException, InterruptedException {
+        boolean initialFull = request instanceof InitialFullDumpRequest;
         if (!Files.isRegularFile(request.executable(), LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("1C executable not found");
         }
@@ -52,7 +52,8 @@ public final class SelectiveDumpRunner {
             Path output = temporaryRoot.resolve("stdout.txt");
             if (!initialFull) {
                 // UTF-8 BOM and CRLF for native 1C -listFile.
-                String lines = String.join("\r\n", request.objectNames()) + "\r\n";
+                String lines = String.join("\r\n",
+                    ((SelectiveDumpRequest) request).objectNames()) + "\r\n";
                 byte[] content = lines.getBytes(StandardCharsets.UTF_8);
                 byte[] withBom = new byte[content.length + 3];
                 withBom[0] = (byte) 0xEF;
@@ -62,8 +63,10 @@ public final class SelectiveDumpRunner {
                 Files.write(list, withBom);
             }
             Process process = new ProcessBuilder(initialFull
-                    ? InitialFullDumpCommand.arguments(request, target, log)
-                    : SelectiveDumpCommand.arguments(request, target, list, log))
+                    ? InitialFullDumpCommand.arguments(
+                        (InitialFullDumpRequest) request, target, log)
+                    : SelectiveDumpCommand.arguments(
+                        (SelectiveDumpRequest) request, target, list, log))
                 .directory(temporaryRoot.toFile())
                 .redirectOutput(output.toFile())
                 .redirectErrorStream(true)
