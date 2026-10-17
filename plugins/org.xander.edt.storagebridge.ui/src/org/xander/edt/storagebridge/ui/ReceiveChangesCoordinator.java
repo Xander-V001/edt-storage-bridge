@@ -258,6 +258,17 @@ public final class ReceiveChangesCoordinator {
                 return;
             }
 
+            // For an applied-version claim, require the native repository
+            // HEAD to be unchanged across a FRESH Designer receive. If a
+            // concurrent commit arrives while Designer updates the base,
+            // the staged XML cannot prove it includes that newer revision.
+            // Recovery/pending-only retries have no such provenance proof.
+            final long revisionBeforeUpdate =
+                !retryPendingOnly && !recovery
+                    ? readLatestRevisionOrUnknown(
+                        executable, transport, settings, jobProgress::isCanceled)
+                    : ReceiveRevisionStore.UNKNOWN;
+
             if (retryPendingOnly) {
                 progress(jobProgress, 45, monitor -> {
                     phase.set("Проверка состояния базы перед повторной выгрузкой");
@@ -400,7 +411,10 @@ public final class ReceiveChangesCoordinator {
             if (observedRevision > 0) {
                 ReceiveRevisionStore.recordObserved(project, settings.address(),
                     intermediaryIdentity, observedRevision);
-                revisionForReview.set(observedRevision);
+                if (revisionBeforeUpdate == observedRevision
+                        && revisionBeforeUpdate > 0) {
+                    revisionForReview.set(observedRevision);
+                }
             }
 
             phase.set("Загрузка ожидающих обработки объектов");
