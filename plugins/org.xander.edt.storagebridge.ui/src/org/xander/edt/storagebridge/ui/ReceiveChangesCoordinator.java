@@ -533,21 +533,41 @@ public final class ReceiveChangesCoordinator {
                     public void partClosed(IWorkbenchPartReference part) {
                         if (part == editorReference) {
                             page.removePartListener(this);
-                            try {
-                                GitReceiveGuard.requireSameBranchAndHead(project, git);
-                                VerifiedReceiveContent.clearMatchingSelected(
-                                    project, settings.address(), branch,
-                                    intermediaryIdentity, selected, selectedPendingNames,
-                                    retainedConverted.resolve("edt"));
-                            } catch (Exception ex) {
-                                BridgeActivator.getDefault().getLog().warn(
-                                    "Partial receive verification failed; "
-                                    + "unresolved objects remain pending.");
-                            } finally {
-                                cleanupQuietly(retainedExport, retainedConverted);
-                                ACTIVE.remove(operationKey);
-                                ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
-                            }
+                            // The initial full dump may contain many thousands
+                            // of files. Never compare or recursively delete it
+                            // on the SWT event thread when the editor closes.
+                            Job finish = new Job(
+                                    "Проверка полученных объектов 1С — "
+                                    + project.getName()) {
+                                @Override
+                                protected IStatus run(IProgressMonitor monitor) {
+                                    try {
+                                        GitReceiveGuard.requireSameBranchAndHead(
+                                            project, git);
+                                        VerifiedReceiveContent.clearMatchingSelected(
+                                            project, settings.address(), branch,
+                                            intermediaryIdentity, selected,
+                                            selectedPendingNames,
+                                            retainedConverted.resolve("edt"));
+                                        return Status.OK_STATUS;
+                                    } catch (Exception ex) {
+                                        BridgeActivator.getDefault().getLog().warn(
+                                            "Partial receive verification failed; "
+                                            + "unresolved objects remain pending.");
+                                        return new Status(IStatus.WARNING,
+                                            "org.xander.edt.storagebridge.ui",
+                                            "Не все изменения подтверждены; "
+                                            + "ожидающие объекты сохранены.");
+                                    } finally {
+                                        cleanupQuietly(
+                                            retainedExport, retainedConverted);
+                                        ACTIVE.remove(operationKey);
+                                        ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
+                                    }
+                                }
+                            };
+                            finish.setSystem(true);
+                            finish.schedule();
                         }
                     }
                 };
