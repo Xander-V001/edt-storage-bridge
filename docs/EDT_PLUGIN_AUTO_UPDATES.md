@@ -109,3 +109,22 @@ Until a successful approved build and p2 install smoke test, do not suggest
 the old #31 ZIP is a functional installable release. Once Pages is published,
 prefer the HTTPS p2 URL; unzipping an offline p2 ZIP and adding its extracted
 directory can be used for diagnosis if required.
+
+
+## 2026-10-17: CI #33 — Director succeeded; faulty filesystem assertion failed
+
+Run [#33](https://github.com/Xander-V001/edt-storage-bridge/actions/runs/39040968164)
+compiled and tested all modules, normalized the offline ZIP, and reported:
+`Installing org.xander.edt.storagebridge.core 0.1.0.20261017143006-33`,
+`Operation completed in 220 ms`, `BUILD SUCCESS` from the native p2
+Director. The NEXT shell command wrongly expected a JAR inside the chosen
+installation folder, but the Director can store bundles in a shared p2 pool;
+this assertion exited 1 and blocked the upload/deploy steps. It did NOT mean
+p2 Director failed to retrieve or install that test bundle.
+
+The manual workflow now uses the Director process success as the authoritative
+result instead of an unsupported assumption about physical artifact placement.
+The separate preflight still validates the complete ZIP, all four bridge jars,
+feature jar, checksums and p2 installable units before Director is called.
+Official GitHub Pages action inputs and permission settings were reviewed.
+Changes are source only until an explicitly approved new build completes.
