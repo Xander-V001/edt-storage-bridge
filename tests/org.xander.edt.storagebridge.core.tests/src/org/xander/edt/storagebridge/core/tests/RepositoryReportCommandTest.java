@@ -13,6 +13,7 @@ import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.ReadOnlyReportCommand;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryReport;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
+import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 
 /** Unit checks: NEVER execute or connect to the 1C platform. */
 public class RepositoryReportCommandTest {
@@ -80,6 +81,24 @@ public class RepositoryReportCommandTest {
         assertEquals(3, report.byteCount());
         assertThrows(IllegalArgumentException.class, () ->
             new RepositoryHistoryReport(new byte[0], -1, null));
+    }
+
+    @Test
+    public void latestRevisionMustComeFromSingleNativeVersionHeading()
+            throws Exception {
+        assertEquals(29397L, RepositoryLatestRevisionReader.parseLatest(
+            "Отчёт по истории хранилища\r\nВерсия: 29397\r\nДата: 17.10.2026\r\n"));
+        assertEquals(101L, RepositoryLatestRevisionReader.parseLatest(
+            "Repository history\nVersion:\t101\n"));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                "Configuration version 8.3.27\nLast processed object: 101\n"));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                "Версия: 101\nКомментарий:\nВерсия: 999\n"));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                "Версия: 0\n"));
     }
 
     @Test
