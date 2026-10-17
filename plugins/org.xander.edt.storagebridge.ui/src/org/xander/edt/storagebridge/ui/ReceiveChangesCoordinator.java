@@ -416,6 +416,10 @@ public final class ReceiveChangesCoordinator {
             selectedPendingNames.removeAll(exportPlan.deferred());
             Set<String> selected = topObjects(exportPlan.exportable());
             List<String> selectedList = exportPlan.exportable();
+            phase.set("Проверка типов метаданных 1С для EDT");
+            // An unmapped type must fail BEFORE the costly Designer
+            // selective dump, not after minutes spent importing XML.
+            EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
             phase.set("Выборочная выгрузка объектов 1С");
