@@ -217,6 +217,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     }
 
     private static final int RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
+    private static final int FULL_REVIEW_BUTTON_ID = IDialogConstants.CLIENT_ID + 2;
 
     @Override
     protected void okPressed() {
@@ -227,7 +228,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void buttonPressed(int buttonId) {
-        if (buttonId == RECEIVE_BUTTON_ID) {
+        if (buttonId == RECEIVE_BUTTON_ID
+                || buttonId == FULL_REVIEW_BUTTON_ID) {
             if (saveSettings()) {
                 try {
                     StorageProjectSettings.Snapshot current =
@@ -246,7 +248,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     workbenchShell.getDisplay().asyncExec(() -> {
                         if (!workbenchShell.isDisposed() && project.isAccessible()) {
                             ReceiveChangesCoordinator.receive(
-                                workbenchShell, project, current);
+                                workbenchShell, project, current,
+                                buttonId == FULL_REVIEW_BUTTON_ID
+                                    ? ReceiveChangesCoordinator.ReceiveMode.FULL_REVIEW
+                                    : ReceiveChangesCoordinator.ReceiveMode.INCREMENTAL);
                         }
                     });
                 } catch (StorageException ex) {
@@ -289,6 +294,12 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         receive.setEnabled(saved != null);
         receive.setToolTipText("Выборочное получение с подтверждением "
             + "обновления базы, ручным выбором объектов и штатным сравнением EDT.");
+        Button full = createButton(parent, FULL_REVIEW_BUTTON_ID,
+            "Полная сверка с хранилищем", false);
+        full.setEnabled(saved != null);
+        full.setToolTipText("Повторно обновить базу-посредник, выгрузить ВСЮ "
+            + "конфигурацию в XML и открыть полное сравнение EDT. "
+            + "Git и журнал непринятых изменений не сбрасываются.");
         createButton(parent, IDialogConstants.OK_ID, "Сохранить", true);
         createButton(parent, IDialogConstants.CANCEL_ID, "Отмена", false);
     }
