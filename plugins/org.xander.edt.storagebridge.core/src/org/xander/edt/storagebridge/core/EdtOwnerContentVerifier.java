@@ -79,6 +79,33 @@ public final class EdtOwnerContentVerifier {
     }
 
     /**
+     * Verify a selected TOP-LEVEL deletion by checking both the original
+     * repository stage and the resulting EDT project. A missing original
+     * descriptor alone is not enough: the entire owner resource directory
+     * and the possible flat .mdo must be absent in both sources.
+     */
+    public static boolean isTopLevelDeletionApplied(
+            Path projectRoot, Path stage, String edtOwner) throws IOException {
+        if (edtOwner == null || !edtOwner.matches("[^/\\\\]+/[^/\\\\]+")
+                || edtOwner.contains("..")
+                || "Configuration/Configuration".equals(edtOwner)) {
+            throw new IOException("Invalid deleted metadata owner");
+        }
+        Path project = projectRoot.toRealPath();
+        Path incoming = stage.toRealPath();
+        if (project.startsWith(incoming) || incoming.startsWith(project)) {
+            throw new IOException("Overlapping receive verification roots");
+        }
+        return absent(incoming, edtOwner) && absent(project, edtOwner);
+    }
+
+    private static boolean absent(Path root, String owner) {
+        Path src = root.resolve("src");
+        return !Files.exists(src.resolve(owner), LinkOption.NOFOLLOW_LINKS)
+            && !Files.exists(src.resolve(owner + ".mdo"), LinkOption.NOFOLLOW_LINKS);
+    }
+
+    /**
      * Diagnostic only. Return the first mismatch as a relative EDT path.
      * A report is NOT evidence that taking right succeeded semantically.
      * User-owned metadata names may appear in the returned path, so callers
