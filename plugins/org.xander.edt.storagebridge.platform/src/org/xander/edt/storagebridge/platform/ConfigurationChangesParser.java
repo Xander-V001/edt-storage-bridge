@@ -46,6 +46,22 @@ public final class ConfigurationChangesParser {
             String root = topObject(object);
             export.add(root);
             String[] parts = object.split("\\.");
+            // Configuration.<actual name> has its own development files;
+            // shortening a versioned child to "Configuration.Module" would
+            // produce a nonexistent -listFile item.
+            if ("Configuration".equals(parts[0]) && parts.length >= 3) {
+                export.add(object);
+                return;
+            }
+            // Some *top-level* objects have a separately-versioned primary
+            // payload: CommonForm.X.Form, CommonTemplate.X.Template, etc.
+            if (parts.length == 3 && (
+                    ("CommonForm".equals(parts[0]) && "Form".equals(parts[2]))
+                    || ("CommonTemplate".equals(parts[0]) && "Template".equals(parts[2]))
+                    || ("CommonPicture".equals(parts[0]) && "Picture".equals(parts[2])))) {
+                export.add(object);
+                return;
+            }
             // A parent dump omits separately developed children. In
             // particular, an ObjectModule, Role.Rights or Form.FormName
             // may change even when the parent metadata version does not.
@@ -54,7 +70,7 @@ public final class ConfigurationChangesParser {
                 switch (parts[2]) {
                     case "Form", "Форма", "Template", "Макет",
                          "Recalculation", "Перерасчет", "Subsystem",
-                         "Подсистема" -> {
+                         "Подсистема", "Command", "Команда" -> {
                         if (parts.length >= 4) {
                             export.add(root + "." + parts[2] + "." + parts[3]);
                         }
