@@ -27,6 +27,21 @@ public class EdtSelectiveReviewServiceTest {
     }
 
     @Test
+    public void languageIsEmbeddedInConfigurationMdoNotSeparateLanguagesMdo()
+            throws Exception {
+        assertEquals("Configuration/Configuration",
+            EdtSelectiveReviewService.edtOwner("Language.Русский"));
+        assertEquals("Configuration/Configuration",
+            EdtSelectiveReviewService.edtOwner("Language.English"));
+        assertEquals("Configuration/Configuration",
+            EdtSelectiveReviewService.edtOwner("Язык.Русский"));
+        assertThrows(IOException.class,
+            () -> EdtSelectiveReviewService.edtOwner("Language"));
+        assertNull(EdtSelectiveReviewService.metadataOwnerForPath(Path.of(
+            "src/Configuration/Configuration.mdo/Languages/Русский")));
+    }
+
+    @Test
     public void formAndModuleChangesBelongToTheirParentMetadata()
             throws Exception {
         assertEquals("Documents/Документ1",
