@@ -93,6 +93,77 @@ public final class EdtSelectedResourceVerifierTest {
         } finally { remove(live); remove(stage); }
     }
 
+    @Test
+    public void resolvesAnyStagedTopLevelBslWithoutTypeSpecificModuleAllowlist()
+            throws Exception {
+        // All types go through the EXACT SAME code branch, with no Java
+        // enumeration of 1C module kinds or metadata owner categories.
+        String[][] cases = {
+            {"Documents", "Document", "Order", "ObjectModule"},
+            {"Documents", "Document", "Order", "ManagerModule"},
+            {"Catalogs", "Catalog", "Products", "ManagerModule"},
+            {"Catalogs", "Catalog", "Products", "ObjectModule"},
+            {"CommonModules", "CommonModule", "Utilities", "Module"},
+            {"InformationRegisters", "InformationRegister", "Costs", "RecordSetModule"},
+            {"DataProcessors", "DataProcessor", "Load", "ObjectModule"},
+            {"CommonCommands", "CommonCommand", "OpenPanel", "CommandModule"}
+        };
+        for (String[] entry : cases) {
+            Path live = Files.createTempDirectory("edt-any-module-live-");
+            Path stage = Files.createTempDirectory("edt-any-module-stage-");
+            try {
+                String collection = entry[0], type = entry[1],
+                    name = entry[2], module = entry[3];
+                Path root = Path.of("src").resolve(collection).resolve(name);
+                for (Path source : new Path[] {live, stage}) {
+                    Path owner = Files.createDirectories(source.resolve(root));
+                    Files.writeString(owner.resolve(name + ".mdo"), "same-id");
+                    Files.writeString(owner.resolve(module + ".bsl"), "remote module");
+                }
+                String ownerId = collection + "/" + name;
+                String versionedName = type + "." + name + "." + module;
+                assertTrue("Should resolve " + versionedName,
+                    EdtSelectedResourceVerifier.isIndependentlyApplied(
+                        live, stage, ownerId, versionedName));
+                Files.writeString(live.resolve(root).resolve(module + ".bsl"),
+                    "local module");
+                assertFalse("Should reject unequal " + versionedName,
+                    EdtSelectedResourceVerifier.isIndependentlyApplied(
+                        live, stage, ownerId, versionedName));
+                Files.delete(live.resolve(root).resolve(module + ".bsl"));
+                assertFalse("Should reject missing " + versionedName,
+                    EdtSelectedResourceVerifier.isIndependentlyApplied(
+                        live, stage, ownerId, versionedName));
+            } finally { remove(live); remove(stage); }
+        }
+    }
+
+    @Test
+    public void standaloneCommonModuleCanBeAcknowledgedAsCompleteOwner()
+            throws Exception {
+        Path live = Files.createTempDirectory("edt-common-live-");
+        Path stage = Files.createTempDirectory("edt-common-stage-");
+        try {
+            for (Path root : new Path[] {live, stage}) {
+                Path module = Files.createDirectories(
+                    root.resolve("src/CommonModules/Utilities"));
+                Files.writeString(module.resolve("Utilities.mdo"), "same-id");
+                Files.writeString(module.resolve("Module.bsl"), "new source");
+            }
+            assertTrue(EdtOwnerContentVerifier.isExactlyApplied(
+                live, stage, "CommonModules/Utilities"));
+            // CommonModule.X is a first-class top-level owner identity,
+            // NOT a named subresource that must be resolved via a suffix.
+            assertFalse(EdtSelectedResourceVerifier.isIndependentlyApplied(
+                live, stage, "CommonModules/Utilities",
+                "CommonModule.Utilities"));
+            Files.writeString(live.resolve(
+                "src/CommonModules/Utilities/Module.bsl"), "old source");
+            assertFalse(EdtOwnerContentVerifier.isExactlyApplied(
+                live, stage, "CommonModules/Utilities"));
+        } finally { remove(live); remove(stage); }
+    }
+
     private static void create(Path root, String module, String form) throws Exception {
         Path document = Files.createDirectories(
             root.resolve("src/Documents/НачислениеПоСреднему"));
