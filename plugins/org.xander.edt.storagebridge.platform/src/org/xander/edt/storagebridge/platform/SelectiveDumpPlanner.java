@@ -10,7 +10,7 @@ import java.util.Objects;
  * but is not guaranteed to be a valid exported metadata/property name.
  * Do not lose its pending change: defer it for a verified root-name mapping.
  * All nested forms, modules, templates and commands are exported via their\n * complete top-level owning object; repository change identities stay pending.
- * Configuration-root changes are kept pending: EDT 2026.2 cannot reliably
+ * Configuration-root AND language changes are kept pending: EDT 2026.2 cannot reliably
  * convert their special Ext resources outside a complete project context.
  */
 public final class SelectiveDumpPlanner {
@@ -33,7 +33,11 @@ public final class SelectiveDumpPlanner {
             }
             if ("Configuration".equals(name)
                     || name.startsWith("Configuration.")
-                    || "Language".equals(name)) {
+                    || "Language".equals(name)
+                    || name.startsWith("Language.")
+                    || "Язык".equals(name)
+                    || name.startsWith("Язык.")) {
+                // Language is embedded in Configuration.mdo, not in Languages/*.mdo.
                 // Root ConfigDumpInfo entries cannot safely be converted to
                 // isolated EDT resources with the existing partial importer:
                 // its Ext/HomePageWorkArea.xml and
