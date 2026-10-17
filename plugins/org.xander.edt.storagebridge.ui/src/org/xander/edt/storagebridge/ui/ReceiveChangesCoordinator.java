@@ -328,59 +328,59 @@ public final class ReceiveChangesCoordinator {
             final Path retainedConverted = conversionRoot;
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             uiCall(shell, parent -> {
-                var editorService = BridgeActivator.getDefault().getInjector()
-                .getInstance(EdtDeltaComparisonService.class);
-            phase.set("Открытие редактора сравнения EDT");
-                IEditorPart editor = editorService.openEditor(nativeDescriptor);
-            if (editor == null || editor.getSite() == null
-                    || editor.getSite().getPage() == null) {
-                throw new IOException("EDT comparison editor failed to initialize");
-            }
-            final IWorkbenchPage page = editor.getSite().getPage();
-            final IEditorReference editorReference;
-            try {
-                editorReference = java.util.Arrays.stream(page.getEditorReferences())
-                    .filter(reference -> reference.getEditor(false) == editor)
-                    .findFirst()
-                    .orElseThrow(() -> new IOException(
-                        "EDT editor reference is not available"));
-            } catch (Exception ex) {
-                // Do not leave an editor pointing to a stage that the outer
-                // finally block must clean up on a failed initialization.
-                page.closeEditor(editor, false);
-                throw ex;
-            }
-            // Compare is interactive. The editor may stay open after this
-            // method returns: cleanup must happen only when it closes.
-            IPartListener2 listener = new IPartListener2() {
-                @Override
-                public void partClosed(IWorkbenchPartReference part) {
-                    if (part == editorReference) {
-                        page.removePartListener(this);
-                        try {
-                            GitReceiveGuard.requireSameBranchAndHead(project, git);
-                            VerifiedReceiveContent.clearMatchingSelected(
-                                project, settings.address(), branch,
-                                intermediaryIdentity, selected, selectedPendingNames,
-                                retainedConverted.resolve("edt"));
-                        } catch (Exception ex) {
-                            BridgeActivator.getDefault().getLog().warn(
-                                "Partial receive verification failed; "
-                                + "unresolved objects remain pending.");
-                        } finally {
-                            cleanupQuietly(retainedExport, retainedConverted);
-                            ACTIVE.remove(operationKey);
+                    var editorService = BridgeActivator.getDefault().getInjector()
+                    .getInstance(EdtDeltaComparisonService.class);
+                phase.set("Открытие редактора сравнения EDT");
+                    IEditorPart editor = editorService.openEditor(nativeDescriptor);
+                if (editor == null || editor.getSite() == null
+                        || editor.getSite().getPage() == null) {
+                    throw new IOException("EDT comparison editor failed to initialize");
+                }
+                final IWorkbenchPage page = editor.getSite().getPage();
+                final IEditorReference editorReference;
+                try {
+                    editorReference = java.util.Arrays.stream(page.getEditorReferences())
+                        .filter(reference -> reference.getEditor(false) == editor)
+                        .findFirst()
+                        .orElseThrow(() -> new IOException(
+                            "EDT editor reference is not available"));
+                } catch (Exception ex) {
+                    // Do not leave an editor pointing to a stage that the outer
+                    // finally block must clean up on a failed initialization.
+                    page.closeEditor(editor, false);
+                    throw ex;
+                }
+                // Compare is interactive. The editor may stay open after this
+                // method returns: cleanup must happen only when it closes.
+                IPartListener2 listener = new IPartListener2() {
+                    @Override
+                    public void partClosed(IWorkbenchPartReference part) {
+                        if (part == editorReference) {
+                            page.removePartListener(this);
+                            try {
+                                GitReceiveGuard.requireSameBranchAndHead(project, git);
+                                VerifiedReceiveContent.clearMatchingSelected(
+                                    project, settings.address(), branch,
+                                    intermediaryIdentity, selected, selectedPendingNames,
+                                    retainedConverted.resolve("edt"));
+                            } catch (Exception ex) {
+                                BridgeActivator.getDefault().getLog().warn(
+                                    "Partial receive verification failed; "
+                                    + "unresolved objects remain pending.");
+                            } finally {
+                                cleanupQuietly(retainedExport, retainedConverted);
+                                ACTIVE.remove(operationKey);
+                            }
                         }
                     }
+                };
+                try {
+                    page.addPartListener(listener);
+                    // Staging is now owned by the comparison editor listener.
+                } catch (RuntimeException ex) {
+                    page.closeEditor(editor, false);
+                    throw ex;
                 }
-            };
-            try {
-                page.addPartListener(listener);
-                // Staging is now owned by the comparison editor listener.
-            } catch (RuntimeException ex) {
-                page.closeEditor(editor, false);
-                throw ex;
-            }
                 return null;
             });
             editorOwnsStaging = true;
@@ -403,9 +403,9 @@ public final class ReceiveChangesCoordinator {
                 "org.xander.edt.storagebridge.ui",
                 "Этап: " + phase.get() + ". " + safeReason(ex)));
             notifyOnUi(shell, "Не удалось получить изменения",
-                "Этап: " + phase.get() + ".\\n"
-                + safeReason(ex) + "\\n"
-                + databaseState + "\\n"
+                "Этап: " + phase.get() + ".\n"
+                + safeReason(ex) + "\n"
+                + databaseState + "\n"
                 + "Диагностика с этапом и строками кода записана в журнал EDT.",
                 true);
         } finally {
