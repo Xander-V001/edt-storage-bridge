@@ -31,6 +31,8 @@ public final class StorageProjectSettings {
     private static final String INFOBASE_TYPE = "infobaseType";
     private static final String INFOBASE_ADDRESS = "infobaseAddress";
     private static final String PLATFORM_EXECUTABLE = "platformExecutable";
+    private static final String INFOBASE_USER = "infobaseUser";
+    private static final String INFOBASE_PASSWORD = "infobasePassword";
 
     /** Matches documented 1C Designer launch switches /F and /S. */
     public enum InfobaseType { FILE, SERVER }
@@ -49,18 +51,23 @@ public final class StorageProjectSettings {
         private final InfobaseType infobaseType;
         private final String infobaseAddress;
         private final String platformExecutable;
+        private final String infobaseUsername;
+        private final String infobasePassword;
         private final long observedVersion;
         private final long appliedVersion;
 
         private Snapshot(String address, String username, String password,
                 InfobaseType infobaseType, String infobaseAddress,
-                String platformExecutable, long observedVersion, long appliedVersion) {
+                String platformExecutable, String infobaseUsername,
+                String infobasePassword, long observedVersion, long appliedVersion) {
             this.address = address;
             this.username = username;
             this.password = password;
             this.infobaseType = infobaseType;
             this.infobaseAddress = infobaseAddress;
             this.platformExecutable = platformExecutable;
+            this.infobaseUsername = infobaseUsername;
+            this.infobasePassword = infobasePassword;
             this.observedVersion = observedVersion;
             this.appliedVersion = appliedVersion;
         }
@@ -71,6 +78,8 @@ public final class StorageProjectSettings {
         public InfobaseType infobaseType() { return infobaseType; }
         public String infobaseAddress() { return infobaseAddress; }
         public String platformExecutable() { return platformExecutable; }
+        public String infobaseUsername() { return infobaseUsername; }
+        public String infobasePassword() { return infobasePassword; }
         public long observedVersion() { return observedVersion; }
         public long appliedVersion() { return appliedVersion; }
 
@@ -90,6 +99,8 @@ public final class StorageProjectSettings {
             readInfobaseType(preferences),
             preferences.get(INFOBASE_ADDRESS, ""),
             preferences.get(PLATFORM_EXECUTABLE, ""),
+            preferences.get(INFOBASE_USER, ""),
+            secretNode.get(INFOBASE_PASSWORD, ""),
             preferences.getLong(LAST_REMOTE, UNKNOWN_VERSION),
             preferences.getLong(LAST_APPLIED, UNKNOWN_VERSION));
     }
@@ -97,7 +108,8 @@ public final class StorageProjectSettings {
     /** Save connection settings; changing storage address invalidates both revisions. */
     public static void save(IProject project, String address, String username,
             String password, InfobaseType infobaseType, String infobaseAddress,
-            String platformExecutable)
+            String platformExecutable, String infobaseUsername,
+            String infobasePassword)
             throws StorageException, IOException, BackingStoreException {
         Objects.requireNonNull(address, "address");
         Objects.requireNonNull(username, "username");
@@ -105,6 +117,8 @@ public final class StorageProjectSettings {
         Objects.requireNonNull(infobaseType, "infobaseType");
         Objects.requireNonNull(infobaseAddress, "infobaseAddress");
         Objects.requireNonNull(platformExecutable, "platformExecutable");
+        org.xander.edt.storagebridge.platform.DesignerInfobaseAuth.validate(
+            infobaseUsername, infobasePassword);
         String normalizedAddress = address.trim();
         if (normalizedAddress.isBlank()) {
             throw new IllegalArgumentException("Укажите адрес хранилища.");
@@ -114,6 +128,7 @@ public final class StorageProjectSettings {
 
         // Never continue to write unprotected preferences if encryption fails.
         secretNode.put(PASSWORD, password, true);
+        secretNode.put(INFOBASE_PASSWORD, infobasePassword, true);
         secretNode.flush();
 
         boolean changed = !normalizedAddress.equals(preferences.get(ADDRESS, ""));
@@ -122,6 +137,7 @@ public final class StorageProjectSettings {
         // Optional transport settings. Merely saving them never starts Designer.
         preferences.put(INFOBASE_TYPE, infobaseType.name());
         preferences.put(INFOBASE_ADDRESS, infobaseAddress.trim());
+        preferences.put(INFOBASE_USER, infobaseUsername.trim());
         preferences.put(PLATFORM_EXECUTABLE, platformExecutable.trim());
         if (changed) {
             // A checkpoint from storage A is invalid for storage B.
