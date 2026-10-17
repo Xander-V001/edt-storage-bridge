@@ -39,8 +39,18 @@ public final class SelectiveDumpPlannerTest {
     public void unexportableRootEntriesMustStayPending() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Language", "Configuration", "Language.Russian"));
-        assertEquals(List.of("Language.Russian"), plan.exportable());
-        assertEquals(List.of("Language", "Configuration"), plan.deferred());
+        assertTrue(plan.exportable().isEmpty());
+        assertEquals(List.of("Language", "Configuration",
+            "Language.Russian"), plan.deferred());
+    }
+
+    @Test
+    public void namedLanguageCannotBeExportedAsIndependentEdtObject() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Language.Русский", "Язык.Английский", "Document.Заказ"));
+        assertEquals(List.of("Document.Заказ"), plan.exportable());
+        assertEquals(List.of("Language.Русский", "Язык.Английский"),
+            plan.deferred());
     }
 
     @Test
