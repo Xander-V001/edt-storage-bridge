@@ -51,8 +51,13 @@ public class SelectiveDumpCommandTest {
     }
 
     @Test
-    public void acceptsPlatformRootMetadataObjects() {
-        var req = request(List.of("Configuration", "Language"));
+    public void rejectsAmbiguousBareRootMarkersButAllowsExplicitProperties() {
+        assertThrows(IllegalArgumentException.class,
+            () -> request(List.of("Configuration")));
+        assertThrows(IllegalArgumentException.class,
+            () -> request(List.of("Language")));
+        var req = request(List.of(
+            "Configuration.Help", "Language.Русский"));
         assertEquals(2, req.objectNames().size());
     }
 
