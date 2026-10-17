@@ -32,16 +32,44 @@ public final class ChangeDetectionCommandTest {
         List<String> args = new ChangedObjectsProbe().command(
             REQUEST, baseline, root, changes, log);
         assertEquals("DESIGNER", args.get(1));
-        assertEquals("/DumpConfigToFiles", args.get(5));
-        assertEquals(root.toString(), args.get(6));
-        assertEquals("-update", args.get(7));
-        assertEquals("-getChanges", args.get(8));
-        assertEquals(changes.toString(), args.get(9));
-        assertEquals("-configDumpInfoForChanges", args.get(10));
-        assertEquals(baseline.toString(), args.get(11));
+        int dump = args.indexOf("/DumpConfigToFiles");
+        assertTrue(dump > 4);
+        assertEquals(root.toString(), args.get(dump + 1));
+        assertEquals("-update", args.get(dump + 2));
+        assertEquals("-getChanges", args.get(dump + 3));
+        assertEquals(changes.toString(), args.get(dump + 4));
+        assertEquals("-configDumpInfoForChanges", args.get(dump + 5));
+        assertEquals(baseline.toString(), args.get(dump + 6));
         assertFalse(args.contains("-force"));
         assertFalse(args.contains("-listFile"));
         assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
+    }
+
+    @Test
+    public void snapshotAndProbeBothUseSeparateInfobaseLogin() {
+        var authenticated = new ChangeDetectionRequest(
+            REQUEST.executable(), REQUEST.infobase(), Duration.ofMinutes(2),
+            "ib-user", "ib-secret");
+        var snapshot = new ConfigVersionSnapshotRunner().command(
+            authenticated, Path.of("/tmp/snapshot"), Path.of("/tmp/log"));
+        var probe = new ChangedObjectsProbe().command(authenticated,
+            Path.of("/tmp/old/ConfigDumpInfo.xml"), Path.of("/tmp/out"),
+            Path.of("/tmp/changes"), Path.of("/tmp/log"));
+        for (var cmd : List.of(snapshot, probe)) {
+            assertEquals("ib-user", cmd.get(cmd.indexOf("/N") + 1));
+            assertEquals("ib-secret", cmd.get(cmd.indexOf("/P") + 1));
+            assertTrue(cmd.indexOf("/P") < cmd.indexOf("/DumpConfigToFiles"));
+        }
+        assertFalse(authenticated.toString().contains("ib-secret"));
+    }
+
+    @Test
+    public void failedSnapshotKeepsExitCodeAndDiagnosticsFolder() {
+        var problem = new ConfigVersionSnapshotRunner.SnapshotFailure(
+            2, Path.of("/tmp/diagnostic-source"));
+        assertEquals(2, problem.exitCode());
+        assertEquals(Path.of("/tmp/diagnostic-source").toAbsolutePath(),
+            problem.diagnosticsDirectory());
     }
 
     @Test
