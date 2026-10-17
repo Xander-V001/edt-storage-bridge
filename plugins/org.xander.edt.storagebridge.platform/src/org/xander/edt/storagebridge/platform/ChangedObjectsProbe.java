@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -80,6 +81,14 @@ public final class ChangedObjectsProbe {
                 // Windows NTFS has different ACL semantics.
             }
             Path inspection = Files.createDirectory(work.resolve("inspection"));
+            // -update requires ConfigDumpInfo.xml in the dump directory
+            // even when -configDumpInfoForChanges points to an external
+            // comparison baseline. Without this file Designer fails before
+            // generating the change report on a fresh staging directory.
+            // Only this TEMP copy is updated by Designer.
+            Files.copy(verifiedDumpInfo,
+                inspection.resolve("ConfigDumpInfo.xml"),
+                StandardCopyOption.COPY_ATTRIBUTES);
             Path changes = work.resolve("changes.txt");
             Path log = work.resolve("1c-log.txt");
             Path output = work.resolve("stdout.txt");
