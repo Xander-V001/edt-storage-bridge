@@ -388,8 +388,22 @@ public final class ReceiveChangesCoordinator {
                     monitor.subTask(selectAllRemote
                         ? "Проверка всех актуальных объектов хранилища"
                         : "Поиск версий объектов, изменённых после предыдущего получения");
-                    Set<String> remoteNames = RemoteReceiveScopePlanner.candidates(
-                        lastScanned, remote.configDumpInfo(), selectAllRemote);
+                    Set<String> remoteNames = new LinkedHashSet<>(
+                        RemoteReceiveScopePlanner.candidates(
+                            lastScanned, remote.configDumpInfo(), selectAllRemote));
+                    if (selectAllRemote && lastScanned != null) {
+                        // Full comparison must also remember remote DELETIONS.
+                        // A removed object has no incoming XML descriptor but
+                        // must remain pending until EDT actually removes it.
+                        var oldObjects = ConfigDumpInfoIndex.readVersions(lastScanned);
+                        var currentObjects = ConfigDumpInfoIndex.readVersions(
+                            remote.configDumpInfo());
+                        for (String oldName : oldObjects.keySet()) {
+                            if (!currentObjects.containsKey(oldName)) {
+                                remoteNames.add(oldName);
+                            }
+                        }
+                    }
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
                         throw new InterruptedException(
@@ -445,6 +459,16 @@ public final class ReceiveChangesCoordinator {
                         + "и не будут автоматически применены в EDT.");
                 }
             }
+            // Missing entries include remote-deleted objects. Their parent
+            // may still exist (a deleted Form), or the complete top-level
+            // owner may be gone (a deleted Report). Both remain in the
+            // journal until the editor's result is checked.
+            Set<String> absentFromRemote = new LinkedHashSet<>(pending);
+            absentFromRemote.removeAll(reviewCandidates);
+            if (!fullReview) {
+                absentFromRemote.clear();
+            }
+            final Set<String> deletedPendingNames = Set.copyOf(absentFromRemote);
             if (reviewCandidates.isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Новых и ожидающих изменений хранилища для этого проекта EDT "
@@ -505,6 +529,9 @@ public final class ReceiveChangesCoordinator {
                         }
                     }
                 }
+            }
+            if (fullReview) {
+                selectedPendingNames.addAll(deletedPendingNames);
             }
             if (selectedList.isEmpty()) {
                 throw new IOException("No reviewable metadata remains in current source");
@@ -620,6 +647,7 @@ public final class ReceiveChangesCoordinator {
                                             project, settings.address(), branch,
                                             intermediaryIdentity, selected,
                                             selectedPendingNames,
+                                            deletedPendingNames,
                                             retainedConverted.resolve("edt"));
                                         // Owner verification can take minutes
                                         // on a large project; reject a Git HEAD
