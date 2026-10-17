@@ -117,3 +117,14 @@ No new GitHub Actions build was dispatched by these source-only changes.
 - Designer operations, Git checks and external-format conversion run in the Job worker. User confirmations, the explicit object-selection dialog, and native EDT compare editor opening/listener setup are marshalled to SWT via `Display.syncExec`, while completion/error notices are posted asynchronously.
 - Cancellation is cooperative via `IProgressMonitor.isCanceled()`; an already started native Designer update has uncertain outcome if interrupted and remains protected by the existing durable retry guard. Neither cancellation nor a Job status grants authorization to use a production intermediary.
 - Source change has not been compiled, installed, or accepted in EDT 2026.2. Do **not** mistake visible Job progress for a verified correct receive/merge algorithm. The Document1/Document2 disposable acceptance test remains mandatory.
+
+
+## 2026-10-17: reuse of proven 1C-Updater transport
+
+Reviewed `Xander-V001/1C-Updater/src/OneCUpdater/SharedRepositorySource.cs` and `UpdateEngine.cs`. The previous Windows app provides distinct credentials for (1) the existing repository-bound **infobase** (`/N`, `/P`) and (2) the **classical repository** (`/ConfigurationRepositoryN`, `/ConfigurationRepositoryP`). It updates the existing connected intermediary via `/ConfigurationRepositoryUpdateCfg -force`, sets all three native startup suppression options, and retains its `/Out` diagnostic reports. Its subsequent `/DumpCfg` produces a complete CF and cannot replace EDT's incremental `/DumpConfigToFiles` + selective merge.
+
+The current bridge had been missing the *infobase* user/password entirely. They are now separate fields in the EDT settings dialog, securely persisted via Eclipse Secure Storage and passed through initial ConfigDumpInfo snapshot, classical repository update, incremental change detection, and selected-object XML export. The commands use the same `/DisableStartupDialogs /DisableStartupMessages /DisableUnrecoverableErrorMessage` switches.
+
+Build #26 previously failed at `ConfigVersionSnapshotRunner.capture` (native Designer snapshot command) with no useful reason because exit status was discarded and raw native output deleted. This revision retains native `/Out` and stdout files on a snapshot failure in a local temporary folder; it shows the exact process exit code and folder to the user without writing potentially sensitive native log contents to the EDT error log. Treat the retained native files as sensitive. Successful snapshot temporary files are still deleted.
+
+**Unverified:** actual cause of the native failure; native incremental XML command compatibility; EDT comparison/merge and committed local changes. These source fixes do not constitute a working release. No CI build or real infobase test has been run without user authorization.
