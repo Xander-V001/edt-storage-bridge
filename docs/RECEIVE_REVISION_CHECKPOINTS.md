@@ -25,18 +25,31 @@ as the existing update command, so it cannot silently report the latest
 revision of a different repository bound to the intermediary. We do not bind
 a new database, modify EDT project files or copy credentials into logs.
 
-Because the exact TXT report serialization depends on platform version and
-compatibility mode, the first implementation ONLY accepts exactly one
-standalone heading `Версия: 29397` or `Version: 29397`, using the
-already established BOM-aware strict TXT decoder. A missing heading,
-invalid encoding, duplicate/ambiguous headings or native report failure
-leave the revision **unverified**. In particular, do not parse integers
-from object `configVersion` tokens, from stdout, from arbitrary comments
-or from an assumed increment of the previously known revision.
+**Authentic report fixture inspected 2026-10-17.** The user supplied a
+native UTF-8-with-BOM Russian `Отчет по версиям хранилища` TXT file.
+It contains five chronological revision blocks, `29400` through
+`29404`. Each has a `Версия:\t<number>` heading (distinct from
+`Версия конфигурации: 5.0.113.3`), author, date, time,
+`Комментарий:` followed by comment lines, and optionally
+`Добавлены/Изменены/Удалены\t<count>` sections with tab-indented
+metadata object names. Actual counters reconcile to
+8 added, 5659 modified and 94 deleted entries across the five revisions.
 
-No real native TXT report from this particular platform has yet been
-provided, so the parser's compatibility is **not proven**. Unit fixtures
-are illustrative, not a substitute for an authentic report.
+`RepositoryVersionReportParser` is now a **source-only implementation**
+based on this exact structure. It validates header, strictly increasing
+repository revisions, required fields, parseable timestamps, each
+section's stated count, and every expected metadata name. It exposes
+immutable entries with revision number, user, date, original comment,
+and 1C object names. `RepositoryLatestRevisionReader` uses the last
+validated block; a native `-NBegin -1` query should request the latest
+block, whereas `-NBegin X -NEnd Y` can return several. Invalid reports
+leave the field **unverified**; object configVersion tokens and arbitrary
+text numbers are NEVER used as a fallback.
+
+The authentic report is not committed because it includes private 1C
+connection and user data. The codebase contains synthetic anonymized
+JUnit regression cases with its observed exact structure. No tests
+or EDT build have been executed after these changes.
 
 ## When the markers advance
 
@@ -60,8 +73,10 @@ are illustrative, not a substitute for an authentic report.
 
 ## Important limitations
 
-- The format of the real platform's latest-version TXT report must be
-  checked; absent a matching heading the fields remain "Не определена".
+- A real manual TXT report format is now understood, but the exact
+  **batch** report of `/ConfigurationRepositoryReport -NBegin -1`
+  remains untested on this host. On auth/report/format mismatch the
+  fields remain "Не определена".
 - A stable repository latest revision across the Designer update is a
   necessary safeguard but **not absolute proof** of the exact revision
   downloaded to the intermediary. No API currently certifies a signed
@@ -82,3 +97,20 @@ are illustrative, not a substitute for an authentic report.
 - There has been **NO** Maven/CI build, repository contact, or live test
   of these changes. Do not claim the new version fields already work
   in EDT before installing an explicitly authorized validated build.
+
+## Git commits from native storage comments
+
+The parsed version/date/author/comment/added/modified/deleted data can
+be used for a future **proposed Git commit message**, but the current plugin
+does not create Git commits. Neither a repository history report nor
+the successful Designer update proves that the user accepted all changes
+in the EDT merge editor. A commit must stage only verified resulting
+Git files from the accepted change-set, after explicit consent, and
+must never include unrelated local changes or unaccepted remote objects.
+
+On a receive covering e.g. revisions 100 to 104, request a range
+101..104 for commentary (not -NBegin -1). Keep the original per-revision
+comments; list only actual accepted objects in the commit body, and
+separately identify skipped/unresolved revisions. A partial merge must
+never claim that all of 104 was applied. One Git commit per confirmed
+receive operation avoids fabricating unavailable intermediate EDT states.
