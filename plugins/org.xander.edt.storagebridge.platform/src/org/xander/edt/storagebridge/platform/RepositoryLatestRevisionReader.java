@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  */
 public final class RepositoryLatestRevisionReader {
     private static final Pattern TITLE = Pattern.compile(
-        "(?iu)^Отч[её]т по версиям хранилища\\b.*$");
+        "(?iu)^Отч[её]т по версиям хранилища\\s*:.*$");
     private static final Pattern VERSION = Pattern.compile(
         "(?iu)^Версия\\s*:\\s*([1-9][0-9]{0,15})\\s*$");
     private static final Pattern CONFIG_VERSION = Pattern.compile(
