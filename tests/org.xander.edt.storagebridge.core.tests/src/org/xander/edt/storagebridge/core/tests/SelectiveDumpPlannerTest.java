@@ -26,7 +26,7 @@ public final class SelectiveDumpPlannerTest {
             "Configuration.Payroll.ClientApplicationInterface",
             "Configuration.Payroll.ManagedApplicationModule",
             "Catalog.Products", "Document.Order.Form.Main"));
-        assertEquals(List.of("Catalog.Products", "Document.Order.Form.Main"),
+        assertEquals(List.of("Catalog.Products", "Document.Order"),
             plan.exportable());
         assertEquals(List.of(
             "Configuration.Payroll.HomePageWorkArea",
@@ -54,8 +54,19 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of(
             "Catalog.Б24_УП_НастройкиПодключения",
             "Document.Doc1",
-            "Document.Doc1.Form.MainForm",
-            "CommonCommand.OpenPanel.CommandModule"), plan.exportable());
+            "CommonCommand.OpenPanel"), plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
+    public void nestedFormsTemplatesModulesAndHelpUseCompleteOwners() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Document.Order.Form.Main", "Document.Order.Template.Print",
+            "Document.Order.ManagerModule", "Document.Order.Help",
+            "Catalog.Products.Form.Item", "CommonModule.Utilities.Module",
+            "Report.Sales.DataCompositionSchema"));
+        assertEquals(List.of("Document.Order", "Catalog.Products",
+            "CommonModule.Utilities", "Report.Sales"), plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
 
@@ -70,12 +81,12 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
-    public void normalMetadataUsesUnmodifiedNativeFullNames() {
+    public void normalMetadataUsesOwnersAsNativeExportUnits() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Catalog.Товары.ObjectModule", "Document.Заказ",
             "Document.Заказ.Form.Основная"));
-        assertEquals(List.of("Catalog.Товары.ObjectModule", "Document.Заказ",
-            "Document.Заказ.Form.Основная"), plan.exportable());
+        assertEquals(List.of("Catalog.Товары", "Document.Заказ"),
+            plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
 }

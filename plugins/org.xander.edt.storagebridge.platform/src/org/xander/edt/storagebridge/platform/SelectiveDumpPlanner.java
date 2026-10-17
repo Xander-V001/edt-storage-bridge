@@ -9,7 +9,7 @@ import java.util.Objects;
  * paths. A bare Configuration/Language label occurs in version inventories
  * but is not guaranteed to be a valid exported metadata/property name.
  * Do not lose its pending change: defer it for a verified root-name mapping.
- * Embedded commands are exported with their owning object, not separately.
+ * All nested forms, modules, templates and commands are exported via their\n * complete top-level owning object; repository change identities stay pending.
  * Configuration-root changes are kept pending: EDT 2026.2 cannot reliably
  * convert their special Ext resources outside a complete project context.
  */
@@ -42,15 +42,14 @@ public final class SelectiveDumpPlanner {
                 // Keep them pending until a verified conversion exists.
                 deferred.add(name);
             } else {
-                // 1C Designer rejects Catalog.X.Command.Y as an individual
-                // XML export target. It is serialized with its parent.
-                // Do not drop the change: request the containing object.
+                // Transport full top-level owners, not partial form/module
+                // names; compare/verification operate on those same owners.
+                // Original nested change identities remain in pending store.
                 String[] parts = name.split("\\.");
-                if (parts.length >= 4
-                        && ("Command".equals(parts[2])
-                            || "Команда".equals(parts[2]))) {
+                if (parts.length >= 2 && !parts[1].isBlank()) {
                     exportable.add(parts[0] + "." + parts[1]);
                 } else {
+                    // The separate preflight will reject malformed entries.
                     exportable.add(name);
                 }
             }
