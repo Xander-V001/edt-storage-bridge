@@ -21,9 +21,9 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.xander.edt.storagebridge.core.ProjectSnapshot;
 import org.xander.edt.storagebridge.edt.EdtProjectInspector;
+import com._1c.g5.v8.dt.core.platform.IConfigurationProvider;
+import com._1c.g5.wiring.ServiceAccess;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
 
 /**
  * Read-only asynchronous diagnosis of the selected 1C:EDT workspace project.
@@ -32,9 +32,6 @@ import com.google.inject.Provider;
  * an Eclipse command handler on the SWT thread.
  */
 public final class InspectProjectHandler extends AbstractHandler {
-
-    @Inject
-    private Provider<EdtProjectInspector> inspectorProvider;
 
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -70,8 +67,13 @@ public final class InspectProjectHandler extends AbstractHandler {
                     return Status.CANCEL_STATUS;
                 }
                 try {
-                    // Both OSGi service lookup and configuration model access occur here.
-                    boolean available = inspectorProvider.get().hasConfigurationModel(project);
+                    // Use EDT's public service accessor, as the native
+                    // receive/compare path already does. Creating a separate
+                    // Guice injector through BridgeExtensionFactory caused
+                    // ArrayStoreException in the user's EDT runtime.
+                    boolean available = new EdtProjectInspector(
+                        ServiceAccess.get(IConfigurationProvider.class))
+                        .hasConfigurationModel(project);
                     if (monitor.isCanceled()) {
                         return Status.CANCEL_STATUS;
                     }
