@@ -221,15 +221,29 @@ public final class EdtSelectiveReviewService {
         if (status == null || !status.isOK()) {
             throw NativeEdtImportFailure.from(status, initialFullReview);
         }
-        List<String> scope = exactScope(target, explicitlySelectedObjects);
+        List<String> requestedScope = exactScope(target, explicitlySelectedObjects);
         // Language entries have no separate .mdo: do not count the root
         // descriptor as proof that the requested languages survived import.
         requireEmbeddedLanguages(target, explicitlySelectedObjects);
         var main = new V8ProjectComparisonDataSourceDescriptor(active);
         var delta = new FileSystemComparisonDataSourceDescriptor(
             target, project.getName());
-        var handle = new ComparisonProcessHandle(main, delta,
-            new ComparisonScope(scope, scope));
+        final ComparisonScope comparisonScope;
+        if (initialFullReview) {
+            // The full XML importer may create more owners than the
+            // ConfigDumpInfo version inventory enumerates. Include every
+            // primary descriptor from the imported source, plus objects that
+            // exist ONLY in the user's EDT project (remote deletions and
+            // local additions). Otherwise EDT cannot even display those
+            // local-only objects for the user's own deletion decision.
+            // Do not infer a deletion solely from an absent configVersion.
+            FullPrimaryScopes inventories = fullPrimaryScopes(projectDirectory, target);
+            comparisonScope = new ComparisonScope(
+                toNativeFqns(inventories.main()), toNativeFqns(inventories.other()));
+        } else {
+            comparisonScope = new ComparisonScope(requestedScope, requestedScope);
+        }
+        var handle = new ComparisonProcessHandle(main, delta, comparisonScope);
         var settings = ComparisonProcessSettings.builder(
             MatchingStrategy.UUID_THEN_NAME)
             // Use EDT's native BSL syntax-aware merge rather than comparing
@@ -589,6 +603,84 @@ public final class EdtSelectiveReviewService {
             return null;
         }
         return collection + "/" + name;
+    }
+
+    /**
+     * Full verification compares the UNION of local and repository owners.
+     * The right side contains every imported remote owner; the left side
+     * contains the same owners plus local-only objects so EDT can offer
+     * deletion in its standard two-sided merge editor.
+     *
+     * Paths are relative to each respective EDT source root. The mapping
+     * to native comparison symbolic links happens through EDT's own path
+     * converter and never through guessed names.
+     */
+    public record FullPrimaryScopes(List<Path> main, List<Path> other) {
+        public FullPrimaryScopes {
+            main = List.copyOf(main);
+            other = List.copyOf(other);
+        }
+    }
+
+    public static FullPrimaryScopes fullPrimaryScopes(
+            Path projectRoot, Path convertedEdtRoot) throws IOException {
+        var local = primaryDescriptors(projectRoot);
+        var remote = primaryDescriptors(convertedEdtRoot);
+        if (remote.isEmpty()) {
+            throw new IOException("Full EDT import has no primary metadata descriptors");
+        }
+        var main = new java.util.LinkedHashMap<String, Path>(remote);
+        local.forEach(main::putIfAbsent);
+        return new FullPrimaryScopes(List.copyOf(main.values()),
+            List.copyOf(remote.values()));
+    }
+
+    /**
+     * Collect only real top-level .mdo descriptors, not nested form/module
+     * resources. Unlike the ConfigDumpInfo list, this covers owners without
+     * version tokens and local-only/deleted-from-storage metadata.
+     */
+    public static Map<String, Path> primaryDescriptors(Path edtRoot)
+            throws IOException {
+        Path root = edtRoot.toRealPath();
+        Path src = root.resolve("src");
+        if (!Files.isDirectory(src, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(src)) {
+            throw new IOException("EDT source root is missing or unsafe");
+        }
+        var found = new java.util.LinkedHashMap<String, Path>();
+        try (Stream<Path> files = Files.walk(src)) {
+            for (Path file : files.toList()) {
+                Path relative = root.relativize(file);
+                String owner = metadataOwnerForPath(relative);
+                if (owner == null) {
+                    continue;
+                }
+                if (Files.isSymbolicLink(file)) {
+                    throw new IOException("Symbolic metadata descriptor in EDT source");
+                }
+                if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                if (found.putIfAbsent(owner, relative) != null) {
+                    throw new IOException("Ambiguous primary metadata owner in EDT source");
+                }
+            }
+        }
+        return java.util.Collections.unmodifiableMap(found);
+    }
+
+    private List<String> toNativeFqns(List<Path> relativeFiles) throws IOException {
+        var fqnNames = new LinkedHashSet<String>();
+        for (Path relative : relativeFiles) {
+            var fqn = paths.getFqn(new org.eclipse.core.runtime.Path(
+                relative.toString().replace('\\', '/')));
+            if (fqn == null || fqn.toString().isBlank()) {
+                throw new IOException("EDT cannot resolve native comparison owner");
+            }
+            fqnNames.add(fqn.toString());
+        }
+        return List.copyOf(fqnNames);
     }
 
     private List<String> exactScope(Path edtRoot,
