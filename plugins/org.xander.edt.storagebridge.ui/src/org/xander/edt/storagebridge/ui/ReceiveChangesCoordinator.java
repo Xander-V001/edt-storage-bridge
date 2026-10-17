@@ -154,7 +154,8 @@ public final class ReceiveChangesCoordinator {
                 settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
                     ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER,
                 settings.infobaseAddress());
-            var detect = new ChangeDetectionRequest(executable, transport, TIMEOUT);
+            var detect = new ChangeDetectionRequest(executable, transport,
+                TIMEOUT, settings.infobaseUsername(), settings.infobasePassword());
             String intermediaryIdentity = settings.infobaseType().name()
                 + ":" + settings.infobaseAddress().trim();
 
@@ -187,8 +188,8 @@ public final class ReceiveChangesCoordinator {
                     + "Изменится конфигурация только указанной базы, "
                     + "она не связана с EDT. "
                     + "Несохранённые локальные изменения этой базы могут быть потеряны. "
-                    + (settings.password().isEmpty() ? "" :
-                        "Пароль хранилища передаётся штатному Конфигуратору "
+                    + (settings.password().isEmpty() && settings.infobasePassword().isEmpty() ? "" :
+                         "Пароли ИБ и хранилища передаются штатному Конфигуратору "
                         + "через параметры запуска и может быть доступен "
                         + "администраторам этой системы. ")
                     + "Продолжить?")) {
@@ -216,7 +217,8 @@ public final class ReceiveChangesCoordinator {
                     new RepositoryUpdateRunner().receive(
                         new RepositoryUpdateRequest(executable, transport, TIMEOUT,
                             settings.address(), settings.username(),
-                            settings.password()),
+                            settings.password(), settings.infobaseUsername(),
+                            settings.infobasePassword()),
                         canceled);
                     journal.markUpdateCompleted();
                 } else {
@@ -283,7 +285,8 @@ public final class ReceiveChangesCoordinator {
                 monitor.beginTask("Выгрузка только выбранных объектов", 1);
                 var result = new SelectiveDumpRunner().export(
                     new SelectiveDumpRequest(executable, transport,
-                        selectedList, TIMEOUT), monitor::isCanceled);
+                        selectedList, TIMEOUT, settings.infobaseUsername(),
+                        settings.infobasePassword()), monitor::isCanceled);
                 monitor.worked(1);
                 return result;
             });
