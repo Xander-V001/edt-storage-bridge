@@ -646,6 +646,7 @@ public final class ReceiveChangesCoordinator {
                                                 .confirm(revisionForReview.get(),
                                                     () -> readLatestRevisionOrUnknown(
                                                         executable, transport, settings,
+                                                        Duration.ofSeconds(30),
                                                         monitor::isCanceled),
                                                     monitor::isCanceled, Thread::sleep);
                                             if (attestation.observed() > 0) {
@@ -922,13 +923,24 @@ public final class ReceiveChangesCoordinator {
             InfobaseLocation intermediary,
             StorageProjectSettings.Snapshot settings,
             BooleanSupplier canceled) {
+        return readLatestRevisionOrUnknown(
+            executable, intermediary, settings, Duration.ofMinutes(5), canceled);
+    }
+
+    // The FINAL confirmation uses a shorter bounded Designer call, retried
+    // on transient failures. Otherwise four native 5-minute timeouts could
+    // leave the post-merge verification Job running for twenty minutes.
+    private static long readLatestRevisionOrUnknown(Path executable,
+            InfobaseLocation intermediary,
+            StorageProjectSettings.Snapshot settings,
+            Duration timeout, BooleanSupplier canceled) {
         if (canceled.getAsBoolean()) {
             return ReceiveRevisionStore.UNKNOWN;
         }
         try {
             return RepositoryLatestRevisionReader.latest(
                 RepositoryHistoryRequest.latest(executable, intermediary,
-                    Duration.ofMinutes(5)),
+                    timeout),
                 settings.infobaseUsername(), settings.infobasePassword(),
                 settings.address(), settings.username(), settings.password(),
                 canceled);
