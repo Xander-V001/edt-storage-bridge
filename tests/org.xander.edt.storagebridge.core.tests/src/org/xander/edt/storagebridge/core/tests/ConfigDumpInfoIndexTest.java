@@ -92,6 +92,80 @@ public final class ConfigDumpInfoIndexTest {
     }
 
     @Test
+    public void incrementalDeltaOnlyReturnsNewAndModifiedMetadata() throws Exception {
+        Path oldInfo = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Configuration.Main" id="c" configVersion="a"/>
+                <Metadata name="Document.Local" id="x" configVersion="11"/>
+                <Metadata name="Document.Server" id="s" configVersion="21"/>
+                <Metadata name="Document.Server.Form.Main" id="f" configVersion="31"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        Path newInfo = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Configuration.Main" id="c" configVersion="a"/>
+                <Metadata name="Document.Local" id="x" configVersion="11"/>
+                <Metadata name="Document.Server" id="s" configVersion="22"/>
+                <Metadata name="Document.Server.Form.Main" id="f" configVersion="32"/>
+                <Metadata name="Document.New" id="n" configVersion="1"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertEquals(Set.of("Document.Server", "Document.Server.Form.Main",
+                "Document.New"), ConfigDumpInfoIndex.changedSince(oldInfo, newInfo));
+        assertTrue(ConfigDumpInfoIndex.changedSince(newInfo, newInfo).isEmpty());
+    }
+
+    @Test
+    public void deletedOrRenamedMetadataCannotDisappearFromPending() throws Exception {
+        Path before = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.First" id="same" configVersion="old"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        Path removed = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Second" id="another" configVersion="now"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        Path renamed = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.Second" id="same" configVersion="now"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.changedSince(before, removed));
+        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.changedSince(before, renamed));
+    }
+
+    @Test
+    public void duplicateMetadataNamesAreRejected() throws Exception {
+        Path duplicate = fixture("""
+            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
+                format="Hierarchical" version="2.17">
+              <ConfigVersions>
+                <Metadata name="Document.First" id="a" configVersion="v"/>
+                <Metadata name="Document.First" id="b" configVersion="v"/>
+              </ConfigVersions>
+            </ConfigDumpInfo>
+            """);
+        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.exportableNames(duplicate));
+    }
+
+    @Test
     public void changedLanguageMustRemainIndependent() throws Exception {
         var changed = ConfigurationChangesParser.parse("""
             Modified:Language.Русский
