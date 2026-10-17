@@ -41,6 +41,16 @@ public final class VerifiedReceiveContent {
             String repositoryAddress, String branch, String intermediaryIdentity,
             Set<String> selectedRoots, Set<String> selectedPendingNames,
             Path convertedEdt) throws IOException, BackingStoreException {
+        return verifyAndClear(project, repositoryAddress, branch,
+            intermediaryIdentity, selectedRoots, selectedPendingNames,
+            Set.of(), convertedEdt);
+    }
+
+    public static Result verifyAndClear(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> selectedRoots, Set<String> selectedPendingNames,
+            Set<String> absentRemoteNames,
+            Path convertedEdt) throws IOException, BackingStoreException {
         if (project.getLocation() == null || !project.isAccessible()) {
             throw new IOException("EDT project is not available for verification");
         }
@@ -71,6 +81,28 @@ public final class VerifiedReceiveContent {
                     differences.add(owner + " — " + (mismatch == null
                         ? "не удалось установить первую разницу" : mismatch));
                 }
+            }
+        }
+        // A previously known owner may have been removed altogether from
+        // the remote inventory. Full comparison now exposes it on the main
+        // side; clear its pending identity ONLY when both its remote stage
+        // and actual EDT resources are absent after the native merge.
+        // For a removed nested Form whose parent still exists, the regular
+        // owner-equality check above is the required proof instead.
+        for (String deletedName : absentRemoteNames) {
+            if (verifiedNames.contains(deletedName)) {
+                continue;
+            }
+            String owner = EdtSelectiveReviewService.edtOwner(deletedName);
+            if ("Configuration/Configuration".equals(owner)) {
+                continue; // embedded roots/languages are checked as a whole
+            }
+            if (EdtOwnerContentVerifier.isTopLevelDeletionApplied(
+                    projectRoot, stage, owner)) {
+                verifiedNames.add(deletedName);
+            } else if (differences.size() < 500) {
+                differences.add(owner + " — отсутствующий справа объект "
+                    + "или его вложенный ресурс ещё не подтверждён как удалённый");
             }
         }
         if (!verifiedNames.isEmpty()) {
