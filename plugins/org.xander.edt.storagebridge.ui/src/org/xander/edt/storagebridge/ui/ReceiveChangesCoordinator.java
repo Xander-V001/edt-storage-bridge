@@ -742,6 +742,12 @@ public final class ReceiveChangesCoordinator {
                 + snapshot.exitCode() + ". Сохранены диагностические журналы: "
                 + snapshot.diagnosticsDirectory();
         }
+        if (failure instanceof EdtSelectiveReviewService.MissingEmbeddedLanguagesException mismatch) {
+            return "Импортированная Configuration.mdo не содержит "
+                + "всех запрошенных языков. Отсутствует: "
+                + mismatch.missingCount()
+                + ". Сравнение не запускалось; изменения сохранены в ожидании.";
+        }
         if (failure instanceof EdtSelectiveReviewService.MissingConvertedOwnersException mismatch) {
             return "После импорта XML в EDT не найдены основные файлы .mdo "
                 + "для всех запрошенных объектов. Ожидалось владельцев: "
