@@ -182,6 +182,17 @@ public final class EdtDeltaComparisonService {
      */
     public IEditorPart openEditor(CompareMergeProcessDescriptor prepared)
             throws PartInitException {
+        return openEditor(prepared, inputFactory);
+    }
+
+    /**
+     * Variant for short-lived public EDT service access outside Guice.
+     * Both variants use exactly the same native editor implementation.
+     */
+    public static IEditorPart openEditor(CompareMergeProcessDescriptor prepared,
+            IDtComparisonEditorInputFactory inputFactory)
+            throws PartInitException {
+        Objects.requireNonNull(inputFactory, "inputFactory");
         Objects.requireNonNull(prepared, "prepared");
         if (Display.getCurrent() == null) {
             throw new IllegalStateException(
