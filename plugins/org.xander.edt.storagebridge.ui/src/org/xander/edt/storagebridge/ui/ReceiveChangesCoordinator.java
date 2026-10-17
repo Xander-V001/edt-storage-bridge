@@ -37,6 +37,7 @@ import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
+import org.xander.edt.storagebridge.platform.InitialFullDumpRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
@@ -454,7 +455,7 @@ public final class ReceiveChangesCoordinator {
                     ? "Полная первичная XML-выгрузка в отдельный каталог"
                     : "Выгрузка только изменённых объектов", 1);
                 var runner = new SelectiveDumpRunner();
-                var result = initialFullReview
+                SelectiveDumpRunner.ExportResult result = initialFullReview
                     ? runner.exportInitialFull(
                         new InitialFullDumpRequest(executable, transport,
                             Duration.ofHours(2), settings.infobaseUsername(),
