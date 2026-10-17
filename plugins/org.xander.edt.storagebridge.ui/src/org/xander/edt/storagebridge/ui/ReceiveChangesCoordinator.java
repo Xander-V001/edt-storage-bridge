@@ -60,6 +60,9 @@ public final class ReceiveChangesCoordinator {
     /** Prevent overlapping native editors and repository operations per EDT project. */
     private static final java.util.Set<String> ACTIVE =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** The SAME existing 1C infobase must never receive two parallel Designer runs. */
+    private static final java.util.Set<String> ACTIVE_INTERMEDIARIES =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private ReceiveChangesCoordinator() {}
 
@@ -82,6 +85,19 @@ public final class ReceiveChangesCoordinator {
                 + "редактор объединения.");
             return;
         }
+        // Different EDT projects may point to the same existing intermediary.
+        // Lock across both the Designer update and the native compare session:
+        // no second caller can change the source until the staged review ends.
+        String intermediaryKey = settings.infobaseType().name() + ":"
+            + settings.infobaseAddress().trim()
+                .toLowerCase(java.util.Locale.ROOT);
+        if (!ACTIVE_INTERMEDIARIES.add(intermediaryKey)) {
+            ACTIVE.remove(operationKey);
+            MessageDialog.openInformation(shell, "Работа с хранилищем",
+                "Для этой базы-посредника уже выполняется получение "
+                + "или открыт редактор сравнения другого проекта.");
+            return;
+        }
         Job job = new Job("1С: Получение изменений из хранилища — "
                 + project.getName()) {
             @Override
@@ -90,10 +106,11 @@ public final class ReceiveChangesCoordinator {
                     new AtomicReference<>(Status.OK_STATUS);
                 try {
                     receiveInBackground(shell, project, settings, operationKey,
-                        SubMonitor.convert(monitor, 100), outcome);
+                        intermediaryKey, SubMonitor.convert(monitor, 100), outcome);
                 } catch (RuntimeException ex) {
                     // A failure must never leave the project permanently busy.
                     ACTIVE.remove(operationKey);
+                    ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
                     return new Status(IStatus.ERROR,
                         "org.xander.edt.storagebridge.ui",
                         "Получение прервалось: "
@@ -112,7 +129,8 @@ public final class ReceiveChangesCoordinator {
     /** Background-only: SWT widgets are accessed via UI-thread helpers. */
     private static void receiveInBackground(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings, String operationKey,
-            SubMonitor jobProgress, AtomicReference<IStatus> outcome) {
+            String intermediaryKey, SubMonitor jobProgress,
+            AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
@@ -429,6 +447,7 @@ public final class ReceiveChangesCoordinator {
                             } finally {
                                 cleanupQuietly(retainedExport, retainedConverted);
                                 ACTIVE.remove(operationKey);
+                                ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
                             }
                         }
                     }
@@ -471,6 +490,7 @@ public final class ReceiveChangesCoordinator {
             if (!editorOwnsStaging) {
                 cleanupQuietly(export, conversionRoot);
                 ACTIVE.remove(operationKey);
+                ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
             }
         }
     }
