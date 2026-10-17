@@ -158,10 +158,32 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         GridData revisionsData = new GridData(SWT.FILL, SWT.TOP, true, false);
         revisionsData.horizontalSpan = 2;
         revisions.setLayoutData(revisionsData);
+        String activeBranch = null;
+        try {
+            activeBranch = GitReceiveGuard.currentBranch(project);
+        } catch (IOException ex) {
+            // A missing Git branch cannot be assigned a verified checkpoint.
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        long observedRevision = ReceiveRevisionStore.UNKNOWN;
+        long appliedRevision = ReceiveRevisionStore.UNKNOWN;
+        if (saved != null && !saved.address().isBlank()
+                && !saved.infobaseAddress().isBlank()) {
+            String intermediary = saved.infobaseType().name() + ":"
+                + saved.infobaseAddress().trim();
+            observedRevision = ReceiveRevisionStore.observed(
+                project, saved.address(), intermediary);
+            if (activeBranch != null) {
+                appliedRevision = ReceiveRevisionStore.applied(
+                    project, saved.address(), intermediary, activeBranch);
+            }
+        }
         addReadOnly(revisions, "Последняя обнаруженная версия хранилища:",
-            formatVersion(saved == null ? -1 : saved.observedVersion()));
-        addReadOnly(revisions, "Версия, применённая к проекту EDT:",
-            formatVersion(saved == null ? -1 : saved.appliedVersion()));
+            formatVersion(observedRevision));
+        addReadOnly(revisions, "Версия, полностью применённая к EDT"
+            + (activeBranch == null ? "" : " (" + activeBranch + ")") + ":",
+            formatVersion(appliedRevision));
 
         Label note = new Label(content, SWT.WRAP);
         note.setText("Получение обновит только существующую базу хранилища "
