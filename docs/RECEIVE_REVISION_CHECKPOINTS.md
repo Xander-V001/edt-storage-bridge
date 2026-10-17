@@ -114,3 +114,43 @@ comments; list only actual accepted objects in the commit body, and
 separately identify skipped/unresolved revisions. A partial merge must
 never claim that all of 104 was applied. One Git commit per confirmed
 receive operation avoids fabricating unavailable intermediate EDT states.
+
+## 2026-10-17: Follow-up on missing version fields after user took everything on the right
+
+Code added to this branch (source only, unbuilt/unverified in EDT 2026.2):
+
+- `RepositoryLatestRevisionReader.parseLatest(byte[])` accepts the native
+  strictly validated Russian history report in UTF-8, UTF-8 BOM, UTF-16LE
+  (including BOM-less) and Windows-1251. Non-BOM encodings are tried only if
+  the WHOLE report passes `RepositoryVersionReportParser` checks; merely
+  finding digits or a random `Версия:` is insufficient. Manual GUI-exported
+  TXT and Designer batch-created TXT may differ in encoding. Tests have been
+  added for each accepted byte format; real batch output remains unverified.
+- After closing the EDT comparison editor, `VerifiedReceiveContent.verifyAndClear`
+  reports counts of owners checked, owners **byte-identical** to the external
+  EDT stage, pending identities cleared and pending identities left.
+  It writes a local `edt-storage-merge-review-*.txt` ONLY when something
+  remained unverified; for up to 500 owners it identifies the first
+  non-matching resource. This diagnostic is potentially confidential.
+- `ReceiveChangesCoordinator` now presents that summary after the editor
+  closes instead of silently returning from the background verification job.
+  It also reports native history re-query failure or changed revision.
+  It only records an applied checkpoint if EVERY selected owner matches, the
+  pending journal is EMPTY, Git branch/HEAD is stable, and the native version
+  remains unchanged. This is stricter than believing the editor's checked
+  `Взять справа` options.
+- The independent «Проверить версию хранилища» command remains the quickest
+  method of testing native last-revision extraction WITHOUT another full XML
+  export.
+
+**Unresolved**: A byte-level mismatch is not necessarily a semantic
+difference in EDT's in-memory model. Conversely, treating differences as
+accepted merely because the user chose `Взять справа` risks real loss of
+forms, command mappings and manual conflict resolutions. A future safe
+semantic acceptance proof must use a **fresh completed native EDT comparison
+of the resulting project with the retained incoming stage**, inspect its
+actual model differences, and verify no outstanding conflicts. The EDT
+public `IComparisonManager`/`IComparisonSession` services are candidates,
+but their 2026.2 signatures and event/session lifecycle must be tested
+before wiring them into the active receive path. The current release keeps
+the applied checkpoint UNKNOWN instead of inventing proof.
