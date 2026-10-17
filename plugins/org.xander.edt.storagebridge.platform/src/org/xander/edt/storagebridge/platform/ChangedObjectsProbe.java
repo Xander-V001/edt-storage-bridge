@@ -36,7 +36,11 @@ public final class ChangedObjectsProbe {
         args.add("DESIGNER");
         args.add(request.infobase().switchName());
         args.add(request.infobase().address());
+        DesignerInfobaseAuth.addTo(args,
+            request.infobaseUsername(), request.infobasePassword());
         args.add("/DisableStartupDialogs");
+        args.add("/DisableStartupMessages");
+        args.add("/DisableUnrecoverableErrorMessage");
         args.add("/DumpConfigToFiles");
         args.add(inspectionDirectory.toString());
         // -configDumpInfoForChanges is supported only together with -update
