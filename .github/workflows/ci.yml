@@ -46,8 +46,51 @@ jobs:
         run: |
           java -version
           mvn --version
+      # A new OSGi qualifier makes each approved build updateable through p2,
+      # even when the feature's major/minor/micro version stays 0.1.0.
       - name: Compile, run OSGi tests, build p2 site
-        run: mvn -B -ntp clean verify
+        shell: bash
+        run: |
+          qualifier="$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_NUMBER}"
+          echo "Tycho OSGi build qualifier: $qualifier"
+          mvn -B -ntp "-DforceContextQualifier=$qualifier" clean verify
+
+      - name: Validate p2 update-site contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="repository/org.xander.edt.storagebridge.p2/target/repository"
+          test -d "$site"
+          test -d "$site/features"
+          test -d "$site/plugins"
+          if ! { test -s "$site/content.jar" || test -s "$site/content.xml" || test -s "$site/content.xml.xz"; }; then
+            echo "::error::Missing p2 installable unit metadata (content)"
+            exit 1
+          fi
+          if ! { test -s "$site/artifacts.jar" || test -s "$site/artifacts.xml" || test -s "$site/artifacts.xml.xz"; }; then
+            echo "::error::Missing p2 artifact metadata"
+            exit 1
+          fi
+          test -n "$(find "$site/features" -maxdepth 1 -name 'org.xander.edt.storagebridge.feature_*.jar' -print -quit)"
+          for bundle in core platform edt ui; do
+            test -n "$(find "$site/plugins" -maxdepth 1 -name "org.xander.edt.storagebridge.${bundle}_*.jar" -print -quit)"
+          done
+          # This public site is allowed to host OUR code only, never vendor EDT jars.
+          if find "$site/plugins" "$site/features" -type f \
+              \( -name 'com._1c.*' -o -name 'com._1c_*' \) | grep -q .; then
+            echo "::error::Refusing to publish proprietary 1C platform bundles"
+            exit 1
+          fi
+          touch "$site/.nojekyll"
+          echo "Checked p2 metadata and the four bridge bundles."
+
+      # Upload the site from the SAME explicitly authorized CI run.
+      # This does not build anything else, nor does it run on push/PR.
+      - name: Stage GitHub Pages p2 update site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: repository/org.xander.edt.storagebridge.p2/target/repository
+          retention-days: 1
       - name: Upload p2 installation archive
         if: success()
         uses: actions/upload-artifact@v4
@@ -71,3 +114,22 @@ jobs:
           script: |
             const prune = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/prune-artifacts.cjs`);
             await prune({github, context, core});
+
+  # Runs ONLY when the manually dispatched build/tests succeeded.
+  # No checkout, Maven invocation, or other compilation occurs in this job.
+  publish:
+    needs: tycho
+    if: github.repository == 'Xander-V001/edt-storage-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish p2 update site to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
