@@ -100,13 +100,6 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         infobaseAddress = new Text(platform, SWT.BORDER);
         infobaseAddress.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         infobaseAddress.setText(saved == null ? "" : saved.infobaseAddress());
-        infobaseUsername = addText(platform, "Пользователь информационной базы (/N):",
-            SWT.BORDER, saved == null ? "" : saved.infobaseUsername());
-        new Label(platform, SWT.NONE).setText("");
-        infobasePassword = addText(platform, "Пароль информационной базы (/P):",
-            SWT.BORDER | SWT.PASSWORD,
-            saved == null ? "" : saved.infobasePassword());
-        new Label(platform, SWT.NONE).setText("");
         Button browseBase = new Button(platform, SWT.PUSH);
         browseBase.setText("Обзор...");
         browseBase.setEnabled(infobaseType.getSelectionIndex() == 0);
@@ -120,6 +113,14 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         });
         infobaseType.addListener(SWT.Selection, event ->
             browseBase.setEnabled(infobaseType.getSelectionIndex() == 0));
+
+        infobaseUsername = addText(platform, "Пользователь информационной базы (/N):",
+            SWT.BORDER, saved == null ? "" : saved.infobaseUsername());
+        new Label(platform, SWT.NONE).setText("");
+        infobasePassword = addText(platform, "Пароль информационной базы (/P):",
+            SWT.BORDER | SWT.PASSWORD,
+            saved == null ? "" : saved.infobasePassword());
+        new Label(platform, SWT.NONE).setText("");
 
         new Label(platform, SWT.NONE).setText("Платформа 1С (1cv8.exe):");
         platformExecutable = new Text(platform, SWT.BORDER);
