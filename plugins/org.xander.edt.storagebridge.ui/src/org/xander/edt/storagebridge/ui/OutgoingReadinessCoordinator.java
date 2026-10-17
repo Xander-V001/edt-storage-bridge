@@ -24,8 +24,10 @@ import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
  * prerequisite probe. No outgoing XML export, Designer load, lock, unlock or
  * repository commit is reachable from this class.
  *
- * Keep this path separate from ReceiveChangesCoordinator. Neither the
- * incoming checkpoint, pending-object journal nor intermediary is modified.
+ * Keep this path separate from ReceiveChangesCoordinator. The existing
+ * pending-store getter may initialize only its local Eclipse preference node;
+ * no pending entry or applied-revision checkpoint is cleared/advanced, and
+ * the intermediary, Git worktree and 1C repository are not modified.
  */
 public final class OutgoingReadinessCoordinator {
     private OutgoingReadinessCoordinator() {}
