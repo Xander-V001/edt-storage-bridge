@@ -481,7 +481,12 @@ public final class ReceiveChangesCoordinator {
             if (fullReview) {
                 selected = Set.of();
             } else {
-                var exportPlan = SelectiveDumpPlanner.plan(reviewCandidates);
+                // Pull every independently developed resource under each
+                // affected owner from the CURRENT repository inventory.
+                // A changed form alone must never create a truncated parent.
+                var exportPlan = SelectiveDumpPlanner.planIncludingRelated(
+                    reviewCandidates, ConfigDumpInfoIndex.exportableNames(
+                        journal.lastScannedInfo()));
                 if (exportPlan.exportable().isEmpty()) {
                     informationOnUi(shell, "Работа с хранилищем",
                         "Найдены только изменения корня конфигурации или языка. "
