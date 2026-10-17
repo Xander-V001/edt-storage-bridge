@@ -236,7 +236,11 @@ public final class EdtSelectiveReviewService {
             // an entire modified module as one replaceable text block.
             // Two-way review still requires the developer's explicit choice.
             .parseBslModuleStructure(true)
-            .mainSideObjectsDeletionAllowed(false)
+            // Full native compare/merge functionality: EDT must be able
+            // to offer deleting current-project resources absent on the
+            // repository side, including nested forms and modules.
+            // The choice to apply deletion remains in the EDT merge editor.
+            .mainSideObjectsDeletionAllowed(true)
             .build();
         return new CompareMergeProcessDescriptor(handle, settings);
     }
