@@ -392,17 +392,10 @@ public final class ReceiveChangesCoordinator {
                         RemoteReceiveScopePlanner.candidates(
                             lastScanned, remote.configDumpInfo(), selectAllRemote));
                     if (selectAllRemote && lastScanned != null) {
-                        // Full comparison must also remember remote DELETIONS.
-                        // A removed object has no incoming XML descriptor but
-                        // must remain pending until EDT actually removes it.
-                        var oldObjects = ConfigDumpInfoIndex.readVersions(lastScanned);
-                        var currentObjects = ConfigDumpInfoIndex.readVersions(
-                            remote.configDumpInfo());
-                        for (String oldName : oldObjects.keySet()) {
-                            if (!currentObjects.containsKey(oldName)) {
-                                remoteNames.add(oldName);
-                            }
-                        }
+                        // Deleted 1C metadata has no right-side XML descriptor.
+                        // Preserve the debt for native comparison/verification.
+                        remoteNames.addAll(RemoteReceiveScopePlanner.removedSince(
+                            lastScanned, remote.configDumpInfo()));
                     }
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
