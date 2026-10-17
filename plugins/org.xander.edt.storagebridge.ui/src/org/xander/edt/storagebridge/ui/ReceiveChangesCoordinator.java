@@ -422,16 +422,19 @@ public final class ReceiveChangesCoordinator {
             selectedPendingNames.removeAll(exportPlan.deferred());
             List<String> selectedList = new ArrayList<>(exportPlan.exportable());
             if (initialFullReview) {
-                // The full XML export has the real configuration root even
-                // when ConfigDumpInfo has only a bare Configuration marker.
-                // It is scope-only and never supplied to -listFile.
-                if (pending.stream().anyMatch(name ->
-                        "Configuration".equals(name)
-                            || name.startsWith("Configuration."))) {
-                    selectedList.add("Configuration");
+                // Both Configuration.* and Language.* live inside the EDT
+                // Configuration root. Language metadata is serialized as
+                // <languages> entries in Configuration.mdo: it has no own
+                // Languages/<name>.mdo descriptor. The FULL XML export can
+                // review this root; partial dumps defer it safely.
+                // "Configuration" is scope-only, never a -listFile entry.
+                if (pending.stream().anyMatch(
+                        ReceiveChangesCoordinator::isConfigurationRootRecord)) {
+                    if (!selectedList.contains("Configuration")) {
+                        selectedList.add("Configuration");
+                    }
                     for (String name : pending) {
-                        if ("Configuration".equals(name)
-                                || name.startsWith("Configuration.")) {
+                        if (isConfigurationRootRecord(name)) {
                             selectedPendingNames.add(name);
                         }
                     }
@@ -807,12 +810,18 @@ public final class ReceiveChangesCoordinator {
         return result;
     }
 
+    private static boolean isConfigurationRootRecord(String name) {
+        return "Configuration".equals(name)
+            || name.startsWith("Configuration.")
+            || "Language".equals(name)
+            || name.startsWith("Language.")
+            || "Язык".equals(name)
+            || name.startsWith("Язык.");
+    }
+
     public static String topObject(String name) {
-        if ("Configuration".equals(name) || name.startsWith("Configuration.")) {
+        if (isConfigurationRootRecord(name)) {
             return "Configuration";
-        }
-        if ("Language".equals(name)) {
-            return "Language";
         }
         String[] parts = name.split("\\.");
         return parts.length >= 2 ? parts[0] + "." + parts[1] : name;
