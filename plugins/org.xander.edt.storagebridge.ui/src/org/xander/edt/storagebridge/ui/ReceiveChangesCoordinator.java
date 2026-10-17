@@ -628,6 +628,8 @@ public final class ReceiveChangesCoordinator {
                                         long fullyApplied = ReceiveRevisionStore.UNKNOWN;
                                         String reason = null;
                                         if (verified.remainingPending() == 0
+                                                && verified.identicalOwners()
+                                                    == verified.checkedOwners()
                                                 && revisionForReview.get() > 0) {
                                             long latestNow = readLatestRevisionOrUnknown(
                                                 executable, transport, settings,
@@ -647,6 +649,11 @@ public final class ReceiveChangesCoordinator {
                                                 reason = "Версию хранилища не удалось "
                                                     + "повторно подтвердить или она изменилась.";
                                             }
+                                        } else if (verified.remainingPending() == 0
+                                                && verified.identicalOwners()
+                                                    != verified.checkedOwners()) {
+                                            reason = "Не все выбранные владельцы объектов "
+                                                + "полностью совпали с XML-источником EDT.";
                                         } else if (verified.remainingPending() == 0) {
                                             reason = "Номер ревизии до и после обновления "
                                                 + "не был подтверждён по отчёту 1С.";
