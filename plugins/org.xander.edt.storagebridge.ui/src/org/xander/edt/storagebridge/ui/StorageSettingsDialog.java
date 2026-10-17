@@ -190,7 +190,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         appliedRevisionLabel = addReadOnly(revisions,
             "Версия, полностью применённая к EDT"
                 + (activeBranch == null ? "" : " (" + activeBranch + ")") + ":",
-            formatVersion(appliedRevision));
+            formatAppliedVersion(appliedRevision, observedRevision));
         refreshVersionsButton = new Button(revisions, SWT.PUSH);
         refreshVersionsButton.setText("Проверить версию хранилища");
         refreshVersionsButton.setLayoutData(new GridData(
@@ -270,7 +270,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                         applied = ReceiveRevisionStore.applied(
                             project, connection.address(), intermediary, activeBranch);
                     }
-                    appliedRevisionLabel.setText(formatVersion(applied));
+                    appliedRevisionLabel.setText(
+                        formatAppliedVersion(applied, revision));
                     setMessage("Последняя версия хранилища прочитана: "
                         + revision + ". Применённая версия EDT подтверждается отдельно.");
                 }
@@ -286,6 +287,14 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     private static String formatVersion(long version) {
         return version >= 1 ? Long.toString(version) : "Не определена";
+    }
+
+    private static String formatAppliedVersion(long applied, long observed) {
+        if (applied >= 1) {
+            return Long.toString(applied);
+        }
+        // An observed HEAD says nothing about what the user actually merged.
+        return observed >= 1 ? "Не подтверждена" : "Не определена";
     }
 
     private static final int RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
