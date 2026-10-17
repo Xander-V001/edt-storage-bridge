@@ -34,6 +34,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Text password;
     private Combo infobaseType;
     private Text infobaseAddress;
+    private Text infobaseUsername;
+    private Text infobasePassword;
     private Text platformExecutable;
     private StorageProjectSettings.Snapshot saved;
 
@@ -98,6 +100,13 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         infobaseAddress = new Text(platform, SWT.BORDER);
         infobaseAddress.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         infobaseAddress.setText(saved == null ? "" : saved.infobaseAddress());
+        infobaseUsername = addText(platform, "Пользователь информационной базы (/N):",
+            SWT.BORDER, saved == null ? "" : saved.infobaseUsername());
+        new Label(platform, SWT.NONE).setText("");
+        infobasePassword = addText(platform, "Пароль информационной базы (/P):",
+            SWT.BORDER | SWT.PASSWORD,
+            saved == null ? "" : saved.infobasePassword());
+        new Label(platform, SWT.NONE).setText("");
         Button browseBase = new Button(platform, SWT.PUSH);
         browseBase.setText("Обзор...");
         browseBase.setEnabled(infobaseType.getSelectionIndex() == 0);
@@ -129,7 +138,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         });
 
         Label hint = new Label(platform, SWT.WRAP);
-        hint.setText("Для файловой базы — каталог с 1Cv8.1CD; для серверной — "
+        hint.setText("Учетная запись ИБ не равна пользователю хранилища. "
+            + "Поля ИБ оставьте пустыми только если 1С допускает вход без пароля. "
+            + "Для файловой базы — каталог с 1Cv8.1CD; для серверной — "
             + "адрес вида server/ibName. Выбирайте ту версию платформы, "
             + "которая уже работает с вашим хранилищем. "
             + "Эта база нужна для работы с хранилищем. "
@@ -234,7 +245,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                 username.getText(), password.getText(),
                 infobaseType.getSelectionIndex() == 1
                     ? InfobaseType.SERVER : InfobaseType.FILE,
-                infobaseAddress.getText(), platformExecutable.getText());
+                infobaseAddress.getText(), platformExecutable.getText(),
+                infobaseUsername.getText(), infobasePassword.getText());
             setErrorMessage(null);
             return true;
         } catch (IllegalArgumentException ex) {
