@@ -149,6 +149,86 @@ public class EdtSelectiveReviewServiceTest {
 
 
     @Test
+    public void fullScopeIncludesAllRemoteAndLocalOnlyTopLevelOwners()
+            throws Exception {
+        Path local = Files.createTempDirectory("edt-full-local-");
+        Path remote = Files.createTempDirectory("edt-full-remote-");
+        try {
+            Files.createDirectories(local.resolve("src/Documents/Old"));
+            Files.writeString(local.resolve("src/Documents/Old/Old.mdo"), "old");
+            Files.createDirectories(local.resolve("src/Documents/Shared"));
+            Files.writeString(local.resolve("src/Documents/Shared/Shared.mdo"), "local");
+
+            Files.createDirectories(remote.resolve("src/Documents/Shared"));
+            Files.writeString(remote.resolve("src/Documents/Shared/Shared.mdo"), "remote");
+            Files.createDirectories(remote.resolve("src/Catalogs/New"));
+            Files.writeString(remote.resolve("src/Catalogs/New/New.mdo"), "new");
+            Files.createDirectories(remote.resolve("src/Configuration"));
+            Files.writeString(remote.resolve("src/Configuration/Configuration.mdo"), "root");
+            Files.createDirectories(remote.resolve(
+                "src/Documents/Shared/Forms/Extra"));
+            Files.writeString(remote.resolve(
+                "src/Documents/Shared/Forms/Extra/Extra.mdo"), "subordinate");
+            Files.writeString(remote.resolve(
+                "src/Documents/Shared/Forms/Extra/Form.form"), "form");
+
+            var full = EdtSelectiveReviewService.fullPrimaryScopes(local, remote);
+            var main = full.main().stream().map(Path::toString).toList();
+            var other = full.other().stream().map(Path::toString).toList();
+            org.junit.Assert.assertTrue(main.contains(
+                "src/Documents/Old/Old.mdo"));
+            org.junit.Assert.assertFalse(other.contains(
+                "src/Documents/Old/Old.mdo"));
+            org.junit.Assert.assertTrue(main.contains(
+                "src/Catalogs/New/New.mdo"));
+            org.junit.Assert.assertTrue(other.contains(
+                "src/Catalogs/New/New.mdo"));
+            org.junit.Assert.assertTrue(other.contains(
+                "src/Configuration/Configuration.mdo"));
+            org.junit.Assert.assertEquals(4, main.size());
+            org.junit.Assert.assertEquals(3, other.size());
+            org.junit.Assert.assertFalse(main.contains(
+                "src/Documents/Shared/Forms/Extra/Extra.mdo"));
+        } finally {
+            try (var files = Files.walk(local)) {
+                for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(file);
+                }
+            }
+            try (var files = Files.walk(remote)) {
+                for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(file);
+                }
+            }
+        }
+    }
+
+    @Test
+    public void fullScopeRefusesAbsentRemoteConfigurationInsteadOfFakingSuccess()
+            throws Exception {
+        Path local = Files.createTempDirectory("edt-full-local-");
+        Path remote = Files.createTempDirectory("edt-full-remote-");
+        try {
+            Files.createDirectories(local.resolve("src/Documents/Only"));
+            Files.writeString(local.resolve("src/Documents/Only/Only.mdo"), "local");
+            Files.createDirectories(remote.resolve("src"));
+            assertThrows(IOException.class,
+                () -> EdtSelectiveReviewService.fullPrimaryScopes(local, remote));
+        } finally {
+            try (var paths = Files.walk(local)) {
+                for (Path item : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(item);
+                }
+            }
+            try (var paths = Files.walk(remote)) {
+                for (Path item : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(item);
+                }
+            }
+        }
+    }
+
+    @Test
     public void realPayrollConfigurationTypesMapToNativeEdtFolders() throws Exception {
         assertEquals("SettingsStorages/НастройкиПользователей",
             EdtSelectiveReviewService.edtOwner(
