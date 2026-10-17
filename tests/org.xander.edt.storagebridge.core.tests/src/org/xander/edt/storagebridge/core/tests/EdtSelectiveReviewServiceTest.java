@@ -6,6 +6,8 @@ import static org.junit.Assert.assertThrows;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.util.List;
 import org.junit.Test;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 
@@ -37,6 +39,46 @@ public class EdtSelectiveReviewServiceTest {
             EdtSelectiveReviewService.edtOwner("Язык.Русский"));
         assertThrows(IOException.class,
             () -> EdtSelectiveReviewService.edtOwner("Language"));
+    }
+
+    @Test
+    public void embeddedLanguagesMustReallyExistInConvertedRoot() throws Exception {
+        Path root = Files.createTempDirectory("edt-language-check-");
+        try {
+            Path folder = Files.createDirectories(root.resolve("src/Configuration"));
+            Path mdo = folder.resolve("Configuration.mdo");
+            Files.writeString(mdo, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <mdclass:Configuration xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass">
+                  <name>Payroll</name>
+                  <languages uuid="1"><name>Русский</name><languageCode>ru</languageCode></languages>
+                  <languages uuid="2"><name>English</name><languageCode>en</languageCode></languages>
+                </mdclass:Configuration>
+                """);
+            EdtSelectiveReviewService.requireEmbeddedLanguages(root, List.of(
+                "Language.Русский", "Language.English"));
+            var missing = assertThrows(
+                EdtSelectiveReviewService.MissingEmbeddedLanguagesException.class,
+                () -> EdtSelectiveReviewService.requireEmbeddedLanguages(
+                    root, List.of("Language.Русский", "Language.French")));
+            assertEquals(1, missing.missingCount());
+            org.junit.Assert.assertFalse(missing.getMessage().contains("French"));
+            Files.writeString(mdo, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE x [<!ENTITY external SYSTEM "file:///unavailable">]>
+                <mdclass:Configuration xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass">
+                    <languages><name>&external;</name></languages>
+                </mdclass:Configuration>
+                """);
+            assertThrows(IOException.class, () ->
+                EdtSelectiveReviewService.requireEmbeddedLanguages(
+                    root, List.of("Language.Русский")));
+        } finally {
+            Files.deleteIfExists(root.resolve("src/Configuration/Configuration.mdo"));
+            Files.deleteIfExists(root.resolve("src/Configuration"));
+            Files.deleteIfExists(root.resolve("src"));
+            Files.deleteIfExists(root);
+        }
     }
 
     @Test
