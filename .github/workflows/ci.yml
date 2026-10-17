@@ -55,6 +55,42 @@ jobs:
           echo "Tycho OSGi build qualifier: $qualifier"
           mvn -B -ntp "-DforceContextQualifier=$qualifier" clean verify
 
+      - name: Normalize and verify offline p2 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(repository/org.xander.edt.storagebridge.p2/target/*.zip)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected one p2 archive, found ${#archives[@]}"
+            exit 1
+          fi
+          python3 .github/scripts/prepare-p2-site.py \
+            repository/org.xander.edt.storagebridge.p2/target/repository \
+            "${archives[0]}"
+
+      - name: Smoke-test offline ZIP with native Eclipse p2 Director
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(repository/org.xander.edt.storagebridge.p2/target/*.zip)
+          archive="$(realpath "${archives[0]}")"
+          repo="jar:file:${archive}!/"
+          # Install the self-contained core bundle into a disposable folder.
+          # This exercises actual p2 artifact retrieval from the ZIP.
+          mvn -B -ntp \
+            -f repository/org.xander.edt.storagebridge.p2/pom.xml \
+            org.eclipse.tycho:tycho-p2-director-plugin:5.0.2:director \
+            "-Drepositories=${repo}" \
+            "-DinstallIUs=org.xander.edt.storagebridge.core" \
+            "-Ddestination=${RUNNER_TEMP}/bridge-p2-install-test" \
+            "-Dshared=${RUNNER_TEMP}/bridge-p2-isolated-pool" \
+            "-Dprofile=BridgeP2Smoke"
+          test -n "$(find "${RUNNER_TEMP}/bridge-p2-install-test" \
+            -name 'org.xander.edt.storagebridge.core_*.jar' -print -quit)"
+          echo "p2 Director installed the bridge core from offline ZIP."
+
       - name: Validate p2 update-site contents
         shell: bash
         run: |
