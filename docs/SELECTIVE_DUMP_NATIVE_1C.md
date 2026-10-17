@@ -132,3 +132,46 @@ This repairs the known mapping omission only. Other failures (missing
 EDT descriptors after conversion, root XML awaiting treatment,
 revision verification or actual merge conflicts) remain unproven until
 an explicitly authorized manual build and actual EDT verification.
+
+
+## 2026-10-17 19:18 — fourth runtime failure: embedded EDT language
+
+EDT Error Log: `EdtSelectiveReviewService.exactScope:404` threw
+`MissingConvertedOwnersException` after the first full XML import:
+6,115 expected owners, 6,114 recognized primary `.mdo` descriptors,
+6,114 matched owners; only `Languages=1` was reported missing.
+This is a failure of **our descriptor-to-object mapping**, not proof that
+`IImportService` failed to import the other 6,114 objects.
+
+**Format evidence**: a normal EDT project stores language definitions as
+repeated direct `<languages>...<name>...</name>...</languages>` children
+of `src/Configuration/Configuration.mdo` instead of standalone
+`src/Languages/<name>.mdo` files. See real configuration examples:
+- https://github.com/1cwa/OneCWebFramework/blob/master/WF/src/Configuration/Configuration.mdo
+- https://github.com/1C-Company/GitConverter/blob/master/GitConverter.%D0%92%D0%B5%D1%80%D1%81%D0%B8%D0%B8%D0%9F%D0%BB%D0%B0%D1%82%D1%84%D0%BE%D1%80%D0%BC%D1%8B%D0%A5%D1%80%D0%B0%D0%BD%D0%B8%D0%BB%D0%B8%D1%89%D0%B0/src/Configuration/Configuration.mdo
+
+Corrections made on feature/edt-2026.2-integration (source only):
+
+1. `edtOwner("Language.<name>")` now returns the real
+   `Configuration/Configuration` EDT owner.
+2. During the initial **full** XML review, even if only a language marker
+   triggers root scope, `Configuration` is included in the native EDT compare
+   scope; original `Language.*` pending identities stay attached to it.
+3. During later **selective** updates, `Language.*` and `Language` are
+   deferred (like `Configuration.*`): they **must not** be sent to native
+   `-listFile` as separate owners or marked applied without root comparison.
+   Other object changes continue to be exported selectively.
+4. The importer output now receives an extra secure XML inspection of
+   `Configuration.mdo`: each explicitly selected named language must
+   be inside a direct `<languages><name>...` entry. Missing entries
+   throw a sanitized `MissingEmbeddedLanguagesException`, preserving
+   pending changes and blocking the compare. The validator rejects DTDs.
+5. The existing post-merge full root tree equality remains the only criterion
+   for clearing initial `Language.*` pending entries: accepting unrelated
+   objects never clears them.
+
+No CI build, deployed plugin or live EDT verification was performed in
+this update. Until EDT 2026.2 compiles/installs it and the first native compare
+actually opens, the end-to-end receiving path remains **unproven**. The
+root-level selective merge, revision proof, deletion handling and three-way
+conflict recognition are still outstanding.
