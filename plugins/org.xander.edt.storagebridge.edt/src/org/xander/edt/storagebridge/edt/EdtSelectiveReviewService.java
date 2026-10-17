@@ -180,7 +180,17 @@ public final class EdtSelectiveReviewService {
         } catch (Exception ex) {
             throw new IOException("No EDT XML importer for this project's 1C version", ex);
         }
-        IStatus status = importer.work(project, xml, target, monitor);
+        IStatus status;
+        // In a selective object dump, the top-level Ext directory belongs
+        // to Configuration, NOT to the requested Catalogs/Documents/etc.
+        // EDT 2026.2 attempts to import these special root resources and
+        // fails resolving their path for the detached target folder.
+        // Park them OUTSIDE the importer input only while converting other
+        // objects. The original XML is restored on every exit path.
+        try (var ignored = EdtRootXmlGuard.hideUnselectedRootExt(
+                xml, explicitlySelectedObjects)) {
+            status = importer.work(project, xml, target, monitor);
+        }
         if (status == null || !status.isOK() || monitor.isCanceled()) {
             throw new IOException("Selective external EDT conversion failed");
         }

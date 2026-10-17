@@ -13,9 +13,26 @@ public final class SelectiveDumpPlannerTest {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Configuration", "Document.Doc1", "Report.Form14",
             "Configuration.Main.SessionModule"));
-        assertEquals(List.of("Document.Doc1", "Report.Form14",
-            "Configuration.Main.SessionModule"), plan.exportable());
-        assertEquals(List.of("Configuration"), plan.deferred());
+        assertEquals(List.of("Document.Doc1", "Report.Form14"),
+            plan.exportable());
+        assertEquals(List.of("Configuration",
+            "Configuration.Main.SessionModule"), plan.deferred());
+    }
+
+    @Test
+    public void configurationExtensionFilesCannotBeSilentlyTreatedAsReceived() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Configuration.Payroll.HomePageWorkArea",
+            "Configuration.Payroll.ClientApplicationInterface",
+            "Configuration.Payroll.ManagedApplicationModule",
+            "Catalog.Products", "Document.Order.Form.Main"));
+        assertEquals(List.of("Catalog.Products", "Document.Order.Form.Main"),
+            plan.exportable());
+        assertEquals(List.of(
+            "Configuration.Payroll.HomePageWorkArea",
+            "Configuration.Payroll.ClientApplicationInterface",
+            "Configuration.Payroll.ManagedApplicationModule"),
+            plan.deferred());
     }
 
     @Test

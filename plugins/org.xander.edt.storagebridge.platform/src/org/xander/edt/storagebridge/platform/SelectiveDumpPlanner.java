@@ -10,6 +10,8 @@ import java.util.Objects;
  * but is not guaranteed to be a valid exported metadata/property name.
  * Do not lose its pending change: defer it for a verified root-name mapping.
  * Embedded commands are exported with their owning object, not separately.
+ * Configuration-root changes are kept pending: EDT 2026.2 cannot reliably
+ * convert their special Ext resources outside a complete project context.
  */
 public final class SelectiveDumpPlanner {
     private SelectiveDumpPlanner() {}
@@ -29,10 +31,15 @@ public final class SelectiveDumpPlanner {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("Invalid metadata object");
             }
-            if ("Configuration".equals(name) || "Language".equals(name)) {
-                // "Configuration" alone was rejected by some Designer builds.
-                // Mapping it to Configuration.Help or another unrelated item
-                // would silently claim receipt of the wrong content.
+            if ("Configuration".equals(name)
+                    || name.startsWith("Configuration.")
+                    || "Language".equals(name)) {
+                // Root ConfigDumpInfo entries cannot safely be converted to
+                // isolated EDT resources with the existing partial importer:
+                // its Ext/HomePageWorkArea.xml and
+                // Ext/ClientApplicationInterface.xml fail with null paths.
+                // Never silently mark configuration-root changes as applied.
+                // Keep them pending until a verified conversion exists.
                 deferred.add(name);
             } else {
                 // 1C Designer rejects Catalog.X.Command.Y as an individual
