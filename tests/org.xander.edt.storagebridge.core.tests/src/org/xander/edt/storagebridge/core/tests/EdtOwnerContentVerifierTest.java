@@ -113,6 +113,7 @@ public final class EdtOwnerContentVerifierTest {
             remove(project.resolve("src/Documents/Old"));
             assertTrue(EdtOwnerContentVerifier.isTopLevelDeletionApplied(
                 project, stage, "Documents/Old"));
+            Files.createDirectories(stage.resolve("src/Documents"));
             Files.writeString(stage.resolve("src/Documents/Old.mdo"), "incoming");
             assertFalse(EdtOwnerContentVerifier.isTopLevelDeletionApplied(
                 project, stage, "Documents/Old"));
