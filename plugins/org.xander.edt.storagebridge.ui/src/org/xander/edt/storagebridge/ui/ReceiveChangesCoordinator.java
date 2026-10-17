@@ -279,6 +279,23 @@ public final class ReceiveChangesCoordinator {
             });
             GitReceiveGuard.requireUnchanged(project, git);
 
+            // Selection in this dialog means "show in comparison", NOT
+            // "safe to accept remotely". Native EDT two-way comparison
+            // automatically prechecks differences for taking the other side.
+            // Force a separate, explicit acknowledgement before opening it.
+            if (!MessageDialog.openConfirm(shell,
+                    "Проверка перед объединением EDT",
+                    "Подготовлено объектов для сравнения: "
+                    + selected.size() + ".\\n"
+                    + "Это ДВУСТОРОННЕЕ сравнение, общий предок Git/хранилища "
+                    + "не установлен. В EDT отличия второго источника могут "
+                    + "быть отмечены для переноса ПО УМОЛЧАНИЮ. "
+                    + "Не нажимайте «Объединить», пока не проверите каждый "
+                    + "флажок, особенно у объектов с вашими коммитами. "
+                    + "Подготовленные изменения останутся в журнале при отмене. "
+                    + "Открыть редактор сравнения?")) {
+                return;
+            }
             var editorService = BridgeActivator.getDefault().getInjector()
                 .getInstance(EdtDeltaComparisonService.class);
             phase.set("Открытие редактора сравнения EDT");
