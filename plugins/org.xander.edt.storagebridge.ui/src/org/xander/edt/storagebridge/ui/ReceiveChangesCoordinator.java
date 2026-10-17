@@ -616,21 +616,19 @@ public final class ReceiveChangesCoordinator {
                                     try {
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
-                                        VerifiedReceiveContent.clearMatchingSelected(
+                                        var verified = VerifiedReceiveContent.verifyAndClear(
                                             project, settings.address(), branch,
                                             intermediaryIdentity, selected,
                                             selectedPendingNames,
                                             retainedConverted.resolve("edt"));
-                                        // Partial acceptance never advances a
-                                        // repository-wide "fully applied" version.
-                                        if (ReceivePendingStore.get(
-                                                project, settings.address(), branch,
-                                                intermediaryIdentity).isEmpty()
+                                        // A selected checkbox or closing the
+                                        // native editor NEVER certifies a merge.
+                                        // Partial, rejected or unresolved objects
+                                        // cannot advance the global checkpoint.
+                                        long fullyApplied = ReceiveRevisionStore.UNKNOWN;
+                                        String reason = null;
+                                        if (verified.remainingPending() == 0
                                                 && revisionForReview.get() > 0) {
-                                            // Repository must not change while
-                                            // user works in the compare editor.
-                                            // Otherwise this staging cannot
-                                            // substantiate the new HEAD revision.
                                             long latestNow = readLatestRevisionOrUnknown(
                                                 executable, transport, settings,
                                                 monitor::isCanceled);
@@ -644,17 +642,64 @@ public final class ReceiveChangesCoordinator {
                                                     project, settings.address(),
                                                     intermediaryIdentity, branch,
                                                     latestNow);
+                                                fullyApplied = latestNow;
+                                            } else {
+                                                reason = "Версию хранилища не удалось "
+                                                    + "повторно подтвердить или она изменилась.";
+                                            }
+                                        } else if (verified.remainingPending() == 0) {
+                                            reason = "Номер ревизии до и после обновления "
+                                                + "не был подтверждён по отчёту 1С.";
+                                        }
+                                        StringBuilder report = new StringBuilder(
+                                            "Проверено владельцев объектов: ")
+                                            .append(verified.checkedOwners())
+                                            .append(".\nПолностью совпали с источником: ")
+                                            .append(verified.identicalOwners())
+                                            .append(".\nСнято записей ожидания: ")
+                                            .append(verified.confirmedPending())
+                                            .append(".\nОсталось ожидающих записей: ")
+                                            .append(verified.remainingPending()).append(".");
+                                        if (verified.diagnosticFile() != null) {
+                                            report.append("\nПодробности несовпадений: ")
+                                                .append(verified.diagnosticFile())
+                                                .append("\nФайл может содержать имена "
+                                                    + "объектов, проверьте перед отправкой.");
+                                        }
+                                        if (fullyApplied > 0) {
+                                            report.append("\nПолностью применённая "
+                                                + "версия EDT: ").append(fullyApplied);
+                                        } else {
+                                            report.append("\nПолностью применённая "
+                                                + "версия НЕ повышена.");
+                                            if (reason != null) {
+                                                report.append("\nПричина: ").append(reason);
+                                            } else if (verified.remainingPending() > 0) {
+                                                report.append("\nПричина: объекты не "
+                                                    + "прошли проверку точного совпадения "
+                                                    + "после EDT Merge.");
                                             }
                                         }
+                                        informationOnUi(shell, "Итог объединения EDT",
+                                            report.toString());
                                         return Status.OK_STATUS;
                                     } catch (Exception ex) {
                                         BridgeActivator.getDefault().getLog().warn(
-                                            "Partial receive verification failed; "
-                                            + "unresolved objects remain pending.");
+                                            "Post-merge verification failed ("
+                                            + ex.getClass().getSimpleName()
+                                            + "); unresolved objects remain pending.");
+                                        informationOnUi(shell, "Проверка объединения EDT",
+                                            "После закрытия редактора не удалось "
+                                            + "завершить проверку принятых объектов. "
+                                            + "Версия хранилища не повышена, "
+                                            + "неподтверждённые изменения остаются "
+                                            + "в журнале. Тип ошибки: "
+                                            + ex.getClass().getSimpleName()
+                                            + ". Подробности в журнале ошибок EDT.");
                                         return new Status(IStatus.WARNING,
                                             "org.xander.edt.storagebridge.ui",
-                                            "Не все изменения подтверждены; "
-                                            + "ожидающие объекты сохранены.");
+                                            "Подтверждение объединения EDT не завершено; "
+                                            + "состояние хранилища не считается применённым.");
                                     } finally {
                                         cleanupQuietly(
                                             retainedExport, retainedConverted);
