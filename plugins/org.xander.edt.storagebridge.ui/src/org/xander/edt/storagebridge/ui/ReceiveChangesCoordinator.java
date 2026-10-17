@@ -34,6 +34,7 @@ import org.eclipse.ui.dialogs.ListSelectionDialog;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
+import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
@@ -300,9 +301,7 @@ public final class ReceiveChangesCoordinator {
             phase.set("Конвертация объектов и подготовка сравнения EDT");
             var nativeDescriptor = progress(jobProgress, 25, monitor -> {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
-                var service = BridgeActivator.getDefault().getInjector()
-                    .getInstance(EdtSelectiveReviewService.class);
-                var descriptor = service.prepare(project,
+                var descriptor = EdtPublicServiceBridge.prepare(project,
                     selectedExport.xmlDirectory(), converted, selectedList, monitor);
                 monitor.worked(1);
                 return descriptor;
@@ -331,10 +330,8 @@ public final class ReceiveChangesCoordinator {
             final Path retainedConverted = conversionRoot;
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             uiCall(shell, parent -> {
-                    var editorService = BridgeActivator.getDefault().getInjector()
-                    .getInstance(EdtDeltaComparisonService.class);
                 phase.set("Открытие редактора сравнения EDT");
-                    IEditorPart editor = editorService.openEditor(nativeDescriptor);
+                IEditorPart editor = EdtPublicServiceBridge.openEditor(nativeDescriptor);
                 if (editor == null || editor.getSite() == null
                         || editor.getSite().getPage() == null) {
                     throw new IOException("EDT comparison editor failed to initialize");
