@@ -9,3 +9,4 @@ Require-Bundle: org.xander.edt.storagebridge.core,
  org.xander.edt.storagebridge.edt,
  org.eclipse.core.runtime,
  org.junit
+Import-Package: com._1c.g5.v8.dt.compare.core
