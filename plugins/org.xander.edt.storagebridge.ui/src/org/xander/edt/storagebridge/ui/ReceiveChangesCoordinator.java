@@ -369,40 +369,24 @@ public final class ReceiveChangesCoordinator {
                     // Validate the current base metadata AFTER the native
                     // repository update and BEFORE advancing the durable
                     // completion marker or starting selective export.
-                    Set<String> verifiedInventory =
-                        ConfigDumpInfoIndex.exportableNames(remote.configDumpInfo());
+                    // Validate the full current inventory even on an incremental run.
+                    ConfigDumpInfoIndex.exportableNames(remote.configDumpInfo());
                     if (updateNeedsSnapshot.get()) {
                         journal.markUpdateCompleted();
                         updateNeedsSnapshot.set(false);
                     }
                     Path lastScanned = journal.lastScannedInfo();
-                    Set<String> remoteNames;
-                    if (lastScanned == null || mode == ReceiveMode.FULL_REVIEW) {
-                        phase.set(mode == ReceiveMode.FULL_REVIEW
+                    boolean selectAllRemote = fullReview || lastScanned == null;
+                    phase.set(selectAllRemote
+                        ? (mode == ReceiveMode.FULL_REVIEW
                             ? "Принудительная полная сверка со всем хранилищем"
-                            : "Первичная сверка со всем хранилищем");
-                        monitor.subTask(
-                            "Первая сверка: все объекты хранилища, не только последнее обновление базы");
-                        var manifest = verifiedInventory;
-                        // A version index does not contain the XML objects.
-                        // Only after explicit -listFile export can EDT compare.
-                        remoteNames = new LinkedHashSet<>(
-                            new ConfigurationChangesParser.ChangeSet(
-                                List.copyOf(manifest), List.of())
-                                .objectsToExport());
-                    } else {
-                        phase.set("Поиск изменений со времени предыдущей сверки EDT");
-                        monitor.subTask("Сравнение с сохранённой версией для EDT/Git-ветки");
-                        // Two immutable, project-scoped manifests; no second
-                        // Designer batch operation or intermediary-delta guess.
-                        // Refuse deleted/renamed metadata until native EDT
-                        // deletion merge is separately proven.
-                        Set<String> changed = ConfigDumpInfoIndex.changedSince(
-                            lastScanned, remote.configDumpInfo());
-                        remoteNames = new LinkedHashSet<>(
-                            new ConfigurationChangesParser.ChangeSet(
-                                List.copyOf(changed), List.of()).objectsToExport());
-                    }
+                            : "Первичная сверка со всем хранилищем")
+                        : "Поиск изменений со времени предыдущей сверки EDT");
+                    monitor.subTask(selectAllRemote
+                        ? "Проверка всех актуальных объектов хранилища"
+                        : "Поиск версий объектов, изменённых после предыдущего получения");
+                    Set<String> remoteNames = RemoteReceiveScopePlanner.candidates(
+                        lastScanned, remote.configDumpInfo(), selectAllRemote);
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
                         throw new InterruptedException(
@@ -441,7 +425,24 @@ public final class ReceiveChangesCoordinator {
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
-            if (pending.isEmpty() && !fullReview) {
+            Set<String> reviewCandidates = pending;
+            if (fullReview) {
+                // An old pending identity may refer to a deleted/renamed
+                // metadata object. It is not present in this full export:
+                // keep it pending, but do not require an impossible .mdo.
+                Set<String> currentInventory = ConfigDumpInfoIndex.exportableNames(
+                    journal.lastScannedInfo());
+                reviewCandidates = RemoteReceiveScopePlanner.availableInFullReview(
+                    pending, currentInventory);
+                if (reviewCandidates.size() < pending.size()) {
+                    informationOnUi(shell, "Полная сверка с хранилищем",
+                        "Найдено отсутствующих в текущем хранилище ожидающих "
+                        + "записей: " + (pending.size() - reviewCandidates.size())
+                        + ". Удаления/переименования сохраняются в журнале "
+                        + "и не будут автоматически применены в EDT.");
+                }
+            }
+            if (reviewCandidates.isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Новых и ожидающих изменений хранилища для этого проекта EDT "
                     + "не обнаружено. Полное соответствие EDT хранилищу "
@@ -452,7 +453,7 @@ public final class ReceiveChangesCoordinator {
             // Do not send bare Configuration/Language version-inventory
             // markers to Designer -listFile: affected 1C versions reject
             // these as non-object names. They remain pending, NOT applied.
-            var exportPlan = SelectiveDumpPlanner.plan(pending);
+            var exportPlan = SelectiveDumpPlanner.plan(reviewCandidates);
             if (exportPlan.exportable().isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Найдены только изменения корня конфигурации или языка. "
@@ -472,7 +473,7 @@ public final class ReceiveChangesCoordinator {
             // Preserve the ORIGINAL pending object names for verification.
             // A nested Command is exported through its owner, but is not
             // cleared until that owner's EDT contents have been verified.
-            Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
+            Set<String> selectedPendingNames = new LinkedHashSet<>(reviewCandidates);
             selectedPendingNames.removeAll(exportPlan.deferred());
             List<String> selectedList = new ArrayList<>(exportPlan.exportable());
             if (fullReview) {
@@ -482,12 +483,12 @@ public final class ReceiveChangesCoordinator {
                 // Languages/<name>.mdo descriptor. The FULL XML export can
                 // review this root; partial dumps defer it safely.
                 // "Configuration" is scope-only, never a -listFile entry.
-                if (pending.stream().anyMatch(
+                if (reviewCandidates.stream().anyMatch(
                         ReceiveChangesCoordinator::isConfigurationRootRecord)) {
                     if (!selectedList.contains("Configuration")) {
                         selectedList.add("Configuration");
                     }
-                    for (String name : pending) {
+                    for (String name : reviewCandidates) {
                         if (isConfigurationRootRecord(name)) {
                             selectedPendingNames.add(name);
                             // Full dump does not use -listFile. Include named
