@@ -205,9 +205,22 @@ public final class ReceiveChangesCoordinator {
             if (recovery && !resumePrepared) {
                 updateAttempted.set(true);
             }
-            boolean firstInventory = journal.lastScannedInfo() == null;
+            Path previousInventory = journal.lastScannedInfo();
+            boolean firstInventory = previousInventory == null;
+            // A failed selective dump has ALREADY persisted the remote
+            // changed-object list. Retrying it must not force another native
+            // repository update. Require a read-only intermediary version
+            // check before using those names against the existing 1C base.
+            boolean retryPendingOnly = !recovery && !firstInventory
+                && !ReceivePendingStore.get(project, settings.address(),
+                    branch, intermediaryIdentity).isEmpty()
+                && confirmOnUi(shell, "Повторная выгрузка уже найденных объектов",
+                    "Есть объекты хранилища, оставшиеся после предыдущего "
+                    + "получения. Повторить только их выборочную выгрузку "
+                    + "БЕЗ обновления базы-посредника? Сначала будет выполнена "
+                    + "проверка, что конфигурация базы не изменилась.");
             phase.set("Подтверждение получения из хранилища");
-            if ((!recovery || resumePrepared) && !confirmOnUi(shell,
+            if (!retryPendingOnly && (!recovery || resumePrepared) && !confirmOnUi(shell,
                     "Получить изменения из хранилища 1С",
                     "База-посредник: " + settings.infobaseAddress() + "\n"
                     + "Хранилище: " + settings.address() + "\n"
@@ -231,6 +244,25 @@ public final class ReceiveChangesCoordinator {
                 return;
             }
 
+            if (retryPendingOnly) {
+                progress(jobProgress, 45, monitor -> {
+                    phase.set("Проверка состояния базы перед повторной выгрузкой");
+                    monitor.beginTask("Сверка базы с последним снимком", 1);
+                    try (var snapshot = new ConfigVersionSnapshotRunner()
+                            .capture(detect, monitor::isCanceled)) {
+                        if (!ConfigDumpInfoIndex.readVersions(previousInventory)
+                                .equals(ConfigDumpInfoIndex.readVersions(
+                                    snapshot.configDumpInfo()))) {
+                            throw new IOException(
+                                "Конфигурация базы-посредника изменилась "
+                                + "после прошлого получения. Повторная "
+                                + "выгрузка прежних объектов заблокирована.");
+                        }
+                    }
+                    monitor.worked(1);
+                    return null;
+                });
+            } else {
             // The PRE-update ConfigDumpInfo belongs to the intermediary only.
             // It is NEVER the baseline of the current EDT project. The first
             // scan must inventory the entire remote configuration; later scans
@@ -332,6 +364,7 @@ public final class ReceiveChangesCoordinator {
                 }
                 return null;
             });
+            }
 
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
