@@ -54,6 +54,24 @@ public class ConfigurationChangesParserTest {
     }
 
     @Test
+    public void configurationAndTopLevelIndependentFilesKeepValidNames()
+            throws Exception {
+        var changes = ConfigurationChangesParser.parse(
+            "Modified: Configuration.Основная.SessionModule\\n"
+            + "Modified: CommonForm.ФормаП.Form\\n"
+            + "Modified: CommonTemplate.Бланк.Template\\n"
+            + "Modified: CommonPicture.Эмблема.Picture\\n"
+            + "Modified: Catalog.Товары.Command.Подбор.CommandModule\\n");
+        assertEquals(List.of(
+            "Configuration", "Configuration.Основная.SessionModule",
+            "CommonForm.ФормаП", "CommonForm.ФормаП.Form",
+            "CommonTemplate.Бланк", "CommonTemplate.Бланк.Template",
+            "CommonPicture.Эмблема", "CommonPicture.Эмблема.Picture",
+            "Catalog.Товары", "Catalog.Товары.Command.Подбор"
+        ), changes.objectsToExport());
+    }
+
+    @Test
     public void emptyResultMeansNoRemoteChanges() throws Exception {
         assertTrue(ConfigurationChangesParser.parse("").objectsToExport().isEmpty());
     }
