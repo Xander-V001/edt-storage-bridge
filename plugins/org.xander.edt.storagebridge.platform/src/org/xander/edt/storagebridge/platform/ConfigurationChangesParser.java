@@ -62,28 +62,31 @@ public final class ConfigurationChangesParser {
                 export.add(object);
                 return;
             }
-            // A parent dump omits separately developed children. In
-            // particular, an ObjectModule, Role.Rights or Form.FormName
-            // may change even when the parent metadata version does not.
-            // Entries below are independently versioned in ConfigDumpInfo.
-            if (parts.length >= 3) {
-                switch (parts[2]) {
+            // Preserve the native independent resources under the parent.
+            // Nested subsystem paths can be arbitrarily deep; truncating
+            // at the first child silently loses descendants' XML files.
+            StringBuilder ownerPath = new StringBuilder(root);
+            for (int index = 2; index < parts.length; index++) {
+                String segment = parts[index];
+                switch (segment) {
                     case "Form", "Форма", "Template", "Макет",
                          "Recalculation", "Перерасчет", "Subsystem",
                          "Подсистема" -> {
-                        if (parts.length >= 4) {
-                            export.add(root + "." + parts[2] + "." + parts[3]);
+                        if (index + 1 < parts.length) {
+                            ownerPath.append('.').append(segment)
+                                .append('.').append(parts[++index]);
+                            export.add(ownerPath.toString());
                         }
                     }
                     case "ManagerModule", "ObjectModule",
                          "RecordSetModule", "ValueManagerModule",
                          "Module", "CommandModule", "Rights", "Help",
                          "CommandInterface", "Picture", "ExtInfo" ->
-                        export.add(root + "." + parts[2]);
+                        export.add(ownerPath + "." + segment);
                     default -> {
-                        // Attributes, tabular sections, dimensions, and
-                        // embedded Commands belong to their owning object.
-                        // Designer rejects Catalog.X.Command.Y separately.
+                        // Attributes, Commands and other embedded properties
+                        // are serialized inside their enclosing metadata
+                        // owner, not individually supported by -listFile.
                     }
                 }
             }
