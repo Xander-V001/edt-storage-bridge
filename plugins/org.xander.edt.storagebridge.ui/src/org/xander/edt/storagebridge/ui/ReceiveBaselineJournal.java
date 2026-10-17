@@ -11,6 +11,7 @@ import java.util.HexFormat;
 import java.util.Objects;
 import org.eclipse.core.resources.IProject;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger;
+import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 
 /**
@@ -22,6 +23,7 @@ import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
  */
 public final class ReceiveBaselineJournal {
     private final Path baselineFile;
+    private final Path lastScannedFile;
     private final ReceiveAttemptLedger ledger;
     private final Path intermediaryFingerprintFile;
     private final String intermediaryFingerprint;
@@ -43,6 +45,7 @@ public final class ReceiveBaselineJournal {
             .getStateLocation().toFile().toPath().toAbsolutePath().normalize();
         Path folder = workspaceState.resolve("receive").resolve(digest(identity));
         this.baselineFile = folder.resolve("previous-ConfigDumpInfo.xml");
+        this.lastScannedFile = folder.resolve("last-scanned-ConfigDumpInfo.xml");
         this.ledger = new ReceiveAttemptLedger(folder);
         this.intermediaryFingerprintFile = folder.resolve("intermediary.sha256");
         this.intermediaryFingerprint = digest(intermediaryIdentity.trim());
@@ -79,10 +82,50 @@ public final class ReceiveBaselineJournal {
                     "База-посредник изменена относительно сохранённого "
                     + "получения. Для продолжения требуется ручная сверка.");
             }
-        } else if (Files.exists(baselineFile) || ledger.read() != Phase.NONE) {
+        } else if (Files.exists(baselineFile) || Files.exists(lastScannedFile)
+                || ledger.read() != Phase.NONE) {
             throw new IOException(
                 "Осталось получение прежней версии плагина без "
                 + "подтверждённой базы-посредника. Требуется ручная сверка.");
+        }
+    }
+
+    /**
+     * Last successfully INVENTORIED remote configuration, not the last
+     * fully applied EDT revision. The object-level pending journal is part of
+     * this checkpoint: omitted/rejected objects remain pending indefinitely.
+     */
+    public Path lastScannedInfo() throws IOException {
+        verifyIntermediary();
+        if (!Files.exists(lastScannedFile)) {
+            return null;
+        }
+        ConfigDumpInfoIndex.exportableNames(lastScannedFile);
+        return lastScannedFile;
+    }
+
+    /**
+     * Must run AFTER persisting every newly discovered remote object to the
+     * pending store. If the process crashes before this atomic replacement,
+     * the next scan may repeat objects but never loses any.
+     */
+    public void recordScannedInfo(Path currentInfo) throws IOException {
+        verifyIntermediary();
+        ConfigDumpInfoIndex.exportableNames(currentInfo);
+        Files.createDirectories(lastScannedFile.getParent());
+        Path partial = lastScannedFile.resolveSibling("last-scanned.part");
+        try {
+            Files.copy(currentInfo, partial, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(partial, lastScannedFile,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                Files.move(partial, lastScannedFile,
+                    StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(partial);
         }
     }
 
