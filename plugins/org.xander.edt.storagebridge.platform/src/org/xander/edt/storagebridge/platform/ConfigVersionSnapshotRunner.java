@@ -34,7 +34,11 @@ public final class ConfigVersionSnapshotRunner {
         command.add("DESIGNER");
         command.add(request.infobase().switchName());
         command.add(request.infobase().address());
+        DesignerInfobaseAuth.addTo(command,
+            request.infobaseUsername(), request.infobasePassword());
         command.add("/DisableStartupDialogs");
+        command.add("/DisableStartupMessages");
+        command.add("/DisableUnrecoverableErrorMessage");
         command.add("/DumpConfigToFiles");
         command.add(dumpDirectory.toString());
         command.add("-Format");
