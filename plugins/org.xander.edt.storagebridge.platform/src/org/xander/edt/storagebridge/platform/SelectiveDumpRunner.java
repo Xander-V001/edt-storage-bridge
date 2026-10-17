@@ -29,10 +29,11 @@ public final class SelectiveDumpRunner {
             throw new IOException("Export cancelled");
         }
         Path temporaryRoot = Files.createTempDirectory("edt-storage-selective-");
+        Path target = temporaryRoot.resolve("objects");
         boolean succeeded = false;
         boolean launched = false;
         try {
-            Path target = Files.createDirectory(temporaryRoot.resolve("objects"));
+            Files.createDirectory(target);
             Path list = temporaryRoot.resolve("objects.txt");
             Path log = temporaryRoot.resolve("designer.txt");
             Path output = temporaryRoot.resolve("stdout.txt");
