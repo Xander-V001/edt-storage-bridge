@@ -77,10 +77,14 @@ jobs:
           archives=(repository/org.xander.edt.storagebridge.p2/target/*.zip)
           archive="$(realpath "${archives[0]}")"
           repo="jar:file:${archive}!/"
-          # Install the self-contained core bundle into a disposable folder.
-          # This exercises actual p2 artifact retrieval from the ZIP.
+          # The standalone smoke POM intentionally has no Tycho parent or
+          # project target definition. Running the Director from the actual
+          # repository module fails before installing anything, because a
+          # separate Maven invocation cannot resolve edt-2026.2-target
+          # from the previous multi-module reactor (observed in CI #32).
+          # Here p2 must retrieve the actual ZIP payload independently.
           mvn -B -ntp \
-            -f repository/org.xander.edt.storagebridge.p2/pom.xml \
+            -f .github/p2-smoke/pom.xml \
             org.eclipse.tycho:tycho-p2-director-plugin:5.0.2:director \
             "-Drepositories=${repo}" \
             "-DinstallIUs=org.xander.edt.storagebridge.core" \
