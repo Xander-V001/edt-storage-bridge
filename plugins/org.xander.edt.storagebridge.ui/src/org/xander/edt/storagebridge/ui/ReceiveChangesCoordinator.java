@@ -651,7 +651,8 @@ public final class ReceiveChangesCoordinator {
                                                 ? EdtSelectiveReviewService.primaryDescriptors(
                                                     retainedConverted.resolve("edt")).keySet()
                                                 : Set.of(),
-                                            retainedConverted.resolve("edt"));
+                                            retainedConverted.resolve("edt"),
+                                            retainedExport.xmlDirectory());
                                         // Owner verification can take minutes
                                         // on a large project; reject a Git HEAD
                                         // or branch switch during the scan too.
