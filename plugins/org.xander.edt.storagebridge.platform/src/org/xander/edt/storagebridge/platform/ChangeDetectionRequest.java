@@ -9,11 +9,17 @@ import java.util.Objects;
  * No mutation, EDT project or Git checkout is involved.
  */
 public record ChangeDetectionRequest(Path executable, InfobaseLocation infobase,
-        Duration timeout) {
+        Duration timeout, String infobaseUsername, String infobasePassword) {
+    public ChangeDetectionRequest(Path executable, InfobaseLocation infobase,
+            Duration timeout) {
+        this(executable, infobase, timeout, "", "");
+    }
+
     public ChangeDetectionRequest {
         Objects.requireNonNull(executable, "executable");
         Objects.requireNonNull(infobase, "infobase");
         Objects.requireNonNull(timeout, "timeout");
+        DesignerInfobaseAuth.validate(infobaseUsername, infobasePassword);
         if (!executable.isAbsolute()) {
             throw new IllegalArgumentException("Absolute executable required");
         }
