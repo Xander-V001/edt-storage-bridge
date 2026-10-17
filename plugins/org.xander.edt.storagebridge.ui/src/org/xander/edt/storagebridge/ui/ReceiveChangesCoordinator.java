@@ -180,7 +180,7 @@ public final class ReceiveChangesCoordinator {
                 updateAttempted.set(true);
             }
             phase.set("Подтверждение получения из хранилища");
-            if (!recovery && !MessageDialog.openConfirm(shell,
+            if (!recovery && !confirmOnUi(shell,
                     "Получить изменения из хранилища 1С",
                     "База-посредник: " + settings.infobaseAddress() + "\n"
                     + "Хранилище: " + settings.address() + "\n"
@@ -248,7 +248,7 @@ public final class ReceiveChangesCoordinator {
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
             if (pending.isEmpty()) {
-                MessageDialog.openInformation(shell, "Работа с хранилищем",
+                informationOnUi(shell, "Работа с хранилищем",
                     "Изменений относительно сохранённого состояния базы-посредника "
                     + "не обнаружено. Это НЕ доказывает, что проект EDT соответствует "
                     + "хранилищу: если база-посредник уже была обновлена раньше, "
@@ -257,24 +257,12 @@ public final class ReceiveChangesCoordinator {
             }
             Set<String> candidateRoots = topObjects(new ArrayList<>(pending));
             phase.set("Выбор объектов для сравнения");
-            var choices = new ListSelectionDialog(shell,
-                candidateRoots.stream().sorted().toList(),
-                ArrayContentProvider.getInstance(),
-                new LabelProvider(),
-                "Выбери объекты для сравнения с EDT. "
-                + "Все объекты изначально не выбраны. "
-                + "Пропущенные остаются в списке следующего получения.");
-            choices.setTitle("Изменения из хранилища — выбор объектов");
-            choices.setInitialSelections(new Object[0]);
-            if (choices.open() != org.eclipse.jface.window.Window.OK) {
+            Set<String> selected = chooseObjectsOnUi(shell, candidateRoots);
+            if (selected == null) {
                 return;
             }
-            Set<String> selected = new LinkedHashSet<>();
-            for (Object object : choices.getResult()) {
-                selected.add((String) object);
-            }
             if (selected.isEmpty()) {
-                MessageDialog.openInformation(shell, "Работа с хранилищем",
+                informationOnUi(shell, "Работа с хранилищем",
                     "Ни один объект не выбран. Изменения сохранены для следующего раза.");
                 return;
             }
@@ -322,7 +310,7 @@ public final class ReceiveChangesCoordinator {
             // "safe to accept remotely". Native EDT two-way comparison
             // automatically prechecks differences for taking the other side.
             // Force a separate, explicit acknowledgement before opening it.
-            if (!MessageDialog.openConfirm(shell,
+            if (!confirmOnUi(shell,
                     "Проверка перед объединением EDT",
                     "Подготовлено объектов для сравнения: "
                     + selected.size() + ".\n"
@@ -335,10 +323,13 @@ public final class ReceiveChangesCoordinator {
                     + "Открыть редактор сравнения?")) {
                 return;
             }
-            var editorService = BridgeActivator.getDefault().getInjector()
+            // The native editor and its part listener MUST be created on
+            // SWT UI, never from the Eclipse background Job.
+            uiCall(shell, parent -> {
+                var editorService = BridgeActivator.getDefault().getInjector()
                 .getInstance(EdtDeltaComparisonService.class);
             phase.set("Открытие редактора сравнения EDT");
-            IEditorPart editor = editorService.openEditor(nativeDescriptor);
+                IEditorPart editor = editorService.openEditor(nativeDescriptor);
             if (editor == null || editor.getSite() == null
                     || editor.getSite().getPage() == null) {
                 throw new IOException("EDT comparison editor failed to initialize");
@@ -385,11 +376,14 @@ public final class ReceiveChangesCoordinator {
             };
             try {
                 page.addPartListener(listener);
-                editorOwnsStaging = true;
+                // Staging is now owned by the comparison editor listener.
             } catch (RuntimeException ex) {
                 page.closeEditor(editor, false);
                 throw ex;
             }
+                return null;
+            });
+            editorOwnsStaging = true;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logFailure(phase.get(), ex);
@@ -415,6 +409,109 @@ public final class ReceiveChangesCoordinator {
                 ACTIVE.remove(operationKey);
             }
         }
+    }
+
+    @FunctionalInterface
+    private interface UiAction<T> {
+        T run(Shell activeShell) throws Exception;
+    }
+
+    /**
+     * Only short interactive prompts and native editor manipulation run on
+     * SWT UI; external 1C processes and EDT XML conversion stay in a Job.
+     */
+    private static <T> T uiCall(Shell owner, UiAction<T> action)
+            throws Exception {
+        Display display = Display.getDefault();
+        if (display == null || display.isDisposed()) {
+            throw new IOException("EDT user interface has been closed");
+        }
+        AtomicReference<T> result = new AtomicReference<>();
+        AtomicReference<Exception> failure = new AtomicReference<>();
+        Runnable runnable = () -> {
+            try {
+                Shell active = liveShell(owner);
+                if (active == null) {
+                    throw new IOException("EDT main window is unavailable");
+                }
+                result.set(action.run(active));
+            } catch (Exception ex) {
+                failure.set(ex);
+            }
+        };
+        if (Display.getCurrent() == display) {
+            runnable.run();
+        } else {
+            display.syncExec(runnable);
+        }
+        if (failure.get() != null) {
+            throw failure.get();
+        }
+        return result.get();
+    }
+
+    private static Shell liveShell(Shell owner) {
+        if (owner != null && !owner.isDisposed()) {
+            return owner;
+        }
+        var window = org.eclipse.ui.PlatformUI.getWorkbench()
+            .getActiveWorkbenchWindow();
+        return window == null || window.getShell().isDisposed()
+            ? null : window.getShell();
+    }
+
+    private static boolean confirmOnUi(Shell shell, String title,
+            String message) throws Exception {
+        return uiCall(shell, active ->
+            MessageDialog.openConfirm(active, title, message));
+    }
+
+    /** Null means the user dismissed the selection dialog. */
+    private static Set<String> chooseObjectsOnUi(Shell shell,
+            Set<String> candidateRoots) throws Exception {
+        return uiCall(shell, active -> {
+            var choices = new ListSelectionDialog(active,
+                candidateRoots.stream().sorted().toList(),
+                ArrayContentProvider.getInstance(),
+                new LabelProvider(),
+                "Выбери объекты для сравнения с EDT. "
+                + "Все объекты изначально не выбраны. "
+                + "Пропущенные остаются в списке следующего получения.");
+            choices.setTitle("Изменения из хранилища — выбор объектов");
+            choices.setInitialSelections(new Object[0]);
+            if (choices.open() != org.eclipse.jface.window.Window.OK) {
+                return null;
+            }
+            Set<String> selected = new LinkedHashSet<>();
+            for (Object object : choices.getResult()) {
+                selected.add((String) object);
+            }
+            return selected;
+        });
+    }
+
+    /** Non-blocking completion/error notice; never manipulates SWT from a Job. */
+    private static void informationOnUi(Shell shell, String title,
+            String message) {
+        notifyOnUi(shell, title, message, false);
+    }
+
+    private static void notifyOnUi(Shell shell, String title, String message,
+            boolean error) {
+        Display display = Display.getDefault();
+        if (display == null || display.isDisposed()) {
+            return;
+        }
+        display.asyncExec(() -> {
+            Shell active = liveShell(shell);
+            if (active != null) {
+                if (error) {
+                    MessageDialog.openError(active, title, message);
+                } else {
+                    MessageDialog.openInformation(active, title, message);
+                }
+            }
+        });
     }
 
     /**
