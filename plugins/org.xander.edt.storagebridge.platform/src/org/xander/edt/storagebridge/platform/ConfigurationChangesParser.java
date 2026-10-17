@@ -46,14 +46,29 @@ public final class ConfigurationChangesParser {
             String root = topObject(object);
             export.add(root);
             String[] parts = object.split("\\.");
-            if (parts.length >= 4
-                    && ("Form".equals(parts[2]) || "Форма".equals(parts[2])
-                        || "Template".equals(parts[2]) || "Макет".equals(parts[2])
-                        || "Recalculation".equals(parts[2])
-                        || "Перерасчет".equals(parts[2])
-                        || "Subsystem".equals(parts[2])
-                        || "Подсистема".equals(parts[2]))) {
-                export.add(root + "." + parts[2] + "." + parts[3]);
+            // A parent dump omits separately developed children. In
+            // particular, an ObjectModule, Role.Rights or Form.FormName
+            // may change even when the parent metadata version does not.
+            // Entries below are independently versioned in ConfigDumpInfo.
+            if (parts.length >= 3) {
+                switch (parts[2]) {
+                    case "Form", "Форма", "Template", "Макет",
+                         "Recalculation", "Перерасчет", "Subsystem",
+                         "Подсистема" -> {
+                        if (parts.length >= 4) {
+                            export.add(root + "." + parts[2] + "." + parts[3]);
+                        }
+                    }
+                    case "ManagerModule", "ObjectModule",
+                         "RecordSetModule", "ValueManagerModule",
+                         "Module", "CommandModule", "Rights", "Help",
+                         "CommandInterface", "Picture", "ExtInfo" ->
+                        export.add(root + "." + parts[2]);
+                    default -> {
+                        // Attributes, tabular sections and dimensions are
+                        // covered by their owning metadata object.
+                    }
+                }
             }
         }
     }
