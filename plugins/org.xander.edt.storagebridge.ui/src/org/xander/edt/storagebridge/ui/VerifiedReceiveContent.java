@@ -79,6 +79,14 @@ public final class VerifiedReceiveContent {
         // in ConfigDumpInfo.xml. Selective mode stays limited to its actual
         // selected owners; imported dependencies cannot widen acceptance.
         Set<String> owners = new LinkedHashSet<>(fullImportedOwners);
+        if (!fullImportedOwners.isEmpty()) {
+            // Global native comparison includes local-only owners as well.
+            // If the user leaves such a local object in EDT, do NOT claim a
+            // byte-identical mirror or advance the entire storage revision.
+            // This detects unmatched additions/deletions in EITHER direction.
+            owners.addAll(EdtSelectiveReviewService
+                .primaryDescriptors(projectRoot).keySet());
+        }
         for (String root : selectedRoots) {
             owners.add(EdtSelectiveReviewService.edtOwner(root));
         }
