@@ -14,6 +14,33 @@ import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 /** Exercise the same owner mapping that the native EDT comparison scope uses. */
 public class EdtSelectiveReviewServiceTest {
     @Test
+    public void nativeImportFailureKeepsRealStatusInLocalDiagnosticOnly()
+            throws Exception {
+        var status = new org.eclipse.core.runtime.MultiStatus("edt-native", 77,
+            "Native importer failed", null);
+        status.add(new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.ERROR, "edt-native-child", 43,
+            "Some temporary XML resource could not be imported", null));
+        var failed = EdtSelectiveReviewService.NativeEdtImportFailure.from(
+            status, false);
+        assertEquals(org.eclipse.core.runtime.IStatus.ERROR, failed.severity());
+        assertEquals(77, failed.code());
+        assertEquals(1, failed.descendants());
+        org.junit.Assert.assertFalse(failed.fullReview());
+        Path report = failed.diagnosticsFile();
+        org.junit.Assert.assertNotNull(report);
+        try {
+            String text = Files.readString(report);
+            org.junit.Assert.assertTrue(text.contains("edt-native-child"));
+            org.junit.Assert.assertTrue(text.contains("43"));
+            org.junit.Assert.assertFalse(failed.getMessage().contains(
+                "temporary XML resource"));
+        } finally {
+            Files.deleteIfExists(report);
+        }
+    }
+
+    @Test
     public void configurationRootAndItsSeparatelyVersionedModulesHaveOneEdtOwner()
             throws Exception {
         assertEquals("Configuration/Configuration",
