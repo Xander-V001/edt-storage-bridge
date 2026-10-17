@@ -29,6 +29,7 @@ import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
+import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
@@ -641,23 +642,45 @@ public final class ReceiveChangesCoordinator {
                                                 && verified.identicalOwners()
                                                     == verified.checkedOwners()
                                                 && revisionForReview.get() > 0) {
-                                            long latestNow = readLatestRevisionOrUnknown(
-                                                executable, transport, settings,
-                                                monitor::isCanceled);
-                                            if (latestNow > 0) {
+                                            var attestation = RepositoryHeadAttestation
+                                                .confirm(revisionForReview.get(),
+                                                    () -> readLatestRevisionOrUnknown(
+                                                        executable, transport, settings,
+                                                        monitor::isCanceled),
+                                                    monitor::isCanceled, Thread::sleep);
+                                            if (attestation.observed() > 0) {
                                                 ReceiveRevisionStore.recordObserved(
                                                     project, settings.address(),
-                                                    intermediaryIdentity, latestNow);
+                                                    intermediaryIdentity,
+                                                    attestation.observed());
                                             }
-                                            if (latestNow == revisionForReview.get()) {
-                                                ReceiveRevisionStore.recordApplied(
-                                                    project, settings.address(),
-                                                    intermediaryIdentity, branch,
-                                                    latestNow);
-                                                fullyApplied = latestNow;
-                                            } else {
-                                                reason = "Версию хранилища не удалось "
-                                                    + "повторно подтвердить или она изменилась.";
+                                            switch (attestation.state()) {
+                                                case CONFIRMED -> {
+                                                    ReceiveRevisionStore.recordApplied(
+                                                        project, settings.address(),
+                                                        intermediaryIdentity, branch,
+                                                        attestation.observed());
+                                                    fullyApplied = attestation.observed();
+                                                }
+                                                case CHANGED -> reason =
+                                                    "Хранилище изменилось после подготовки "
+                                                    + "сравнения: ожидаемая версия "
+                                                    + revisionForReview.get()
+                                                    + ", актуальная "
+                                                    + attestation.observed()
+                                                    + ". Повышение версии запрещено.";
+                                                case UNAVAILABLE -> reason =
+                                                    "После " + attestation.attempts()
+                                                    + " попыток не удалось получить "
+                                                    + "штатный TXT-отчёт с номером версии "
+                                                    + "хранилища. Объекты совпали, но "
+                                                    + "подтверждение ревизии не завершено. "
+                                                    + "Ожидалась версия "
+                                                    + revisionForReview.get() + ".";
+                                                case CANCELLED -> reason =
+                                                    "Проверка номера версии была отменена. "
+                                                    + "Принятые объекты сохранены, "
+                                                    + "подтверждение ревизии не завершено.";
                                             }
                                         } else if (verified.remainingPending() == 0
                                                 && verified.identicalOwners()
