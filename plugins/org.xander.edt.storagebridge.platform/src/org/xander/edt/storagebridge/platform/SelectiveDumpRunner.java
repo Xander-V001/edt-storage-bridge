@@ -15,8 +15,9 @@ import java.util.stream.Stream;
  * Non-mutating selective transport for changes from a SINGLE pre-existing
  * classical-repository-connected IB. Never accesses EDT-connected infobases.
  *
- * Selective export never falls back to full export.
- * The separate explicit full operation is ONLY for first-time review.
+ * Selective export never silently falls back to full export.
+ * Full export is used for the initial comparison and explicitly requested
+ * repeat full reviews. Both require the same user's confirmation in the UI.
  */
 public final class SelectiveDumpRunner {
 
@@ -25,7 +26,7 @@ public final class SelectiveDumpRunner {
         return exportInternal(request, cancelled);
     }
 
-    /** One-time initial review; never a fallback after selective failure. */
+    /** Explicit full XML source dump; never a hidden selective fallback. */
     public ExportResult exportInitialFull(InitialFullDumpRequest request,
             BooleanSupplier cancelled) throws IOException, InterruptedException {
         return exportInternal(request, cancelled);
