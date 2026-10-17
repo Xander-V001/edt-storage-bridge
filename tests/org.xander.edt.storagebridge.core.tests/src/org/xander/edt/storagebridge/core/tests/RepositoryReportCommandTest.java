@@ -193,7 +193,7 @@ public class RepositoryReportCommandTest {
     }
 
     @Test
-    public void malformedOrSpoofedReportNeverSetsRevision() {
+    public void malformedOrSpoofedReportNeverSetsRevision() throws Exception {
         assertThrows(java.io.IOException.class, () ->
             RepositoryLatestRevisionReader.parseLatest(
                 "Версия:\t29404\nКомментарий:\n// тестовые изменения"));
