@@ -12,11 +12,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 /**
- * Controlled Designer batch runner, not yet connected to any EDT UI action.
+ * Controlled read-only Designer report runner.
  *
- * <p>Runs ONLY /ConfigurationRepositoryReport. Never passes repository or
- * infobase passwords. No shell. Temporary reports and diagnostics are removed
- * after use; stdout/stderr redirect to files to prevent pipe deadlocks.
+ * <p>Runs ONLY /ConfigurationRepositoryReport. Optional infobase credentials
+ * are supplied via /N and /P just like the existing Designer update runner;
+ * repository credentials are never needed here. No shell or mutation.
+ * Temporary reports and diagnostics are removed after exit.
  */
 public final class ReadOnlyReportRunner {
 
@@ -26,8 +27,15 @@ public final class ReadOnlyReportRunner {
 
     public RepositoryHistoryReport readHistory(RepositoryHistoryRequest request,
             BooleanSupplier cancelled) throws IOException, InterruptedException {
+        return readHistory(request, cancelled, "", "");
+    }
+
+    public RepositoryHistoryReport readHistory(RepositoryHistoryRequest request,
+            BooleanSupplier cancelled, String ibUsername, String ibPassword)
+            throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(cancelled, "cancelled");
+        DesignerInfobaseAuth.validate(ibUsername, ibPassword);
         Path executable = request.executable();
         if (!Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS)) {
             throw new ReportExecutionException(
@@ -52,7 +60,14 @@ public final class ReadOnlyReportRunner {
             Path log = work.resolve("designer.txt");
             Path stdout = work.resolve("stdout.txt");
             Path stderr = work.resolve("stderr.txt");
-            List<String> arguments = ReadOnlyReportCommand.arguments(request, report, log);
+            List<String> baseArguments =
+                ReadOnlyReportCommand.arguments(request, report, log);
+            var arguments = new java.util.ArrayList<String>(baseArguments);
+            if (!ibUsername.isBlank() || !ibPassword.isBlank()) {
+                var authentication = new java.util.ArrayList<String>();
+                DesignerInfobaseAuth.addTo(authentication, ibUsername, ibPassword);
+                arguments.addAll(4, authentication);
+            }
             Process process = new ProcessBuilder(arguments)
                 .directory(work.toFile())
                 .redirectOutput(stdout.toFile())
