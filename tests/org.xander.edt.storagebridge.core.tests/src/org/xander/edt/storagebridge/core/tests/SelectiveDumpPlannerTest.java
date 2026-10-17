@@ -108,6 +108,39 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
+    public void selectiveReceiveIncludesALLIndependentlyVersionedOwnerResources() {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("Document.Invoice.ObjectModule"),
+            List.of("Document.Invoice", "Document.Invoice.Form.Main",
+                "Document.Invoice.Form.Print",
+                "Document.Invoice.Template.InvoiceMxl",
+                "Document.Invoice.ManagerModule",
+                "Document.Invoice.Command.Launch",
+                "Document.Invoice.ObjectModule",
+                "Document.Other.Form.Unrelated"));
+        assertEquals(List.of(
+            "Document.Invoice", "Document.Invoice.ObjectModule",
+            "Document.Invoice.Form.Main", "Document.Invoice.Form.Print",
+            "Document.Invoice.Template.InvoiceMxl",
+            "Document.Invoice.ManagerModule"), plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
+    public void nestedSubsystemsRetainTheirEntireDevelopmentPath() {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("Subsystem.Кадры"),
+            List.of("Subsystem.Кадры.Subsystem.Интеграция1СКС",
+                "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная",
+                "Subsystem.Зарплата.Subsystem.Другая"));
+        assertEquals(List.of(
+            "Subsystem.Кадры",
+            "Subsystem.Кадры.Subsystem.Интеграция1СКС",
+            "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная"),
+            plan.exportable());
+    }
+
+    @Test
     public void changedCommandAloneStillRequestsItsOwner() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Catalog.Items.Command.Pick",
