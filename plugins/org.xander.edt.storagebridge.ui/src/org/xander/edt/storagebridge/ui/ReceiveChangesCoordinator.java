@@ -325,6 +325,8 @@ public final class ReceiveChangesCoordinator {
             }
             // The native editor and its part listener MUST be created on
             // SWT UI, never from the Eclipse background Job.
+            final Path retainedConverted = conversionRoot;
+            final SelectiveDumpRunner.ExportResult retainedExport = export;
             uiCall(shell, parent -> {
                 var editorService = BridgeActivator.getDefault().getInjector()
                 .getInstance(EdtDeltaComparisonService.class);
@@ -348,8 +350,6 @@ public final class ReceiveChangesCoordinator {
                 page.closeEditor(editor, false);
                 throw ex;
             }
-            final Path retainedConverted = conversionRoot;
-            final SelectiveDumpRunner.ExportResult retainedExport = export;
             // Compare is interactive. The editor may stay open after this
             // method returns: cleanup must happen only when it closes.
             IPartListener2 listener = new IPartListener2() {
@@ -387,7 +387,8 @@ public final class ReceiveChangesCoordinator {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logFailure(phase.get(), ex);
-            MessageDialog.openInformation(shell, "Работа с хранилищем",
+            outcome.set(Status.CANCEL_STATUS);
+            informationOnUi(shell, "Работа с хранилищем",
                 "Операция прервана на этапе: " + phase.get()
                 + ". Если обновление базы уже начиналось, проверьте её состояние.");
         } catch (Exception ex) {
@@ -398,11 +399,15 @@ public final class ReceiveChangesCoordinator {
                 ? "Команда обновления базы-посредника уже могла выполняться. "
                   + "Не повторяйте её до проверки состояния базы."
                 : "Команда обновления базы-посредника ещё не запускалась.";
-            MessageDialog.openError(shell, "Не удалось получить изменения",
-                "Этап: " + phase.get() + ".\n"
-                + safeReason(ex) + "\n"
-                + databaseState + "\n"
-                + "Диагностика с этапом и строками кода записана в журнал EDT.");
+            outcome.set(new Status(IStatus.ERROR,
+                "org.xander.edt.storagebridge.ui",
+                "Этап: " + phase.get() + ". " + safeReason(ex)));
+            notifyOnUi(shell, "Не удалось получить изменения",
+                "Этап: " + phase.get() + ".\\n"
+                + safeReason(ex) + "\\n"
+                + databaseState + "\\n"
+                + "Диагностика с этапом и строками кода записана в журнал EDT.",
+                true);
         } finally {
             if (!editorOwnsStaging) {
                 cleanupQuietly(export, conversionRoot);
