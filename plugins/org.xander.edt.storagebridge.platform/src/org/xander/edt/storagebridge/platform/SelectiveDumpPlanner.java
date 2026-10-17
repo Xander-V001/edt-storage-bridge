@@ -9,7 +9,10 @@ import java.util.Objects;
  * paths. A bare Configuration/Language label occurs in version inventories
  * but is not guaranteed to be a valid exported metadata/property name.
  * Do not lose its pending change: defer it for a verified root-name mapping.
- * Independently versioned forms, templates and modules must be exported\n * together with their top-level owner: -listFile does NOT imply all independently\n * developed children are included when only the owner is listed.\n * Configuration-root AND language changes are kept pending: EDT 2026.2 cannot reliably
+ * Independently versioned forms, templates and modules must be exported
+ * together with their top-level owner: -listFile does NOT imply all independent
+ * children are included when only the owner is listed.
+ * Configuration-root AND language changes stay pending: EDT 2026.2 cannot reliably
  * convert their special Ext resources outside a complete project context.
  */
 public final class SelectiveDumpPlanner {
@@ -60,10 +63,12 @@ public final class SelectiveDumpPlanner {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("Invalid native metadata inventory name");
             }
-            for (String owner : requestedOwners) {
-                if (name.equals(owner) || name.startsWith(owner + ".")) {
+            int firstDot = name.indexOf('.');
+            int secondDot = firstDot < 0 ? -1 : name.indexOf('.', firstDot + 1);
+            if (firstDot > 0) {
+                String owner = secondDot < 0 ? name : name.substring(0, secondDot);
+                if (requestedOwners.contains(owner)) {
                     included.add(name);
-                    break;
                 }
             }
         }
