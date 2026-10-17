@@ -154,3 +154,43 @@ public `IComparisonManager`/`IComparisonSession` services are candidates,
 but their 2026.2 signatures and event/session lifecycle must be tested
 before wiring them into the active receive path. The current release keeps
 the applied checkpoint UNKNOWN instead of inventing proof.
+
+## 2026-10-17 follow-up: standalone latest revision parsing fix
+
+A manual 'Проверить версию хранилища' still returned the generic message
+'Отчёт не удалось прочитать или распознать'. The native command's process,
+nonzero exit and missing-report cases have separate error handling, so
+this points to an IOException after running or reading the report; however
+the **exact batch TXT bytes were not captured** and root-cause attribution
+to the old parser cannot be proven yet.
+
+Definite implementation defect: `RepositoryLatestRevisionReader.parseLatest`
+delegated to `RepositoryVersionReportParser.latest`. The detailed history
+parser requires every version's comments and all declared object lists to
+be recognized and counted. That is unnecessary for retrieving the latest
+repository revision and can reject valid TXT reports with different detail
+layout. The standalone reader now validates the report title and each
+complete version metadata header (number, configuration version, user,
+creation date and time). It NEVER infers a version from ConfigDumpInfo,
+arbitrary numbers in comments, or a successful Designer exit. Last revision
+is the greatest nonduplicate native header in the report. The detailed
+history parser is still strict when object listings are actually needed.
+
+The explicit read-only `/ConfigurationRepositoryReport -NBegin -1
+-ReportFormat txt` query remains unchanged; this is the documented native
+latest-version request. Both UTF-8 and UTF-16 (BOM and selected BOM-less
+variants) and Windows-1251 are supported after strict textual validation.
+
+If the batch report still cannot be parsed, a *local*, raw TXT copy is
+preserved in the OS temporary directory as
+`edt-storage-version-report-*.txt`, and the UI shows a categorized failure
+and its path. The report can reveal server addresses, usernames, comments
+and object names: review/redact it before sharing, never commit it to Git.
+No raw report bytes or credentials are sent to the Eclipse log.
+
+New tests distinguish valid latest-version extraction with omitted or
+malformed detailed sections from strict history parsing; they also reject
+faked 'Версия' lines without accompanying metadata and duplicate headers.
+**Not built or tested in installed EDT 2026.2.** The CI workflow remains
+manual-only, requiring explicit approval. Do not raise the fully-applied
+EDT checkpoint merely because a latest version number was read.
