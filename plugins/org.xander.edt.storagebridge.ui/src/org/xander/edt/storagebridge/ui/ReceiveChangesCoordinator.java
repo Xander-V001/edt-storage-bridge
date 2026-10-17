@@ -21,8 +21,6 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.viewers.ArrayContentProvider;
-import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
@@ -30,7 +28,6 @@ import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
-import org.eclipse.ui.dialogs.ListSelectionDialog;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
@@ -38,6 +35,8 @@ import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
+import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
+import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
@@ -197,12 +196,16 @@ public final class ReceiveChangesCoordinator {
                 return;
             }
 
-            var changes = progress(jobProgress, 45, monitor -> {
+            // The PRE-update ConfigDumpInfo belongs to the intermediary only.
+            // It is NEVER the baseline of the current EDT project. The first
+            // scan must inventory the entire remote configuration; later scans
+            // use the last remote snapshot recorded FOR THIS EDT/GIT BRANCH.
+            progress(jobProgress, 45, monitor -> {
                 BooleanSupplier canceled = monitor::isCanceled;
-                monitor.beginTask("Получение изменений из хранилища 1С", 3);
+                monitor.beginTask("Получение состояния хранилища 1С", 4);
                 if (!journal.exists()) {
-                    phase.set("Создание ConfigDumpInfo.xml исходной конфигурации");
-                    monitor.subTask("Фиксация состава старой конфигурации без XML-выгрузки");
+                    phase.set("Фиксация состояния базы перед обновлением");
+                    monitor.subTask("Защита от повторного обновления после сбоя");
                     try (var snapshot = new ConfigVersionSnapshotRunner()
                             .capture(detect, canceled)) {
                         journal.persist(snapshot.configDumpInfo());
@@ -212,7 +215,7 @@ public final class ReceiveChangesCoordinator {
                         throw new IOException("Получение отменено до изменения базы");
                     }
                     phase.set("Обновление конфигурации базы-посредника");
-                    monitor.subTask("Получение последней версии в существующую базу");
+                    monitor.subTask("Получение актуального состояния хранилища");
                     updateAttempted.set(true);
                     journal.markUpdateAttempted();
                     new RepositoryUpdateRunner().receive(
@@ -223,28 +226,55 @@ public final class ReceiveChangesCoordinator {
                         canceled);
                     journal.markUpdateCompleted();
                 } else {
-                    // A previous process may have crashed after updating the IB.
-                    // Detect against the durable old snapshot instead of
-                    // overwriting it and losing pending remote objects.
                     phase.set("Восстановление незавершённого получения");
-                    monitor.subTask("Восстановление прерванного получения");
+                    monitor.subTask("База уже обновлена: повторный запуск запрещён");
                 }
                 monitor.worked(1);
-                phase.set("Получение списка изменённых объектов 1С");
-                monitor.subTask("Поиск только изменённых объектов");
-                var detected = new ChangedObjectsProbe().detect(
-                    detect, journal.path(), canceled);
-                Set<String> changedNames =
-                    new LinkedHashSet<>(detected.objectsToExport());
-                // Store both owning MD objects and separately exported forms,
-                // templates, etc. A later receive must not forget their names.
-                phase.set("Сохранение списка необработанных объектов");
-                ReceivePendingStore.add(
-                    project, settings.address(), branch, intermediaryIdentity,
-                    changedNames);
-                journal.acknowledgeJournaledChanges();
-                monitor.worked(1);
-                return changedNames;
+
+                // Read the version index AFTER the repository update. This is
+                // the only current remote inventory; no EDT state is inferred
+                // from the intermediary pre/post delta.
+                phase.set("Чтение актуального состава объектов хранилища");
+                monitor.subTask("Получение актуального ConfigDumpInfo.xml");
+                try (var remote = new ConfigVersionSnapshotRunner()
+                        .capture(detect, canceled)) {
+                    Path lastScanned = journal.lastScannedInfo();
+                    Set<String> remoteNames;
+                    if (lastScanned == null) {
+                        phase.set("Первичная сверка со всем хранилищем");
+                        monitor.subTask(
+                            "Первая сверка: все объекты хранилища, не только последнее обновление базы");
+                        var manifest = ConfigDumpInfoIndex.exportableNames(
+                            remote.configDumpInfo());
+                        // A version index does not contain the XML objects.
+                        // Only after explicit -listFile export can EDT compare.
+                        remoteNames = new LinkedHashSet<>(
+                            new ConfigurationChangesParser.ChangeSet(
+                                List.copyOf(manifest), List.of())
+                                .objectsToExport());
+                    } else {
+                        phase.set("Поиск изменений со времени предыдущей сверки EDT");
+                        monitor.subTask("Сравнение с сохранённой версией для EDT/Git-ветки");
+                        remoteNames = new LinkedHashSet<>(
+                            new ChangedObjectsProbe().detect(
+                                detect, lastScanned, canceled).objectsToExport());
+                    }
+                    monitor.worked(1);
+                    if (canceled.getAsBoolean()) {
+                        throw new InterruptedException(
+                            "Получение отменено до сохранения списка объектов");
+                    }
+                    phase.set("Сохранение всех ожидающих изменений EDT");
+                    // Crash ordering: first the debt, THEN the last-scanned
+                    // remote snapshot. Never mark an object "applied" here.
+                    ReceivePendingStore.add(
+                        project, settings.address(), branch,
+                        intermediaryIdentity, remoteNames);
+                    journal.recordScannedInfo(remote.configDumpInfo());
+                    journal.acknowledgeJournaledChanges();
+                    monitor.worked(1);
+                }
+                return null;
             });
 
             phase.set("Загрузка ожидающих обработки объектов");
@@ -252,23 +282,15 @@ public final class ReceiveChangesCoordinator {
                 project, settings.address(), branch, intermediaryIdentity);
             if (pending.isEmpty()) {
                 informationOnUi(shell, "Работа с хранилищем",
-                    "Изменений относительно сохранённого состояния базы-посредника "
-                    + "не обнаружено. Это НЕ доказывает, что проект EDT соответствует "
-                    + "хранилищу: если база-посредник уже была обновлена раньше, "
-                    + "необходимо отдельно восстановить исходную версию обмена.");
+                    "Новых и ожидающих изменений хранилища для этого проекта EDT "
+                    + "не обнаружено. Полное соответствие EDT хранилищу "
+                    + "не подтверждается до проверки итогового сравнения.");
                 return;
             }
-            Set<String> candidateRoots = topObjects(new ArrayList<>(pending));
-            phase.set("Выбор объектов для сравнения");
-            Set<String> selected = chooseObjectsOnUi(shell, candidateRoots);
-            if (selected == null) {
-                return;
-            }
-            if (selected.isEmpty()) {
-                informationOnUi(shell, "Работа с хранилищем",
-                    "Ни один объект не выбран. Изменения сохранены для следующего раза.");
-                return;
-            }
+            // The native EDT comparison editor is the ONLY selection UI.
+            // All pending remote objects enter comparison; unchecked EDT nodes
+            // stay unchanged and remain pending after verification.
+            Set<String> selected = topObjects(new ArrayList<>(pending));
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
 
@@ -469,30 +491,6 @@ public final class ReceiveChangesCoordinator {
             String message) throws Exception {
         return uiCall(shell, active ->
             MessageDialog.openConfirm(active, title, message));
-    }
-
-    /** Null means the user dismissed the selection dialog. */
-    private static Set<String> chooseObjectsOnUi(Shell shell,
-            Set<String> candidateRoots) throws Exception {
-        return uiCall(shell, active -> {
-            var choices = new ListSelectionDialog(active,
-                candidateRoots.stream().sorted().toList(),
-                ArrayContentProvider.getInstance(),
-                new LabelProvider(),
-                "Выбери объекты для сравнения с EDT. "
-                + "Все объекты изначально не выбраны. "
-                + "Пропущенные остаются в списке следующего получения.");
-            choices.setTitle("Изменения из хранилища — выбор объектов");
-            choices.setInitialSelections(new Object[0]);
-            if (choices.open() != org.eclipse.jface.window.Window.OK) {
-                return null;
-            }
-            Set<String> selected = new LinkedHashSet<>();
-            for (Object object : choices.getResult()) {
-                selected.add((String) object);
-            }
-            return selected;
-        });
     }
 
     /** Non-blocking completion/error notice; never manipulates SWT from a Job. */
