@@ -78,6 +78,107 @@ public final class EdtOwnerContentVerifier {
         return sawData;
     }
 
+    /**
+     * Diagnostic only. Return the first mismatch as a relative EDT path.
+     * A report is NOT evidence that taking right succeeded semantically.
+     * User-owned metadata names may appear in the returned path, so callers
+     * must keep it in local, private diagnostics, never in ordinary logs.
+     */
+    public static String firstMismatch(Path projectRoot, Path stage,
+            String edtOwner) throws IOException {
+        if (edtOwner == null || !edtOwner.matches("[^/\\\\\\\\]+/[^/\\\\\\\\]+")
+                || edtOwner.contains("..")) {
+            throw new IOException("Invalid metadata owner path");
+        }
+        Path project = projectRoot.toRealPath();
+        Path incoming = stage.toRealPath();
+        if (project.startsWith(incoming) || incoming.startsWith(project)) {
+            throw new IOException("Overlapping receive verification trees");
+        }
+        Path relative = Path.of("src").resolve(edtOwner);
+        if ("Configuration/Configuration".equals(edtOwner)) {
+            return firstTreeDifference(
+                incoming.resolve("src/Configuration"),
+                project.resolve("src/Configuration"));
+        }
+        String dir = firstTreeDifference(incoming.resolve(relative),
+            project.resolve(relative));
+        if (dir != null) {
+            return dir;
+        }
+        Path root = Path.of("src").resolve(edtOwner + ".mdo");
+        return firstFileDifference(incoming.resolve(root), project.resolve(root));
+    }
+
+    private static String firstTreeDifference(Path expected, Path actual)
+            throws IOException {
+        boolean leftExists = Files.exists(expected, LinkOption.NOFOLLOW_LINKS);
+        boolean rightExists = Files.exists(actual, LinkOption.NOFOLLOW_LINKS);
+        if (!leftExists && !rightExists) {
+            return null;
+        }
+        if (leftExists != rightExists) {
+            return leftExists ? "отсутствует в EDT: " + actual.getFileName()
+                : "отсутствует в XML-импорте: " + expected.getFileName();
+        }
+        if (!Files.isDirectory(expected, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isDirectory(actual, LinkOption.NOFOLLOW_LINKS)) {
+            return "различается тип каталога объекта";
+        }
+        Set<Path> expectedFiles = new LinkedHashSet<>();
+        Set<Path> actualFiles = new LinkedHashSet<>();
+        try (Stream<Path> files = Files.walk(expected)) {
+            for (Path path : files.toList()) {
+                if (Files.isSymbolicLink(path)) return "символическая ссылка в XML-импорте";
+                expectedFiles.add(expected.relativize(path));
+            }
+        }
+        try (Stream<Path> files = Files.walk(actual)) {
+            for (Path path : files.toList()) {
+                if (Files.isSymbolicLink(path)) return "символическая ссылка в EDT";
+                actualFiles.add(actual.relativize(path));
+            }
+        }
+        for (Path rel : expectedFiles) {
+            if (!actualFiles.contains(rel)) {
+                return "отсутствует в EDT: " + rel;
+            }
+        }
+        for (Path rel : actualFiles) {
+            if (!expectedFiles.contains(rel)) {
+                return "лишний ресурс в EDT: " + rel;
+            }
+        }
+        for (Path rel : expectedFiles) {
+            Path left = expected.resolve(rel), right = actual.resolve(rel);
+            boolean leftFile = Files.isRegularFile(left, LinkOption.NOFOLLOW_LINKS);
+            boolean rightFile = Files.isRegularFile(right, LinkOption.NOFOLLOW_LINKS);
+            if (leftFile != rightFile) {
+                return "различается тип ресурса: " + rel;
+            }
+            if (leftFile && Files.mismatch(left, right) != -1) {
+                return "различается содержимое: " + rel;
+            }
+        }
+        return null;
+    }
+
+    private static String firstFileDifference(Path expected, Path actual)
+            throws IOException {
+        boolean left = Files.isRegularFile(expected, LinkOption.NOFOLLOW_LINKS);
+        boolean right = Files.isRegularFile(actual, LinkOption.NOFOLLOW_LINKS);
+        if (left != right) {
+            return left ? "отсутствует основной .mdo в EDT"
+                : "отсутствует основной .mdo в XML-импорте";
+        }
+        if (left && (!Files.isSymbolicLink(expected)
+                && !Files.isSymbolicLink(actual))
+                && Files.mismatch(expected, actual) != -1) {
+            return "различается основной .mdo";
+        }
+        return left ? null : "основной .mdo отсутствует в обоих источниках";
+    }
+
     private static boolean equalTrees(Path left, Path right) throws IOException {
         try (Stream<Path> leftTree = Files.walk(left);
              Stream<Path> rightTree = Files.walk(right)) {
