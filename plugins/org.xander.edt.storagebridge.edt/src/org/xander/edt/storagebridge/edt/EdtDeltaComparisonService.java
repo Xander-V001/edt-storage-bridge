@@ -200,9 +200,15 @@ public final class EdtDeltaComparisonService {
             List.of(prepared), false,
             "Текущий проект EDT", "Изменения из хранилища 1С");
         input.setRunInitialComparison(true);
+        // EDT's native TWO-WAY comparison preselects differences for
+        // 'Take right' by default. A manually selected review scope alone
+        // is NOT a protection against overwriting committed local edits.
         input.setMergeConfirmationMessage(
-            "Применение меняет только выбранные изменения. "
-            + "Перед подтверждением проверьте Документ1 и другие конфликты.");
+            "ВНИМАНИЕ: при двустороннем сравнении EDT по умолчанию "
+            + "предлагает взять отличающиеся значения второго источника. "
+            + "Перед объединением проверьте ВСЕ отмеченные узлы, снимите "
+            + "флажки с локальных изменений, которые нужно сохранить. "
+            + "Восстановление из хранилища Git автоматически НЕ выполняется.");
         return window.getActivePage().openEditor(input, editorId);
     }
 
