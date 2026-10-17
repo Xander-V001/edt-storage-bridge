@@ -850,8 +850,9 @@ public final class ReceiveChangesCoordinator {
         } catch (IOException | InterruptedException | IllegalArgumentException ex) {
             // Neither Designer report text nor credentials may enter logs.
             BridgeActivator.getDefault().getLog().warn(
-                "Native 1C repository revision is unavailable; "
-                + "version fields remain unverified.");
+                "Native 1C repository revision is unavailable: "
+                + RepositoryRevisionRefreshCoordinator.failureReason(ex)
+                + " Version fields remain unverified.");
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
