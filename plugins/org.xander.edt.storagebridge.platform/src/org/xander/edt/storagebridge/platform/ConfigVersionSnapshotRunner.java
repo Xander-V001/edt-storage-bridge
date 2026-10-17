@@ -62,6 +62,7 @@ public final class ConfigVersionSnapshotRunner {
 
         Path work = Files.createTempDirectory("edt-storage-configversions-");
         boolean succeeded = false;
+        boolean launched = false;
         try {
             Path output = Files.createDirectory(work.resolve("dump"));
             Path log = work.resolve("designer.log");
@@ -71,6 +72,7 @@ public final class ConfigVersionSnapshotRunner {
                 .redirectErrorStream(true)
                 .redirectOutput(stdout.toFile())
                 .start();
+            launched = true;
             try {
                 long start = System.nanoTime();
                 while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
@@ -86,8 +88,14 @@ public final class ConfigVersionSnapshotRunner {
                         throw new IOException("1C diagnostic output exceeded limit");
                     }
                 }
-                if (process.exitValue() != 0 || cancelled.getAsBoolean()) {
-                    throw new IOException("Designer version snapshot failed");
+                if (cancelled.getAsBoolean()) {
+                    throw new IOException("Config version snapshot cancelled");
+                }
+                if (process.exitValue() != 0) {
+                    // Do not delete the only native 1C diagnostic output.
+                    // The UI exposes only this intentionally generated
+                    // directory, never raw potentially sensitive log text.
+                    throw new SnapshotFailure(process.exitValue(), work);
                 }
             } finally {
                 if (process.isAlive()) {
@@ -117,10 +125,28 @@ public final class ConfigVersionSnapshotRunner {
             succeeded = true;
             return new Snapshot(work, info);
         } finally {
-            if (!succeeded) {
+            if (!succeeded && !launched) {
                 deleteTree(work);
             }
+            // Failed launched operations retain /Out and stdout locally,
+            // matching the previous working 1C-Updater troubleshooting model.
+            // A successful Snapshot.close() still deletes the temporary files.
         }
+    }
+
+    public static final class SnapshotFailure extends IOException {
+        private final int exitCode;
+        private final Path diagnosticsDirectory;
+
+        public SnapshotFailure(int exitCode, Path diagnosticsDirectory) {
+            super("Designer snapshot failed with exit code " + exitCode);
+            this.exitCode = exitCode;
+            this.diagnosticsDirectory =
+                Objects.requireNonNull(diagnosticsDirectory).toAbsolutePath();
+        }
+
+        public int exitCode() { return exitCode; }
+        public Path diagnosticsDirectory() { return diagnosticsDirectory; }
     }
 
     private static void deleteTree(Path root) throws IOException {
