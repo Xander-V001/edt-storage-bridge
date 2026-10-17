@@ -716,9 +716,15 @@ public final class ReceiveChangesCoordinator {
                                             if (reason != null) {
                                                 report.append("\nПричина: ").append(reason);
                                             } else if (verified.remainingPending() > 0) {
-                                                report.append("\nПричина: объекты не "
-                                                    + "прошли проверку точного совпадения "
-                                                    + "после EDT Merge.");
+                                                report.append("\nПричина: ")
+                                                    .append(verified.confirmedPending() > 0
+                                                        ? "Часть самостоятельно версионируемых "
+                                                          + "ресурсов подтверждена отдельно; "
+                                                          + "остальные изменения всё ещё "
+                                                          + "не подтверждены."
+                                                        : "Объекты не прошли проверку точного "
+                                                          + "совпадения после EDT Merge.")
+                                                    .append(" Подробности — в отчёте проверки.");
                                             }
                                         }
                                         informationOnUi(shell, "Итог объединения EDT",
