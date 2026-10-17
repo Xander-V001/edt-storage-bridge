@@ -24,15 +24,30 @@ public class SelectiveDumpCommandTest {
             Path.of("/private/log.txt"));
         assertEquals("/F", args.get(2));
         assertEquals("/repo-bound-base", args.get(3));
-        assertEquals("/DumpConfigToFiles", args.get(5));
-        assertEquals("-listFile", args.get(7));
-        assertEquals("/private/objects.txt", args.get(8));
+        int dump = args.indexOf("/DumpConfigToFiles");
+        assertTrue(dump > 4);
+        assertEquals("-listFile", args.get(dump + 2));
+        assertEquals("/private/objects.txt", args.get(dump + 3));
         assertFalse(args.contains("-Format"));
         assertFalse(args.contains("Hierarchical"));
         assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
         assertFalse(args.contains("-force"));
         assertFalse(args.contains("/LoadCfg"));
         assertFalse(args.contains("/UpdateDBCfg"));
+    }
+
+    @Test
+    public void selectiveDumpUsesInfobaseCredentialsWithoutFullExportFallback() {
+        var req = new SelectiveDumpRequest(Path.of("/opt/1cv8.exe"),
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "/repo-bound-base"),
+            List.of("Документ.НаграднойМатериал"), Duration.ofMinutes(2),
+            "ib-user", "ib-pass");
+        var args = SelectiveDumpCommand.arguments(req, Path.of("/tmp/xml"),
+            Path.of("/tmp/objects"), Path.of("/tmp/log"));
+        assertEquals("ib-user", args.get(args.indexOf("/N") + 1));
+        assertEquals("ib-pass", args.get(args.indexOf("/P") + 1));
+        assertTrue(args.contains("-listFile"));
+        assertFalse(req.toString().contains("ib-pass"));
     }
 
     @Test
