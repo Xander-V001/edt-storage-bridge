@@ -180,9 +180,9 @@ public final class ReadOnlyReportRunner {
         DesignerInfobaseAuth.validate(ibUsername, ibPassword);
         if ((repositoryAddress.isBlank() && !repositoryUsername.isBlank())
                 || (repositoryUsername.isBlank() && !repositoryPassword.isEmpty())
-                || repositoryAddress.indexOf('\\n') >= 0
-                || repositoryUsername.indexOf('\\n') >= 0
-                || repositoryPassword.indexOf('\\n') >= 0) {
+                || repositoryAddress.indexOf('\n') >= 0
+                || repositoryUsername.indexOf('\n') >= 0
+                || repositoryPassword.indexOf('\n') >= 0) {
             throw new IllegalArgumentException("Invalid repository credentials");
         }
     }
