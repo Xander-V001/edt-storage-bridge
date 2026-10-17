@@ -39,6 +39,7 @@ import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
+import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
 
@@ -342,22 +343,32 @@ public final class ReceiveChangesCoordinator {
                     + "не подтверждается до проверки итогового сравнения.");
                 return;
             }
-            // The native EDT comparison editor is the ONLY selection UI.
-            // All pending remote objects enter comparison; unchecked EDT nodes
-            // stay unchanged and remain pending after verification.
-            Set<String> selected = topObjects(new ArrayList<>(pending));
+            // ALL pending objects are candidates for native EDT review.
+            // Do not send bare Configuration/Language version-inventory
+            // markers to Designer -listFile: affected 1C versions reject
+            // these as non-object names. They remain pending, NOT applied.
+            var exportPlan = SelectiveDumpPlanner.plan(pending);
+            if (exportPlan.exportable().isEmpty()) {
+                informationOnUi(shell, "Работа с хранилищем",
+                    "Найдено только изменение корня конфигурации/языков, "
+                    + "для которого ещё не установлено точное имя выгрузки "
+                    + "для этой версии 1С. Изменения оставлены ожидающими.");
+                return;
+            }
+            if (!exportPlan.deferred().isEmpty()) {
+                informationOnUi(shell, "Работа с хранилищем",
+                    "Корневые записи версии " + exportPlan.deferred()
+                    + " временно не включены в -listFile: Конфигуратор "
+                    + "может не принимать их как имена объектов. "
+                    + "Они остаются ожидающими, остальные объекты "
+                    + "будут переданы в штатное сравнение EDT.");
+            }
+            Set<String> selectedPendingNames = new LinkedHashSet<>(
+                exportPlan.exportable());
+            Set<String> selected = topObjects(exportPlan.exportable());
+            List<String> selectedList = exportPlan.exportable();
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
-
-            // Convert root-level UI selection back to ALL explicit Designer
-            // metadata names required for independently developed children.
-            Set<String> selectedPendingNames = new LinkedHashSet<>();
-            for (String pendingName : pending) {
-                if (selected.contains(topObject(pendingName))) {
-                    selectedPendingNames.add(pendingName);
-                }
-            }
-            List<String> selectedList = new ArrayList<>(selectedPendingNames);
             phase.set("Выборочная выгрузка объектов 1С");
             export = progress(jobProgress, 20, monitor -> {
                 monitor.beginTask("Выгрузка только выбранных объектов", 1);
