@@ -94,9 +94,10 @@ public final class ConfigurationChangesParser {
                          "CommandInterface", "Picture", "ExtInfo" ->
                         export.add(ownerPath + "." + segment);
                     default -> {
-                        // Attributes, Commands and other embedded properties
-                        // are serialized inside their enclosing metadata
-                        // owner, not individually supported by -listFile.
+                        // An embedded Command/Attribute/etc has no native
+                        // standalone XML unit. Do not interpret its later
+                        // CommandModule suffix as a top-level module.
+                        break descendants;
                     }
                 }
             }
