@@ -11,6 +11,7 @@ import java.util.Set;
 import org.eclipse.core.resources.IProject;
 import org.osgi.service.prefs.BackingStoreException;
 import org.xander.edt.storagebridge.core.EdtOwnerContentVerifier;
+import org.xander.edt.storagebridge.core.EdtSelectedResourceVerifier;
 import org.xander.edt.storagebridge.core.IncomingPictureAudit;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 
@@ -102,6 +103,32 @@ public final class VerifiedReceiveContent {
                 }
             } else {
                 unresolvedOwners++;
+                if (fullImportedOwners.isEmpty()) {
+                    // SELECTIVE receive: each independently versioned
+                    // classical identity is its own pending obligation.
+                    // A single unmatched Form.form must NOT keep an otherwise
+                    // byte-identical ManagerModule.bsl pending forever.
+                    //
+                    // Full receive keeps strict owner-wide equality: this
+                    // branch MUST NOT invent a partially applied global HEAD.
+                    for (String pendingName : selectedPendingNames) {
+                        if (!EdtSelectiveReviewService.edtOwner(pendingName)
+                                .equals(owner)) {
+                            continue;
+                        }
+                        if (EdtSelectedResourceVerifier.isIndependentlyApplied(
+                                projectRoot, stage, owner, pendingName)) {
+                            verifiedNames.add(pendingName);
+                            if (differences.size() < 500) {
+                                differences.add("  Подтверждено отдельно: "
+                                    + pendingName);
+                            }
+                        } else if (differences.size() < 500) {
+                            differences.add("  Не подтверждено отдельно: "
+                                + pendingName);
+                        }
+                    }
+                }
                 if (differences.size() < 500) {
                     String mismatch = EdtOwnerContentVerifier.firstMismatch(
                         projectRoot, stage, owner);
@@ -167,7 +194,9 @@ public final class VerifiedReceiveContent {
                     .append("Exactly matching owners: ").append(matched).append('\n')
                     .append("Owner trees with differences: ").append(unresolvedOwners)
                     .append('\n')
-                    .append("Removed pending identities: ").append(verifiedNames.size())
+                    .append("Verified pending identities (including individually "
+                        + "verified selective resources): ")
+                    .append(verifiedNames.size())
                     .append('\n')
                     .append("Still pending identities: ").append(remaining)
                     .append("\n\nFirst difference for up to 500 owners:\n");
