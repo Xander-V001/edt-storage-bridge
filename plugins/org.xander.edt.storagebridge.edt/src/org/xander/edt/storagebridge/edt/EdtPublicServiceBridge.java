@@ -12,6 +12,7 @@ import org.eclipse.ui.PartInitException;
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessDescriptor;
 import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
 import com._1c.g5.v8.dt.core.filesystem.IQualifiedNameFilePathConverter;
+import com._1c.g5.v8.dt.core.platform.IConfigurationProvider;
 import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.import_.IImportServiceRegistry;
 import com._1c.g5.wiring.ServiceAccess;
@@ -27,6 +28,20 @@ import com._1c.g5.wiring.ServiceAccess;
  */
 public final class EdtPublicServiceBridge {
     private EdtPublicServiceBridge() {
+    }
+
+    /**
+     * Read-only EDT project model inspection. Keep the EDT service types in
+     * the EDT integration bundle: the UI bundle does not import the internal
+     * com._1c.g5.v8.dt.core.platform package and must not instantiate its
+     * own Guice injector (which failed in EDT 2026.2).
+     *
+     * Resolve the service only when the background inspection job runs.
+     */
+    public static boolean hasConfigurationModel(IProject project) {
+        return new EdtProjectInspector(
+            ServiceAccess.get(IConfigurationProvider.class))
+            .hasConfigurationModel(project);
     }
 
     /** Prepare external comparison without writing to the open EDT project. */
