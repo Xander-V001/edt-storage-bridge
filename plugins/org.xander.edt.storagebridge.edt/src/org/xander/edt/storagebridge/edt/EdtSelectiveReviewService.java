@@ -221,6 +221,36 @@ public final class EdtSelectiveReviewService {
         return folder + "/" + parts[1];
     }
 
+    /**
+     * Identify only the main .mdo file of a top-level EDT metadata object.
+     * Accepted layouts are src/<collection>/<name>.mdo and
+     * src/<collection>/<name>/<name>.mdo. Child forms/modules, even if
+     * themselves represented by .mdo files, must never widen the scope.
+     * The object's FQN is still obtained from EDT's converter, not inferred
+     * from this file path.
+     */
+    public static String metadataOwnerForPath(Path relative) {
+        if (relative == null || relative.isAbsolute()
+                || relative.normalize().startsWith("..")) {
+            return null;
+        }
+        int count = relative.getNameCount();
+        if ((count != 3 && count != 4)
+                || !"src".equals(relative.getName(0).toString())) {
+            return null;
+        }
+        String collection = relative.getName(1).toString();
+        String filename = relative.getFileName().toString();
+        if (!filename.endsWith(".mdo") || filename.length() <= 4) {
+            return null;
+        }
+        String name = filename.substring(0, filename.length() - 4);
+        if (count == 4 && !name.equals(relative.getName(2).toString())) {
+            return null;
+        }
+        return collection + "/" + name;
+    }
+
     private List<String> exactScope(Path edtRoot,
             List<String> selection) throws IOException {
         Set<String> requested = new LinkedHashSet<>();
@@ -232,27 +262,11 @@ public final class EdtSelectiveReviewService {
         try (Stream<Path> files = Files.walk(edtRoot)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 Path relative = edtRoot.relativize(file);
-                if (relative.getNameCount() < 3
-                        || !"src".equals(relative.getName(0).toString())) {
-                    continue;
-                }
-                String fileName = file.getFileName().toString();
-                // The actual top-level FQN is calculated by EDT itself, NOT
-                // guessed from a Russian classic-storage object type.
-                if (!fileName.endsWith(".mdo") && !fileName.endsWith(".form")
-                        && !fileName.endsWith(".oform")
-                        && !fileName.endsWith(".rights")) {
-                    continue;
-                }
-                String name = fileName.endsWith(".mdo")
-                    ? fileName.substring(0, fileName.length() - 4)
-                    : relative.getName(2).toString();
-                String owner = relative.getName(1) + "/" + name;
-                if (relative.getNameCount() >= 4) {
-                    owner = relative.getName(1) + "/"
-                        + relative.getName(2);
-                }
-                if (!requested.contains(owner)) {
+                // Only a TOP-LEVEL metadata descriptor may define a merge
+                // scope. A nested Form.form/rights file is not an owner and
+                // may map to a different FQN or no FQN at all.
+                String owner = metadataOwnerForPath(relative);
+                if (owner == null || !requested.contains(owner)) {
                     // The conversion is not allowed to widen the comparison
                     // scope with unrelated objects, even if the importer
                     // materialized them to resolve references.
