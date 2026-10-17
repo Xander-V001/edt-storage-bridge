@@ -21,10 +21,6 @@ import java.util.stream.Stream;
  * COMPLETE owner matches exactly (EdtOwnerContentVerifier).
  */
 public final class EdtSelectedResourceVerifier {
-    private static final Set<String> MODULES = Set.of(
-        "ManagerModule", "ObjectModule", "RecordSetModule",
-        "ValueManagerModule", "Module");
-
     private EdtSelectedResourceVerifier() {}
 
     /**
@@ -59,12 +55,27 @@ public final class EdtSelectedResourceVerifier {
             return false;
         }
 
-        // Modules have independently versioned native .bsl files.
-        // Verifying this file never acknowledges another Form or the
-        // document's main .mdo properties.
-        if (parts.length == 3 && MODULES.contains(parts[2])) {
-            return sameRegularFile(from.resolve(parts[2] + ".bsl"),
-                to.resolve(parts[2] + ".bsl"));
+        // No hardcoded list of "ManagerModule", "ObjectModule",
+        // "RecordSetModule" etc. In the native hierarchical EDT layout
+        // independently versioned BSL resources are represented by the
+        // actual source file of the same leaf identity. Resolve THAT file
+        // in the staged EDT tree; never assume a 1C object category.
+        //
+        // Examples (handled identically):
+        //   Catalog.X.ManagerModule -> Catalogs/X/ManagerModule.bsl
+        //   Document.X.ObjectModule -> Documents/X/ObjectModule.bsl
+        //   CommonModule.X.Module -> CommonModules/X/Module.bsl
+        //   InformationRegister.X.RecordSetModule -> .../RecordSetModule.bsl
+        //
+        // Only a direct, native top-owner child can qualify. An embedded
+        // Attribute.X or Form.Y.Module must not be guessed as a direct .bsl.
+        if (parts.length == 3) {
+            Path stagedBsl = from.resolve(parts[2] + ".bsl");
+            if (Files.isRegularFile(stagedBsl, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isSymbolicLink(stagedBsl)) {
+                return sameRegularFile(stagedBsl,
+                    to.resolve(parts[2] + ".bsl"));
+            }
         }
 
         // A selected Form (or a Form's embedded property) is accepted only
