@@ -17,6 +17,7 @@ import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.ReportExecutionException;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
+import org.xander.edt.storagebridge.platform.RepositoryReportFormatException;
 
 /**
  * Explicit read-only repository status probe, independent of XML receive.
@@ -108,6 +109,26 @@ public final class RepositoryRevisionRefreshCoordinator {
                 case OVERSIZED_OUTPUT -> "Размер отчёта или журнала превысил лимит.";
                 case MISSING_REPORT -> "Конфигуратор не создал текстовый отчёт.";
             };
+        }
+        if (ex instanceof RepositoryReportFormatException failure) {
+            String explanation = switch (failure.reason()) {
+                case UNKNOWN_REPORT_HEADER ->
+                    "Сформирован TXT, но он не похож на отчёт «По версиям хранилища». "
+                    + "Проверьте тип группировки отчёта.";
+                case MISSING_VERSION_BLOCK ->
+                    "В отчёте 1С не найден полноценный блок номера версии "
+                    + "(Версия, Версия конфигурации, пользователь, дата, время).";
+                case INVALID_OR_DUPLICATE_VERSION ->
+                    "В отчёте 1С найден некорректный или повторяющийся блок версии.";
+                case UNKNOWN_ENCODING ->
+                    "Не удалось определить кодировку текстового отчёта 1С.";
+            };
+            return explanation + (failure.localReport() == null
+                ? " Копию отчёта сохранить не удалось."
+                : " Для диагностики исходный TXT сохранён: "
+                  + failure.localReport()
+                  + ". Он может содержать адрес сервера, пользователей и "
+                  + "комментарии — проверьте файл перед отправкой.");
         }
         if (ex instanceof IOException failure) {
             if (failure.getCause() instanceof CharacterCodingException) {
