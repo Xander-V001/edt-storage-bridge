@@ -77,6 +77,47 @@ public final class SelectiveDumpFailureTest {
         }
     }
 
+    @Test
+    public void zeroExitWithOnlyVersionIndexIsNotSuccessfulSelectiveDump()
+            throws Exception {
+        Assume.assumeTrue(System.getProperty("os.name")
+            .toLowerCase(Locale.ROOT).contains("linux"));
+        Path binDir = Files.createTempDirectory("fake-empty-designer-");
+        Path executable = binDir.resolve("1cv8");
+        Files.writeString(executable, """
+            #!/bin/sh
+            while [ "$#" -gt 0 ]; do
+              if [ "$1" = "/DumpConfigToFiles" ]; then
+                shift
+                echo '<ConfigDumpInfo/>' > "$1/ConfigDumpInfo.xml"
+                exit 0
+              fi
+              shift
+            done
+            exit 1
+            """, StandardCharsets.UTF_8);
+        assertTrue(executable.toFile().setExecutable(true));
+        Path diagnosticDir = null;
+        try {
+            var request = new SelectiveDumpRequest(executable,
+                new InfobaseLocation(InfobaseLocation.Kind.FILE,
+                    "/no-real-infobase"),
+                List.of("Catalog.Товары"), Duration.ofSeconds(10));
+            var failure = assertThrows(
+                SelectiveDumpRunner.DumpFailure.class,
+                () -> new SelectiveDumpRunner().export(request, () -> false));
+            diagnosticDir = failure.diagnosticsDirectory();
+            assertEquals(0, failure.exitCode());
+            assertTrue(Files.exists(diagnosticDir.resolve("objects.txt")));
+            assertFalse(Files.exists(diagnosticDir.resolve("objects")));
+        } finally {
+            if (diagnosticDir != null) {
+                deleteTree(diagnosticDir);
+            }
+            deleteTree(binDir);
+        }
+    }
+
     private static void deleteTree(Path directory) throws Exception {
         try (Stream<Path> paths = Files.walk(directory)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
