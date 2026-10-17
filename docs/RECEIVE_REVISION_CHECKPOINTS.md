@@ -19,8 +19,11 @@ The documented command is
 Official manual: https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/
 
 The existing repository-connected intermediary is used via `/F` or
-`/S`, with optional existing IB login `/N`, `/P`. We do not bind a new
-database, modify EDT project files or copy repository credentials into logs.
+`/S`, with optional existing IB login `/N`, `/P`. The report explicitly
+receives the **same** `/ConfigurationRepositoryF/N/P` source and credentials
+as the existing update command, so it cannot silently report the latest
+revision of a different repository bound to the intermediary. We do not bind
+a new database, modify EDT project files or copy credentials into logs.
 
 Because the exact TXT report serialization depends on platform version and
 compatibility mode, the first implementation ONLY accepts exactly one
@@ -72,9 +75,10 @@ are illustrative, not a substitute for an authentic report.
   revision placeholders are not migrated or treated as trusted revisions.
 - The version fields refresh when the settings window is reopened after
   a receive; they do not live-update in a still-open dialog.
-- On Windows the native Designer's `/P` switch, like the existing base
-  update command, may expose the IB password to local process inspectors;
-  no password is written to persistent plugin logs.
+- On Windows the native Designer's `/P` and
+  `/ConfigurationRepositoryP` switches, like the existing base update
+  command, may expose passwords to local process inspectors; no
+  password is written to persistent plugin logs.
 - There has been **NO** Maven/CI build, repository contact, or live test
   of these changes. Do not claim the new version fields already work
   in EDT before installing an explicitly authorized validated build.
