@@ -52,8 +52,10 @@ public final class EdtSelectedResourceVerifier {
         Path relativeOwner = Path.of("src").resolve(edtOwner);
         Path from = incoming.resolve(relativeOwner);
         Path to = project.resolve(relativeOwner);
-        if (!hasPrimaryDescriptor(incoming, relativeOwner)
-                || !hasPrimaryDescriptor(project, relativeOwner)) {
+        // Same name is NOT enough: native matching can fall back to names.
+        // Without proving the parent's primary metadata descriptor equal,
+        // we cannot assert an isolated module belongs to the same identity.
+        if (!samePrimaryDescriptor(incoming, project, relativeOwner)) {
             return false;
         }
 
@@ -88,13 +90,22 @@ public final class EdtSelectedResourceVerifier {
             "[\\p{L}\\p{N}_]+/[\\p{L}\\p{N}_]+");
     }
 
-    private static boolean hasPrimaryDescriptor(Path root, Path relativeOwner) {
-        Path folder = root.resolve(relativeOwner);
-        Path flat = root.resolve(relativeOwner + ".mdo");
-        Path name = relativeOwner.getFileName();
-        return Files.isRegularFile(folder.resolve(name + ".mdo"),
-                    LinkOption.NOFOLLOW_LINKS)
-            || Files.isRegularFile(flat, LinkOption.NOFOLLOW_LINKS);
+    private static boolean samePrimaryDescriptor(Path sourceRoot,
+            Path liveRoot, Path owner) throws IOException {
+        Path name = owner.getFileName();
+        Path relativeNested = owner.resolve(name + ".mdo");
+        Path relativeFlat = Path.of(owner + ".mdo");
+        if (Files.isRegularFile(sourceRoot.resolve(relativeNested),
+                LinkOption.NOFOLLOW_LINKS)) {
+            return sameRegularFile(sourceRoot.resolve(relativeNested),
+                liveRoot.resolve(relativeNested));
+        }
+        if (Files.isRegularFile(sourceRoot.resolve(relativeFlat),
+                LinkOption.NOFOLLOW_LINKS)) {
+            return sameRegularFile(sourceRoot.resolve(relativeFlat),
+                liveRoot.resolve(relativeFlat));
+        }
+        return false;
     }
 
     private static boolean sameRegularFile(Path from, Path to)
