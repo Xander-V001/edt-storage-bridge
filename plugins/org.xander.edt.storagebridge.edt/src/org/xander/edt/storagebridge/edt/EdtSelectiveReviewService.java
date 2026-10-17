@@ -325,6 +325,13 @@ public final class EdtSelectiveReviewService {
         if (parts.length < 2) {
             throw new IOException("Incomplete metadata name: " + classicalObject);
         }
+        // EDT embeds Language objects directly in
+        // src/Configuration/Configuration.mdo as <languages> elements.
+        // There is no src/Languages/<name>.mdo owner descriptor. Native
+        // comparison therefore uses the configuration-root FQN.
+        if ("Language".equals(parts[0]) || "Язык".equals(parts[0])) {
+            return "Configuration/Configuration";
+        }
         String folder = SOURCE_GROUPS.get(parts[0]);
         if (folder == null) {
             throw new UnsupportedMetadataTypesException(Set.of(
