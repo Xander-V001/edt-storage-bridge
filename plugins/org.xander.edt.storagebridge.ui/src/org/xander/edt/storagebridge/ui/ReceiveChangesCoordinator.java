@@ -811,6 +811,7 @@ public final class ReceiveChangesCoordinator {
                 RepositoryHistoryRequest.latest(executable, intermediary,
                     Duration.ofMinutes(5)),
                 settings.infobaseUsername(), settings.infobasePassword(),
+                settings.address(), settings.username(), settings.password(),
                 canceled);
         } catch (IOException | InterruptedException | IllegalArgumentException ex) {
             // Neither Designer report text nor credentials may enter logs.
