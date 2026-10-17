@@ -803,6 +803,13 @@ public final class ReceiveChangesCoordinator {
         for (int depth = 0; current != null && depth < 5; depth++) {
             diagnostic.append("; cause[").append(depth).append("]: ")
                 .append(current.getClass().getName());
+            if (current instanceof EdtSelectiveReviewService.NativeEdtImportFailure nativeFailure) {
+                diagnostic.append("; import status severity=").append(nativeFailure.severity())
+                    .append("; import code=").append(nativeFailure.code())
+                    .append("; import nested statuses=").append(nativeFailure.descendants());
+                // Native EDT exception messages remain ONLY in the local
+                // diagnostic file. Never log them together with credentials.
+            }
             int count = 0;
             for (StackTraceElement frame : current.getStackTrace()) {
                 if (frame.getClassName().startsWith("org.xander.edt.storagebridge.")
@@ -861,6 +868,23 @@ public final class ReceiveChangesCoordinator {
             return "Конфигуратор 1С завершил создание снимка с кодом "
                 + snapshot.exitCode() + ". Сохранены диагностические журналы: "
                 + snapshot.diagnosticsDirectory();
+        }
+        if (failure instanceof EdtSelectiveReviewService.NativeEdtImportFailure nativeFailure) {
+            return "Штатный XML-импортёр EDT вернул неуспешный статус ("
+                + (nativeFailure.fullReview() ? "полная" : "выборочная")
+                + " выгрузка). Severity: " + nativeFailure.severity()
+                + ", код: " + nativeFailure.code()
+                + ", вложенных статусов: " + nativeFailure.descendants()
+                + ". " + (nativeFailure.diagnosticsFile() == null
+                    ? "Диагностику не удалось сохранить."
+                    : "Подробный журнал импортёра: "
+                      + nativeFailure.diagnosticsFile()
+                      + ". Перед отправкой проверьте файл: он может содержать "
+                      + "пути и имена объектов конфигурации.")
+                + " Рабочий проект не менялся; ожидающие изменения сохранены. "
+                + (nativeFailure.fullReview()
+                    ? "Проверьте ошибки импортёра EDT."
+                    : "Можно повторить операцию через «Полная сверка с хранилищем».");
         }
         if (failure instanceof EdtSelectiveReviewService.MissingEmbeddedLanguagesException mismatch) {
             return "Импортированная Configuration.mdo не содержит "
