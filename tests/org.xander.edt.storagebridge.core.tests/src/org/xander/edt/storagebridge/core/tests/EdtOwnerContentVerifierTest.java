@@ -99,6 +99,28 @@ public final class EdtOwnerContentVerifierTest {
         }
     }
 
+    @Test
+    public void deletedTopLevelOwnerMustBeAbsentOnBothSides()
+            throws Exception {
+        Path project = Files.createTempDirectory("edt-delete-local-");
+        Path stage = Files.createTempDirectory("edt-delete-stage-");
+        try {
+            Files.createDirectories(project.resolve("src/Documents/Old"));
+            Files.writeString(project.resolve("src/Documents/Old/Old.mdo"), "old");
+            Files.createDirectories(stage.resolve("src"));
+            assertFalse(EdtOwnerContentVerifier.isTopLevelDeletionApplied(
+                project, stage, "Documents/Old"));
+            remove(project.resolve("src/Documents/Old"));
+            assertTrue(EdtOwnerContentVerifier.isTopLevelDeletionApplied(
+                project, stage, "Documents/Old"));
+            Files.writeString(stage.resolve("src/Documents/Old.mdo"), "incoming");
+            assertFalse(EdtOwnerContentVerifier.isTopLevelDeletionApplied(
+                project, stage, "Documents/Old"));
+        } finally {
+            remove(project); remove(stage);
+        }
+    }
+
     private static void remove(Path root) throws Exception {
         try (Stream<Path> files = Files.walk(root)) {
             for (Path file : files.sorted(Comparator.reverseOrder()).toList()) {
