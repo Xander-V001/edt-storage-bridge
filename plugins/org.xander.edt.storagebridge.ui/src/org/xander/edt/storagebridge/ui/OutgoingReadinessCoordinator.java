@@ -159,7 +159,7 @@ public final class OutgoingReadinessCoordinator {
         if (nativeFailure != null) {
             report.append("Отчёт 1С: ").append(nativeFailure).append("\n\n");
         }
-        if (decision.permitsWrite()) {
+        if (decision.prerequisitesSatisfied()) {
             // Not reachable until a separate trusted baseline AND scratch
             // validation are implemented; no write command exists here.
             report.append("Предварительные проверки пройдены. "
