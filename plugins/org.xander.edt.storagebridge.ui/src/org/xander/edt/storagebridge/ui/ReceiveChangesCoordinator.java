@@ -71,6 +71,9 @@ public final class ReceiveChangesCoordinator {
 
     private ReceiveChangesCoordinator() {}
 
+    /** Explicit caller-selected transport mode; never inferred from old pending items. */
+    public enum ReceiveMode { INCREMENTAL, FULL_REVIEW }
+
     /**
      * Invoked only from SWT UI. All long-running operations are executed by
      * the standard Eclipse Jobs framework and shown in its Progress view.
@@ -78,6 +81,12 @@ public final class ReceiveChangesCoordinator {
      */
     public static void receive(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings) {
+        receive(shell, project, settings, ReceiveMode.INCREMENTAL);
+    }
+
+    public static void receive(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings, ReceiveMode mode) {
+        java.util.Objects.requireNonNull(mode, "mode");
         if (project == null || project.getLocationURI() == null) {
             MessageDialog.openError(shell, "Работа с хранилищем",
                 "Не удалось определить существующий EDT-проект.");
@@ -111,7 +120,7 @@ public final class ReceiveChangesCoordinator {
                     new AtomicReference<>(Status.OK_STATUS);
                 try {
                     receiveInBackground(shell, project, settings, operationKey,
-                        intermediaryKey, SubMonitor.convert(monitor, 100), outcome);
+                        intermediaryKey, mode, SubMonitor.convert(monitor, 100), outcome);
                 } catch (RuntimeException ex) {
                     // A failure must never leave the project permanently busy.
                     ACTIVE.remove(operationKey);
@@ -134,7 +143,7 @@ public final class ReceiveChangesCoordinator {
     /** Background-only: SWT widgets are accessed via UI-thread helpers. */
     private static void receiveInBackground(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings, String operationKey,
-            String intermediaryKey, SubMonitor jobProgress,
+            String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
             AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
         Path conversionRoot = null;
@@ -219,17 +228,23 @@ public final class ReceiveChangesCoordinator {
             // Existing historical pending state without a proof marker is
             // migrated conservatively to an initial full review once.
             boolean initialFullReview = journal.requiresInitialFullReview();
+            // A force-full comparison re-exports the entire CURRENT remote
+            // configuration without touching the persisted initial marker.
+            // This is not a pending-only retry and must run Designer update.
+            final boolean fullReview = initialFullReview
+                || mode == ReceiveMode.FULL_REVIEW;
             // A failed selective dump has ALREADY persisted the remote
             // changed-object list. Retrying it must not force another native
             // repository update. Require a read-only intermediary version
             // check before using those names against the existing 1C base.
-            boolean retryPendingOnly = !recovery && !firstInventory
+            boolean retryPendingOnly = mode == ReceiveMode.INCREMENTAL
+                && !recovery && !firstInventory
                 && !ReceivePendingStore.get(project, settings.address(),
                     branch, intermediaryIdentity).isEmpty()
                 && confirmOnUi(shell, "Повторная выгрузка уже найденных объектов",
                     "Есть объекты хранилища, оставшиеся после предыдущего "
                     + "получения. Повторить "
-                    + (initialFullReview ? "первоначальную полную выгрузку"
+                    + (fullReview ? "полную выгрузку"
                         : "только их выборочную выгрузку")
                     + " БЕЗ обновления базы-посредника? Сначала будет выполнена "
                     + "проверка, что конфигурация базы не изменилась.");
@@ -238,9 +253,13 @@ public final class ReceiveChangesCoordinator {
                     "Получить изменения из хранилища 1С",
                     "База-посредник: " + settings.infobaseAddress() + "\n"
                     + "Хранилище: " + settings.address() + "\n"
-                    + (initialFullReview
-                        ? "ПЕРВАЯ СВЕРКА: будет ОДИН полный XML-дамп "
-                          + "конфигурации во временный каталог вне EDT и Git. "
+                    + (fullReview
+                        ? (mode == ReceiveMode.FULL_REVIEW
+                            ? "ПОЛНАЯ СВЕРКА ПО ЗАПРОСУ: будет повторно выгружена "
+                              + "ВСЯ конфигурация, не только новые изменения. "
+                            : "ПЕРВАЯ СВЕРКА: будет ОДИН полный XML-дамп ")
+                          + "во временный каталог вне EDT и Git. "
+                          + "Это не сброс и не перезапись проекта. "
                           + "Он может занять много времени и диска. "
                           + "Проект EDT не перезаписывается; дальнейшие "
                           + "обновления будут выборочными после открытия "
@@ -358,8 +377,10 @@ public final class ReceiveChangesCoordinator {
                     }
                     Path lastScanned = journal.lastScannedInfo();
                     Set<String> remoteNames;
-                    if (lastScanned == null) {
-                        phase.set("Первичная сверка со всем хранилищем");
+                    if (lastScanned == null || mode == ReceiveMode.FULL_REVIEW) {
+                        phase.set(mode == ReceiveMode.FULL_REVIEW
+                            ? "Принудительная полная сверка со всем хранилищем"
+                            : "Первичная сверка со всем хранилищем");
                         monitor.subTask(
                             "Первая сверка: все объекты хранилища, не только последнее обновление базы");
                         var manifest = verifiedInventory;
@@ -420,7 +441,7 @@ public final class ReceiveChangesCoordinator {
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
-            if (pending.isEmpty()) {
+            if (pending.isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Новых и ожидающих изменений хранилища для этого проекта EDT "
                     + "не обнаружено. Полное соответствие EDT хранилищу "
@@ -432,14 +453,14 @@ public final class ReceiveChangesCoordinator {
             // markers to Designer -listFile: affected 1C versions reject
             // these as non-object names. They remain pending, NOT applied.
             var exportPlan = SelectiveDumpPlanner.plan(pending);
-            if (exportPlan.exportable().isEmpty() && !initialFullReview) {
+            if (exportPlan.exportable().isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Найдены только изменения корня конфигурации или языка. "
                     + "Безопасное сравнение этих ресурсов пока не реализовано; "
                     + "изменения сохранены в очереди ожидания.");
                 return;
             }
-            if (!exportPlan.deferred().isEmpty() && !initialFullReview) {
+            if (!exportPlan.deferred().isEmpty() && !fullReview) {
                 informationOnUi(shell, "Работа с хранилищем",
                     "Отложено корневых изменений: "
                     + exportPlan.deferred().size()
@@ -454,7 +475,7 @@ public final class ReceiveChangesCoordinator {
             Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
             selectedPendingNames.removeAll(exportPlan.deferred());
             List<String> selectedList = new ArrayList<>(exportPlan.exportable());
-            if (initialFullReview) {
+            if (fullReview) {
                 // Both Configuration.* and Language.* live inside the EDT
                 // Configuration root. Language metadata is serialized as
                 // <languages> entries in Configuration.mdo: it has no own
@@ -491,15 +512,17 @@ public final class ReceiveChangesCoordinator {
             EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
-            phase.set(initialFullReview
-                ? "Первоначальная полная выгрузка XML (однократно)"
+            phase.set(fullReview
+                ? (mode == ReceiveMode.FULL_REVIEW
+                    ? "Повторная полная выгрузка XML по запросу"
+                    : "Первоначальная полная выгрузка XML")
                 : "Выборочная выгрузка объектов 1С");
             export = progress(jobProgress, 20, monitor -> {
-                monitor.beginTask(initialFullReview
-                    ? "Полная первичная XML-выгрузка в отдельный каталог"
+                monitor.beginTask(fullReview
+                    ? "Полная XML-выгрузка в отдельный каталог"
                     : "Выгрузка только изменённых объектов", 1);
                 var runner = new SelectiveDumpRunner();
-                SelectiveDumpRunner.ExportResult result = initialFullReview
+                SelectiveDumpRunner.ExportResult result = fullReview
                     ? runner.exportInitialFull(
                         new InitialFullDumpRequest(executable, transport,
                             Duration.ofHours(2), settings.infobaseUsername(),
@@ -523,7 +546,7 @@ public final class ReceiveChangesCoordinator {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
                 var descriptor = EdtPublicServiceBridge.prepare(project,
                     selectedExport.xmlDirectory(), converted, selectedList,
-                    initialFullReview, monitor);
+                    fullReview, monitor);
                 monitor.worked(1);
                 return descriptor;
             });
