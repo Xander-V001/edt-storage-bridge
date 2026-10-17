@@ -67,8 +67,23 @@ public class ConfigurationChangesParserTest {
             "CommonForm.ФормаП", "CommonForm.ФормаП.Form",
             "CommonTemplate.Бланк", "CommonTemplate.Бланк.Template",
             "CommonPicture.Эмблема", "CommonPicture.Эмблема.Picture",
-            "Catalog.Товары", "Catalog.Товары.Command.Подбор"
+            "Catalog.Товары"
         ), changes.objectsToExport());
+    }
+
+    @Test
+    public void embeddedCommandsUseOwnerInChangesParser() throws Exception {
+        var changes = ConfigurationChangesParser.parse(
+            "Modified: Catalog.Б24_УП_НастройкиПодключения.Command.НастройкиПодключения\n"
+            + "Modified: Document.Doc1.Form.Main\n"
+            + "Modified: CommonCommand.OpenPanel.CommandModule\n");
+        assertEquals(List.of(
+            "Catalog.Б24_УП_НастройкиПодключения",
+            "Document.Doc1",
+            "Document.Doc1.Form.Main",
+            "CommonCommand.OpenPanel",
+            "CommonCommand.OpenPanel.CommandModule"),
+            changes.objectsToExport());
     }
 
     @Test

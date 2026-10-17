@@ -408,8 +408,11 @@ public final class ReceiveChangesCoordinator {
                     + "Они остаются ожидающими, остальные объекты "
                     + "будут переданы в штатное сравнение EDT.");
             }
-            Set<String> selectedPendingNames = new LinkedHashSet<>(
-                exportPlan.exportable());
+            // Preserve the ORIGINAL pending object names for verification.
+            // A nested Command is exported through its owner, but is not
+            // cleared until that owner's EDT contents have been verified.
+            Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
+            selectedPendingNames.removeAll(exportPlan.deferred());
             Set<String> selected = topObjects(exportPlan.exportable());
             List<String> selectedList = exportPlan.exportable();
             phase.set("Проверка Git перед подготовкой сравнения");

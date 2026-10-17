@@ -27,6 +27,32 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
+    public void nestedCommandsUseTheirOwnersWithoutLosingIndependentForms() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Catalog.Б24_УП_НастройкиПодключения.Command.НастройкиПодключения",
+            "Catalog.Б24_УП_НастройкиПодключения",
+            "Document.Doc1.Command.Run",
+            "Document.Doc1.Form.MainForm",
+            "CommonCommand.OpenPanel.CommandModule"));
+        assertEquals(List.of(
+            "Catalog.Б24_УП_НастройкиПодключения",
+            "Document.Doc1",
+            "Document.Doc1.Form.MainForm",
+            "CommonCommand.OpenPanel.CommandModule"), plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
+    public void changedCommandAloneStillRequestsItsOwner() {
+        var plan = SelectiveDumpPlanner.plan(List.of(
+            "Catalog.Items.Command.Pick",
+            "DataProcessor.Import.Command.Load"));
+        assertEquals(List.of("Catalog.Items", "DataProcessor.Import"),
+            plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
     public void normalMetadataUsesUnmodifiedNativeFullNames() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Catalog.Товары.ObjectModule", "Document.Заказ",

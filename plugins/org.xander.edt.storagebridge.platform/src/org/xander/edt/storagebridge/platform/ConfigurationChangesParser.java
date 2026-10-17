@@ -70,7 +70,7 @@ public final class ConfigurationChangesParser {
                 switch (parts[2]) {
                     case "Form", "Форма", "Template", "Макет",
                          "Recalculation", "Перерасчет", "Subsystem",
-                         "Подсистема", "Command", "Команда" -> {
+                         "Подсистема" -> {
                         if (parts.length >= 4) {
                             export.add(root + "." + parts[2] + "." + parts[3]);
                         }
@@ -81,8 +81,9 @@ public final class ConfigurationChangesParser {
                          "CommandInterface", "Picture", "ExtInfo" ->
                         export.add(root + "." + parts[2]);
                     default -> {
-                        // Attributes, tabular sections and dimensions are
-                        // covered by their owning metadata object.
+                        // Attributes, tabular sections, dimensions, and
+                        // embedded Commands belong to their owning object.
+                        // Designer rejects Catalog.X.Command.Y separately.
                     }
                 }
             }
