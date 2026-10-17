@@ -88,8 +88,14 @@ public final class SelectiveDumpRunner {
                 }
             }
             try (Stream<Path> paths = Files.walk(target)) {
-                if (paths.noneMatch(p -> Files.isRegularFile(p))) {
-                    throw new IOException("Designer did not export any metadata files");
+                // ConfigDumpInfo.xml is ALWAYS created even if not a single
+                // requested metadata object was dumped. Do not mistake the
+                // version manifest for a successful selective XML export.
+                if (paths.noneMatch(p -> Files.isRegularFile(p)
+                        && !"ConfigDumpInfo.xml".equals(
+                            p.getFileName().toString()))) {
+                    throw new DumpFailure(0, temporaryRoot,
+                        "no metadata files, only version index");
                 }
             }
             succeeded = true;
