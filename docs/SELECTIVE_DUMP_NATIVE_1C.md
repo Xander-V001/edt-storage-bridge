@@ -105,3 +105,30 @@ The same log includes unrelated p2 authentication errors for
 \`services.1c.dev\`, a Windows Defender service-query timeout and warnings
 from other installed plugins. Those are not the immediate cause of the
 \`EdtSelectiveReviewService.prepare\` error shown at 18:15:55.
+
+## 2026-10-17 18:30 — third real failure: unsupported EDT source type mapping
+
+The user-provided EDT 2026.2.1.3 event log now shows
+`EdtSelectiveReviewService.edtOwner:233`, called by `exactScope`
+AFTER `IImportService.work` completed without the previous `Ext` importer
+NPE. At this line the source throws for an unmapped metadata type.
+
+The previously provided actual `objects(1).txt` (16,945 names)
+contains 40 distinct metadata type prefixes, including the single
+`Configuration` root. Of those, the existing EDT mapping omitted
+**exactly three**: `SettingsStorage` (28 entries),
+`CommandGroup` (11), `IntegrationService` (2).
+
+Correction: add the native source group folders
+`SettingsStorages`, `CommandGroups`, `IntegrationServices`
+and Russian aliases. Test these mappings, cover all 39 ordinary
+metadata categories observed in the supplied object list, and aggregate
+unmapped type names before invoking the native Designer export. The
+UI reports only safe type identifiers, never complete storage object
+names or raw native error text. Every outstanding object remains pending
+on failure; there is no fallback to a full import or Git overwrite.
+
+This repairs the known mapping omission only. Other failures (missing
+EDT descriptors after conversion, root XML awaiting treatment,
+revision verification or actual merge conflicts) remain unproven until
+an explicitly authorized manual build and actual EDT verification.
