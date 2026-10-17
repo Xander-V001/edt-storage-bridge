@@ -20,7 +20,9 @@ import org.osgi.service.prefs.Preferences;
  *
  * <p>Connection metadata/checkpoints live in workspace instance preferences,
  * never in project files or Git. Passwords are stored exclusively in encrypted
- * Eclipse Secure Storage. The two repository revisions are intentionally distinct.
+ * Eclipse Secure Storage. Legacy version placeholders are kept for
+ * preference compatibility only; authoritative per-source/per-branch markers
+ * are handled by ReceiveRevisionStore.
  */
 public final class StorageProjectSettings {
 
@@ -148,9 +150,10 @@ public final class StorageProjectSettings {
     }
 
     /**
-     * Called by future read-only transport ONLY after remote version is verified.
-     * No transport has been implemented or invokes this method yet.
+     * Legacy global checkpoint API. Do not use it for receiving: the new
+     * source-scoped record is ReceiveRevisionStore.recordObserved().
      */
+    @Deprecated
     public static void recordObservedRemoteVersion(IProject project, long version)
             throws BackingStoreException {
         requireVersion(version);
@@ -160,10 +163,11 @@ public final class StorageProjectSettings {
     }
 
     /**
-     * Called by future synchronization coordinator ONLY after receive, conflict
-     * resolution, EDT import and verification have all succeeded.
-     * This method is deliberately not connected to UI actions yet.
+     * Legacy global checkpoint API. It is not branch-scoped and MUST NOT
+     * be used to claim that a classic repository version was applied.
+     * Use ReceiveRevisionStore.recordApplied() after full verification.
      */
+    @Deprecated
     public static void recordVerifiedAppliedVersion(IProject project, long version)
             throws BackingStoreException {
         requireVersion(version);
