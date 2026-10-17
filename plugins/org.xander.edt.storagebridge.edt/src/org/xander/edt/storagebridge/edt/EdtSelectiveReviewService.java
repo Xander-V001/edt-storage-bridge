@@ -3,6 +3,12 @@ package org.xander.edt.storagebridge.edt;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.LinkOption;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import org.w3c.dom.Node;
+import org.xml.sax.SAXException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -212,6 +218,9 @@ public final class EdtSelectiveReviewService {
             throw new IOException("Selective external EDT conversion failed");
         }
         List<String> scope = exactScope(target, explicitlySelectedObjects);
+        // Language entries have no separate .mdo: do not count the root
+        // descriptor as proof that the requested languages survived import.
+        requireEmbeddedLanguages(target, explicitlySelectedObjects);
         var main = new V8ProjectComparisonDataSourceDescriptor(active);
         var delta = new FileSystemComparisonDataSourceDescriptor(
             target, project.getName());
@@ -226,6 +235,91 @@ public final class EdtSelectiveReviewService {
             .mainSideObjectsDeletionAllowed(false)
             .build();
         return new CompareMergeProcessDescriptor(handle, settings);
+    }
+
+    /** Report a lost embedded language without leaking its metadata name. */
+    public static final class MissingEmbeddedLanguagesException extends IOException {
+        private final int missingCount;
+
+        public MissingEmbeddedLanguagesException(int missingCount) {
+            super("Requested embedded EDT languages are missing");
+            this.missingCount = missingCount;
+        }
+
+        public int missingCount() { return missingCount; }
+    }
+
+    /**
+     * Language.<name> has no standalone EDT metadata descriptor. Native EDT
+     * places it inside Configuration.mdo as a direct <languages> element.
+     * Verify the imported name(s), rather than trusting only a root .mdo
+     * file's existence. A missing language must never be marked received.
+     */
+    public static void requireEmbeddedLanguages(
+            Path edtRoot, List<String> selectedObjects) throws IOException {
+        Objects.requireNonNull(edtRoot);
+        Objects.requireNonNull(selectedObjects);
+        Set<String> required = new LinkedHashSet<>();
+        for (String entry : selectedObjects) {
+            if (entry == null) {
+                throw new IOException("Null selected metadata name");
+            }
+            if (entry.startsWith("Language.") || entry.startsWith("Язык.")) {
+                String[] parts = entry.split("\\.");
+                if (parts.length < 2 || parts[1].isBlank()) {
+                    throw new IOException("Incomplete language metadata name");
+                }
+                required.add(parts[1]);
+            }
+        }
+        if (required.isEmpty()) {
+            return;
+        }
+        Path descriptor = edtRoot.resolve("src/Configuration/Configuration.mdo");
+        if (!Files.isRegularFile(descriptor, LinkOption.NOFOLLOW_LINKS)) {
+            throw new MissingEmbeddedLanguagesException(required.size());
+        }
+
+        try {
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature(
+                "http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            var xml = factory.newDocumentBuilder().parse(descriptor.toFile());
+            Node root = xml.getDocumentElement();
+            Set<String> materialized = new LinkedHashSet<>();
+            for (Node language = root.getFirstChild(); language != null;
+                    language = language.getNextSibling()) {
+                if (language.getNodeType() != Node.ELEMENT_NODE
+                        || !"languages".equals(xmlLocalName(language))) {
+                    continue;
+                }
+                for (Node property = language.getFirstChild(); property != null;
+                        property = property.getNextSibling()) {
+                    if (property.getNodeType() == Node.ELEMENT_NODE
+                            && "name".equals(xmlLocalName(property))) {
+                        materialized.add(property.getTextContent().trim());
+                    }
+                }
+            }
+            required.removeAll(materialized);
+        } catch (ParserConfigurationException | SAXException ex) {
+            throw new IOException(
+                "Cannot validate embedded languages in EDT configuration", ex);
+        }
+        if (!required.isEmpty()) {
+            throw new MissingEmbeddedLanguagesException(required.size());
+        }
+    }
+
+    private static String xmlLocalName(Node node) {
+        return node.getLocalName() == null ? node.getNodeName()
+            : node.getLocalName();
     }
 
     /** Missing metadata type names only; never expose native object names. */
