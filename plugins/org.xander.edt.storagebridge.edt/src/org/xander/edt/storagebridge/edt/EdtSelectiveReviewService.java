@@ -192,6 +192,10 @@ public final class EdtSelectiveReviewService {
             new ComparisonScope(scope, scope));
         var settings = ComparisonProcessSettings.builder(
             MatchingStrategy.UUID_THEN_NAME)
+            // Use EDT's native BSL syntax-aware merge rather than comparing
+            // an entire modified module as one replaceable text block.
+            // Two-way review still requires the developer's explicit choice.
+            .parseBslModuleStructure(true)
             .mainSideObjectsDeletionAllowed(false)
             .build();
         return new CompareMergeProcessDescriptor(handle, settings);
