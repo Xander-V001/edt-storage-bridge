@@ -39,6 +39,21 @@ public class ConfigurationChangesParserTest {
     }
 
     @Test
+    public void separatelyVersionedModulesAndRightsMustBeExported() throws Exception {
+        var changes = ConfigurationChangesParser.parse(
+            "Modified: Catalog.Товары.ObjectModule\\n"
+            + "Modified: Role.Бухгалтер.Rights\\n"
+            + "Modified: CommonModule.Утилиты.Module\\n"
+            + "Modified: Report.ФормаП4.Form.Основная.Form\\n");
+        assertEquals(List.of(
+            "Catalog.Товары", "Catalog.Товары.ObjectModule",
+            "Role.Бухгалтер", "Role.Бухгалтер.Rights",
+            "CommonModule.Утилиты", "CommonModule.Утилиты.Module",
+            "Report.ФормаП4", "Report.ФормаП4.Form.Основная"),
+            changes.objectsToExport());
+    }
+
+    @Test
     public void emptyResultMeansNoRemoteChanges() throws Exception {
         assertTrue(ConfigurationChangesParser.parse("").objectsToExport().isEmpty());
     }
