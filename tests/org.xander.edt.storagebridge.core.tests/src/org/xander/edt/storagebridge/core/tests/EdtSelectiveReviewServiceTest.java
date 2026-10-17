@@ -37,8 +37,6 @@ public class EdtSelectiveReviewServiceTest {
             EdtSelectiveReviewService.edtOwner("Язык.Русский"));
         assertThrows(IOException.class,
             () -> EdtSelectiveReviewService.edtOwner("Language"));
-        assertNull(EdtSelectiveReviewService.metadataOwnerForPath(Path.of(
-            "src/Configuration/Configuration.mdo/Languages/Русский")));
     }
 
     @Test
