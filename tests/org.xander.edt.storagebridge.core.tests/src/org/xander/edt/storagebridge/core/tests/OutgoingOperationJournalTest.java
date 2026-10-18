@@ -17,6 +17,9 @@ public final class OutgoingOperationJournalTest {
         try {
             var run = OutgoingOperationJournal.begin(folder, "test-source", SHA, 123);
             run.before("LOCK");
+            assertEquals(run.directory(),
+                OutgoingOperationJournal.unresolvedDirectory(
+                    folder, "test-source"));
             assertThrows(IOException.class, () ->
                 OutgoingOperationJournal.begin(folder, "test-source", SHA, 123));
             assertTrue(Files.readString(run.directory().resolve("events.log"))
