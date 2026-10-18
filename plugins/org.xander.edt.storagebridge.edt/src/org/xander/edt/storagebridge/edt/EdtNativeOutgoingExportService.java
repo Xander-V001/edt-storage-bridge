@@ -145,6 +145,7 @@ public final class EdtNativeOutgoingExportService {
         if (bm == null || ns == null) throw new IOException("EDT model is unavailable");
         IBmPlatformTransaction txn = bm.beginReadOnlyTransaction(true);
         var resolved = new LinkedHashMap<String, EObject>();
+        IStatus status;
         try {
             for (var item : names.entrySet()) {
                 if (monitor.isCanceled()) {
@@ -157,17 +158,19 @@ public final class EdtNativeOutgoingExportService {
                 }
                 resolved.put(item.getKey(), object);
             }
+            if (monitor.isCanceled()) {
+                throw new IOException("EDT metadata export cancelled");
+            }
+            // Export transaction-bound BM objects while their read-only
+            // transaction is still open. Closing it first can invalidate
+            // lazy child references used by the EDT native XML exporter.
+            EObject[] objects = resolved.values().toArray(EObject[]::new);
+            status = exports.createExportOperation(
+                out, v8Project.getVersion(), IExportStrategy.DEFAULT, objects)
+                .run(monitor);
         } finally {
             txn.commit();
         }
-        if (monitor.isCanceled()) {
-            throw new IOException("EDT metadata export cancelled");
-        }
-
-        EObject[] objects = resolved.values().toArray(EObject[]::new);
-        IStatus status = exports.createExportOperation(
-            out, v8Project.getVersion(), IExportStrategy.DEFAULT, objects)
-            .run(monitor);
         if (status == null || !status.isOK() || monitor.isCanceled()) {
             throw new IOException("Native EDT whole-object export failed");
         }
@@ -242,6 +245,7 @@ public final class EdtNativeOutgoingExportService {
         if (platform == null || namespace == null)
             throw new IOException("EDT BM namespace unavailable");
         IBmPlatformTransaction transaction = platform.beginReadOnlyTransaction(true);
+        IStatus status;
         try {
             for (String owner : new ArrayList<>(owners.keySet())) {
                 if (monitor.isCanceled())
@@ -251,18 +255,17 @@ public final class EdtNativeOutgoingExportService {
                     throw new IOException("EDT top-level metadata object not found");
                 owners.put(owner, obj);
             }
+            if (monitor.isCanceled())
+                throw new IOException("Native export cancelled");
+            // Retain the read-only BM view while the exporter traverses
+            // subordinate/external objects. Never open a write transaction.
+            EObject[] objects = owners.values().toArray(EObject[]::new);
+            status = exports.createExportOperation(
+                target, v8Project.getVersion(), IExportStrategy.DEFAULT, objects)
+                .run(monitor);
         } finally {
             transaction.commit();
         }
-        if (monitor.isCanceled())
-            throw new IOException("Native export cancelled");
-
-        // Native EDT factory exports subordinate / external / unknown objects.
-        // Do not feed the full output to partial Designer Load.
-        EObject[] objects = owners.values().toArray(EObject[]::new);
-        IStatus status = exports.createExportOperation(
-            target, v8Project.getVersion(), IExportStrategy.DEFAULT, objects)
-            .run(monitor);
         if (status == null || !status.isOK() || monitor.isCanceled())
             throw new IOException("Native EDT export returned non-OK status");
         plan.verifyExport(target);
