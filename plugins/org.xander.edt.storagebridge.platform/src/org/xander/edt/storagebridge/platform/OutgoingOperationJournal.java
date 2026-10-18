@@ -77,6 +77,16 @@ public final class OutgoingOperationJournal {
     public void before(String stage) throws IOException {
         if (!stage.matches("(LOCK|LOAD|COMMIT)"))
             throw new IllegalArgumentException("Invalid native stage");
+        String required = switch (stage) {
+            case "LOCK" -> "PREPARED";
+            case "LOAD" -> "LOCK_PROCESS_OK";
+            case "COMMIT" -> "LOAD_PROCESS_OK";
+            default -> throw new IllegalArgumentException("Invalid stage");
+        };
+        if (!required.equals(Files.readString(marker,
+                StandardCharsets.US_ASCII).trim())) {
+            throw new IOException("Outgoing stage order is invalid: reconcile state");
+        }
         state(stage + "_UNCERTAIN");
         event("BEFORE_" + stage, "attempt-recorded-before-process-start");
     }
@@ -84,6 +94,10 @@ public final class OutgoingOperationJournal {
     public void after(String stage, int exit) throws IOException {
         if (!stage.matches("(LOCK|LOAD|COMMIT)"))
             throw new IllegalArgumentException("Invalid native stage");
+        if (!(stage + "_UNCERTAIN").equals(Files.readString(marker,
+                StandardCharsets.US_ASCII).trim())) {
+            throw new IOException("Unexpected native stage result");
+        }
         event("EXIT_" + stage, "exit=" + exit);
         if (exit != 0) {
             state(stage + "_UNCERTAIN");
@@ -96,6 +110,10 @@ public final class OutgoingOperationJournal {
     public void verified(long newVersion) throws IOException {
         if (newVersion < 1)
             throw new IllegalArgumentException("Unverified repository revision");
+        if (!"COMMIT_PROCESS_OK".equals(Files.readString(marker,
+                StandardCharsets.US_ASCII).trim())) {
+            throw new IOException("No confirmed native Commit process outcome");
+        }
         event("VERIFIED", "native-head=" + newVersion);
         state("COMPLETED");
         Path active = directory.getParent().resolve("active.txt");
