@@ -4,75 +4,68 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 import org.xander.edt.storagebridge.core.OutgoingSafetyGate;
 
-/** No IDE, Git, native 1C executable, or user's storage is used. */
+/**
+ * Read-only outbound preparation must not be blocked by unrelated project
+ * status. No Designer write is authorized by this assessment.
+ */
 public final class OutgoingSafetyGateTest {
     @Test
-    public void acceptedNativeRevisionAloneCannotEnablePublishing() {
+    public void unknownGlobalAppliedCheckpointDoesNotBlockSelectingObjects() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(29405, 29405, 0,
-                true, false, false));
-        assertFalse(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.VERIFIED_CONTENT_BASELINE_MISSING));
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.ISOLATED_VALIDATION_MISSING));
+            new OutgoingSafetyGate.Evidence(29405, -1, 0, null));
+        assertTrue(result.mayPrepareSelection());
+        assertTrue(result.notices().contains(
+            OutgoingSafetyGate.Notice.PROJECT_WIDE_APPLIED_REVISION_UNKNOWN));
     }
 
     @Test
-    public void genuineNewStorageVersionBlocksEvenWithCleanGitAndBaseline() {
+    public void remoteRevisionAdvanceRequiresObjectConflictCheckNotGlobalRefusal() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(29406, 29405, 0,
-                true, true, true));
-        assertFalse(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.REVISION_DIVERGED));
+            new OutgoingSafetyGate.Evidence(29406, 29405, 0, true));
+        assertTrue(result.mayPrepareSelection());
+        assertTrue(result.notices().contains(
+            OutgoingSafetyGate.Notice.PROJECT_WIDE_REVISIONS_DIFFER));
     }
 
     @Test
-    public void unknownNativeHeadCannotBeReplacedByXmlVersionToken() {
+    public void unknownVersionReportCanStillPrepareSelectedObjectPreview() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(-1, 29405, 0,
-                true, true, true));
-        assertFalse(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.NATIVE_HEAD_UNKNOWN));
+            new OutgoingSafetyGate.Evidence(-1, 29405, 0, true));
+        assertTrue(result.mayPrepareSelection());
+        assertTrue(result.notices().contains(
+            OutgoingSafetyGate.Notice.HEAD_REPORT_UNAVAILABLE));
     }
 
     @Test
-    public void unknownAppliedRevisionNeverCountsAsReady() {
+    public void pendingIncomingAndDirtyGitWarnButDoNotPreventReview() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(29405, -1, 0,
-                true, true, true));
-        assertFalse(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.APPLIED_REVISION_UNKNOWN));
+            new OutgoingSafetyGate.Evidence(29405, 29405, 2, false));
+        assertTrue(result.mayPrepareSelection());
+        assertTrue(result.notices().contains(
+            OutgoingSafetyGate.Notice.OTHER_INCOMING_CHANGES_MAY_EXIST));
+        assertTrue(result.notices().contains(
+            OutgoingSafetyGate.Notice.LOCAL_GIT_CHANGES_MAY_BE_INCLUDED));
     }
 
     @Test
-    public void incomingChangesOrDirtyGitIndependentlyBlockPublishing() {
+    public void noWarningsWhenProjectWideStatusIsConsistent() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(29405, 29405, 2,
-                false, true, true));
-        assertFalse(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.INCOMING_PENDING));
-        assertTrue(result.blockers().contains(
-            OutgoingSafetyGate.Blocker.GIT_NOT_CLEAN));
+            new OutgoingSafetyGate.Evidence(29405, 29405, 0, true));
+        assertTrue(result.mayPrepareSelection());
+        assertTrue(result.notices().isEmpty());
     }
 
     @Test
-    public void onlyAllPrerequisitesProvenCanPassThePureGate() {
+    public void unknownGitDirtyStatusDoesNotFalselyClaimDirty() {
         var result = OutgoingSafetyGate.evaluate(
-            new OutgoingSafetyGate.Evidence(29405, 29405, 0,
-                true, true, true));
-        assertTrue(result.prerequisitesSatisfied());
-        assertTrue(result.blockers().isEmpty());
+            new OutgoingSafetyGate.Evidence(29405, 29405, 0, null));
+        assertFalse(result.notices().contains(
+            OutgoingSafetyGate.Notice.LOCAL_GIT_CHANGES_MAY_BE_INCLUDED));
     }
 
     @Test
-    public void snapshotValidationRejectsImpossibleNegativePendingCount() {
+    public void impossiblePendingCountRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> new OutgoingSafetyGate.Evidence(29405, 29405, -1,
-                true, true, true));
+            () -> new OutgoingSafetyGate.Evidence(29405, 29405, -1, null));
     }
 }
