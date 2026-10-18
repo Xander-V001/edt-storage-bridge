@@ -131,9 +131,16 @@ public final class OutgoingWholeObjectWritePlan {
         Files.writeString(xmlObjects,
             OutgoingStorageObjectsXml.createWithSubordinates(classicOwners()),
             StandardCharsets.UTF_8);
-        Files.writeString(loadList,
-            String.join("\r\n", loadFiles) + "\r\n",
-            StandardCharsets.UTF_8);
+        // Designer consistently recognizes UTF-8 BOM on Windows even for
+        // metadata whose names are Cyrillic; keep CRLF like native dump lists.
+        byte[] body = (String.join("\r\n", loadFiles) + "\r\n")
+            .getBytes(StandardCharsets.UTF_8);
+        byte[] utf8Bom = new byte[body.length + 3];
+        utf8Bom[0] = (byte) 0xEF;
+        utf8Bom[1] = (byte) 0xBB;
+        utf8Bom[2] = (byte) 0xBF;
+        System.arraycopy(body, 0, utf8Bom, 3, body.length);
+        Files.write(loadList, utf8Bom);
     }
 
     /** All export artifacts are verified before passing to Designer. */
