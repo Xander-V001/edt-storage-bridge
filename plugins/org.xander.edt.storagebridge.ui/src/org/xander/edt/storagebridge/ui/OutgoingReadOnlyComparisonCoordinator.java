@@ -29,6 +29,7 @@ import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
 import org.xander.edt.storagebridge.core.OutgoingDifferenceSummary;
 import org.xander.edt.storagebridge.core.OutgoingBslWritePlan;
+import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
@@ -174,6 +175,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     var delta = OutgoingDeltaScanner.compare(
                         converted, Path.of(project.getLocation().toOSString()));
                     var summary = OutgoingDifferenceSummary.from(delta);
+                    var metadataPlan = OutgoingMetadataObjectPlan.fromDelta(delta);
                     // Publication is allowed only when EVERY changed resource
                     // maps to one verified standalone modified BSL file.
                     // Unrecognized metadata, forms, attributes, additions,
@@ -247,25 +249,30 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                                             if (!display.isDisposed()) {
                                                 display.asyncExec(() -> {
                                                     if (shell.isDisposed()) return;
-                                                    if (testWritePlan == null) {
+                                                    if (metadataPlan.owners().isEmpty()) {
                                                         MessageDialog.openInformation(shell,
-                                                            "Помещение пока заблокировано",
-                                                            "Сравнение завершено. "
-                                                            + "Найденные изменения включают "
-                                                            + "неподдерживаемые для тестового "
-                                                            + "помещения объекты либо нет "
-                                                            + "изменений. Изменения форм, "
-                                                            + "структуры, удалений и неизвестных "
-                                                            + "ресурсов нельзя автоматически "
-                                                            + "помещать без проверки транспорта."
-                                                            + "\nНикакие изменения в хранилище "
-                                                            + "не внесены.");
+                                                            "Сверка завершена",
+                                                            "Изменений исходных файлов "
+                                                            + "не обнаружено. Ничего не помещено.");
                                                     } else {
-                                                        OutgoingBslWriteCoordinator
-                                                            .confirmTestWrite(shell,
-                                                                project, settings,
-                                                                expectedGit, headRevision,
-                                                                testWritePlan);
+                                                        boolean export = MessageDialog.openQuestion(
+                                                            shell, "Экспорт всех изменённых объектов",
+                                                            "Обнаружено объектов метаданных: "
+                                                            + metadataPlan.owners().size()
+                                                            + ", ресурсов: "
+                                                            + metadataPlan.changedResourceCount()
+                                                            + ".\n\nПодготовить штатный XML-экспорт "
+                                                            + "ВСЕХ доступных изменённых объектов "
+                                                            + "из EDT для проверки? "
+                                                            + "Удалённые объекты будут перечислены "
+                                                            + "отдельно. Это операция ТОЛЬКО ЧТЕНИЯ: "
+                                                            + "база и хранилище не меняются.");
+                                                        if (export) {
+                                                            OutgoingMetadataExportCoordinator
+                                                                .preview(shell, project, settings,
+                                                                    expectedGit, headRevision,
+                                                                    metadataPlan, testWritePlan);
+                                                        }
                                                     }
                                                 });
                                             }
