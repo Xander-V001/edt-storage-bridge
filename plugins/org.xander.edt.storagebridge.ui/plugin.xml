@@ -10,6 +10,8 @@
       name="%command.fullReview"/>
     <command id="org.xander.edt.storagebridge.ui.outgoingReadiness"
       name="%command.outgoingReadiness"/>
+    <command id="org.xander.edt.storagebridge.ui.outgoingNativeExportPreview"
+      name="%command.outgoingNativeExportPreview"/>
   </extension>
   <extension point="org.eclipse.ui.handlers">
     <handler
@@ -24,6 +26,8 @@
     <handler
       commandId="org.xander.edt.storagebridge.ui.outgoingReadiness"
       class="org.xander.edt.storagebridge.ui.OutgoingReadinessHandler"/>
+    <handler commandId="org.xander.edt.storagebridge.ui.outgoingNativeExportPreview"
+      class="org.xander.edt.storagebridge.ui.OutgoingNativeExportPreviewHandler"/>
   </extension>
   <extension point="org.eclipse.ui.menus">
     <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
@@ -31,6 +35,7 @@
         <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.fullReview" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.outgoingReadiness" style="push"/>
+        <command commandId="org.xander.edt.storagebridge.ui.outgoingNativeExportPreview" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.inspectProject" style="push"/>
       </menu>
     </menuContribution>
