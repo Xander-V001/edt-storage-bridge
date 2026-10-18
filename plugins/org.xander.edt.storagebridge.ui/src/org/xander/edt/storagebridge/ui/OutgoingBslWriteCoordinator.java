@@ -90,6 +90,7 @@ public final class OutgoingBslWriteCoordinator {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 OutgoingOperationJournal journal = null;
+                Path unresolvedJournal = null;
                 boolean mayAbort = true;
                 String phase = "PREFLIGHT";
                 try {
@@ -139,6 +140,11 @@ public final class OutgoingBslWriteCoordinator {
                     String scope = project.getLocationURI().normalize()
                         + "\0" + settings.address().trim()
                         + "\0" + source + "\0" + branch;
+                    unresolvedJournal = OutgoingOperationJournal
+                        .unresolvedDirectory(statePath, scope);
+                    if (unresolvedJournal != null)
+                        throw new IOException(
+                            "Prior native outgoing operation needs manual reconciliation");
                     journal = OutgoingOperationJournal.begin(statePath,
                         scope, reviewedGit.head(), reviewedRevision);
                     Path root = journal.directory();
@@ -290,7 +296,7 @@ public final class OutgoingBslWriteCoordinator {
                                 "stage-uncertain=true; manual-check-required");
                         } catch (IOException ignored) { /* Error Log follows */ }
                     }
-                    final Path diagnostic = journal == null ? null
+                    final Path diagnostic = journal == null ? unresolvedJournal
                         : journal.directory();
                     final boolean uncertain = !mayAbort;
                     if (!display.isDisposed()) display.asyncExec(() -> {
@@ -323,7 +329,7 @@ public final class OutgoingBslWriteCoordinator {
                     Platform.getLog(OutgoingBslWriteCoordinator.class).log(
                         new Status(IStatus.ERROR, PLUGIN,
                             "Outgoing native TEST publish failed at " + phase, ex));
-                    final Path diagnosticPath = journal == null ? null
+                    final Path diagnosticPath = journal == null ? unresolvedJournal
                         : journal.directory();
                     final boolean uncertain = !mayAbort;
                     final String failurePhase = phase;
