@@ -773,23 +773,23 @@ public final class ReceiveChangesCoordinator {
                                                     + "объектов, проверьте перед отправкой.");
                                         }
                                         if (fullyReviewed > 0) {
-                                            report.append("\\nОбработанная разработчиком "
+                                            report.append("\nОбработанная разработчиком "
                                                 + "версия хранилища: ")
                                                 .append(fullyReviewed);
                                             if (fullyApplied > 0) {
-                                                report.append("\\nСодержимое EDT "
+                                                report.append("\nСодержимое EDT "
                                                     + "также совпадает с хранилищем.");
                                             } else {
-                                                report.append("\\nСохранены выбранные "
+                                                report.append("\nСохранены выбранные "
                                                     + "разработчиком локальные отличия.");
                                             }
                                         } else {
-                                            report.append("\\nВерсия хранилища "
+                                            report.append("\nВерсия хранилища "
                                                 + "НЕ отмечена как обработанная.");
                                             if (reason != null) {
-                                                report.append("\\nПричина: ").append(reason);
+                                                report.append("\nПричина: ").append(reason);
                                             } else if (pendingAfter > 0) {
-                                                report.append("\\nПричина: "
+                                                report.append("\nПричина: "
                                                     + "не все входящие изменения "
                                                     + "были разобраны.");
                                             }
