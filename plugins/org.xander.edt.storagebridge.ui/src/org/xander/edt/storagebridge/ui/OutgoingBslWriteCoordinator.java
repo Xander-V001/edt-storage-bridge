@@ -326,12 +326,13 @@ public final class OutgoingBslWriteCoordinator {
                     final Path diagnosticPath = journal == null ? null
                         : journal.directory();
                     final boolean uncertain = !mayAbort;
+                    final String failurePhase = phase;
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed())
                             MessageDialog.openWarning(shell,
                                 "Тестовое помещение остановлено",
                                 "Не удалось завершить исходящую операцию.\nЭтап: "
-                                + phase + "\n"
+                                + failurePhase + "\n"
                                 + (uncertain
                                     ? "Lock/Load/Commit могли изменить тестовую "
                                       + "базу или хранилище. НЕ ПОВТОРЯЙТЕ "
