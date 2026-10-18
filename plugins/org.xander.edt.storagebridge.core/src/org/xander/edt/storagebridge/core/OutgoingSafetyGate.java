@@ -29,7 +29,7 @@ public final class OutgoingSafetyGate {
     }
 
     public record Evidence(long nativeHead, long appliedRevision,
-            int incomingPending, boolean gitWorkingTreeClean) {
+            int incomingPending, Boolean gitWorkingTreeClean) {
         public Evidence {
             if (incomingPending < 0) {
                 throw new IllegalArgumentException("Negative pending count");
@@ -68,7 +68,7 @@ public final class OutgoingSafetyGate {
         if (evidence.incomingPending() > 0) {
             notices.add(Notice.OTHER_INCOMING_CHANGES_MAY_EXIST);
         }
-        if (!evidence.gitWorkingTreeClean()) {
+        if (Boolean.FALSE.equals(evidence.gitWorkingTreeClean())) {
             notices.add(Notice.LOCAL_GIT_CHANGES_MAY_BE_INCLUDED);
         }
         return new Decision(notices);
