@@ -22,6 +22,9 @@ public final class ReceiveRevisionStore {
     private static final String ROOT = "org.xander.edt.storagebridge.ui";
     private static final String OBSERVED = "observedLatestRevision";
     private static final String APPLIED = "verifiedFullyAppliedRevision";
+    // All remote changes at this revision have been reviewed by the developer.
+    // Unlike APPLIED, REVIEWED does not claim byte equality with repository XML.
+    private static final String REVIEWED = "userReviewedRepositoryRevision";
 
     private ReceiveRevisionStore() {}
 
@@ -46,6 +49,48 @@ public final class ReceiveRevisionStore {
         // Repository may have been recreated/reset on the same endpoint.
         // A numerically impossible checkpoint cannot be shown as verified.
         return remote >= 1 && result <= remote ? result : UNKNOWN;
+    }
+
+    /**
+     * Last explicitly completed incoming review, including deliberate choices
+     * to retain local code. A review is not a byte-identical remote copy.
+     * Older installations can already have a stricter applied checkpoint.
+     */
+    public static long reviewed(IProject project, String repository,
+            String intermediary, String branch) {
+        long result = branchScope(project, repository, intermediary, branch)
+            .getLong(REVIEWED, UNKNOWN);
+        long applied = applied(project, repository, intermediary, branch);
+        long remote = observed(project, repository, intermediary);
+        if (remote < 1) {
+            return UNKNOWN;
+        }
+        if (result < 1 || result > remote) {
+            return applied;
+        }
+        return Math.max(result, applied);
+    }
+
+    /**
+     * Record only after the user explicitly finished reviewing the latest
+     * staged incoming changes AND a native 1C report confirmed the exact HEAD.
+     * This is not allowed to silently advance on editor-close alone.
+     */
+    public static void recordReviewed(IProject project, String repository,
+            String intermediary, String branch, long revision)
+            throws BackingStoreException {
+        requireRevision(revision);
+        if (observed(project, repository, intermediary) != revision) {
+            throw new IllegalStateException(
+                "Native HEAD has not confirmed the reviewed repository revision");
+        }
+        var preferences = branchScope(project, repository, intermediary, branch);
+        long previous = preferences.getLong(REVIEWED, UNKNOWN);
+        if (previous > revision) {
+            throw new IllegalStateException("Repository review revision regressed");
+        }
+        preferences.putLong(REVIEWED, revision);
+        preferences.flush();
     }
 
     /**

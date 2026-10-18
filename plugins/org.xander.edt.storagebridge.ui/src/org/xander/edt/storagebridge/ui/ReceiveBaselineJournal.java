@@ -24,6 +24,8 @@ import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 public final class ReceiveBaselineJournal {
     private final Path baselineFile;
     private final Path lastScannedFile;
+    /** Native HEAD attested for the exact last-scanned ConfigDumpInfo bytes. */
+    private final Path lastScannedRevisionFile;
     private final Path initialReviewMarker;
     private final ReceiveAttemptLedger ledger;
     private final Path intermediaryFingerprintFile;
@@ -47,6 +49,7 @@ public final class ReceiveBaselineJournal {
         Path folder = workspaceState.resolve("receive").resolve(digest(identity));
         this.baselineFile = folder.resolve("previous-ConfigDumpInfo.xml");
         this.lastScannedFile = folder.resolve("last-scanned-ConfigDumpInfo.xml");
+        this.lastScannedRevisionFile = folder.resolve("last-scanned-native-revision.txt");
         this.initialReviewMarker = folder.resolve("initial-full-review-prepared");
         this.ledger = new ReceiveAttemptLedger(folder);
         this.intermediaryFingerprintFile = folder.resolve("intermediary.sha256");
@@ -158,6 +161,77 @@ public final class ReceiveBaselineJournal {
             }
         } finally {
             Files.deleteIfExists(partial);
+        }
+    }
+
+    /**
+     * A checked native 1C revision associated with the exact remote inventory
+     * just scanned. This permits a later pending-only retry to complete its
+     * review WITHOUT a second repository update. It is never derived from
+     * ConfigDumpInfo version tokens.
+     */
+    public void recordScannedRevision(long nativeHead) throws IOException {
+        if (nativeHead < 1) {
+            throw new IllegalArgumentException("Native revision must be positive");
+        }
+        Path info = lastScannedInfo();
+        if (info == null) {
+            throw new IOException("No last-scanned inventory for revision proof");
+        }
+        Files.createDirectories(lastScannedRevisionFile.getParent());
+        Path temporary = lastScannedRevisionFile.resolveSibling(
+            "last-scanned-native-revision.part");
+        String proof = nativeHead + "\\n" + fileDigest(info) + "\\n";
+        try {
+            Files.writeString(temporary, proof, StandardCharsets.US_ASCII);
+            try {
+                Files.move(temporary, lastScannedRevisionFile,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                Files.move(temporary, lastScannedRevisionFile,
+                    StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    /** Unknown when no proof or when inventory was replaced since attestation. */
+    public long scannedRevision() throws IOException {
+        Path info = lastScannedInfo();
+        if (info == null || !Files.isRegularFile(lastScannedRevisionFile)) {
+            return -1;
+        }
+        var lines = Files.readAllLines(lastScannedRevisionFile,
+            StandardCharsets.US_ASCII);
+        if (lines.size() != 2 || !lines.get(0).matches("[1-9][0-9]{0,15}")
+                || !lines.get(1).matches("[0-9a-f]{64}")) {
+            return -1;
+        }
+        if (!fileDigest(info).equals(lines.get(1))) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(lines.get(0));
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private static String fileDigest(Path file) throws IOException {
+        try {
+            MessageDigest hash = MessageDigest.getInstance("SHA-256");
+            try (var stream = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = stream.read(buffer)) != -1) {
+                    hash.update(buffer, 0, read);
+                }
+            }
+            return HexFormat.of().formatHex(hash.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
         }
     }
 

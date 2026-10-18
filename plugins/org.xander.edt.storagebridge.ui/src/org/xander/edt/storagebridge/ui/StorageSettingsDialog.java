@@ -180,7 +180,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             observedRevision = ReceiveRevisionStore.observed(
                 project, saved.address(), intermediary);
             if (activeBranch != null) {
-                appliedRevision = ReceiveRevisionStore.applied(
+                appliedRevision = ReceiveRevisionStore.reviewed(
                     project, saved.address(), intermediary, activeBranch);
             }
         }
@@ -188,7 +188,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             "Последняя обнаруженная версия хранилища:",
             formatVersion(observedRevision));
         appliedRevisionLabel = addReadOnly(revisions,
-            "Версия, полностью применённая к EDT"
+            "Обработанная версия хранилища в EDT"
                 + (activeBranch == null ? "" : " (" + activeBranch + ")") + ":",
             formatAppliedVersion(appliedRevision, observedRevision));
         refreshVersionsButton = new Button(revisions, SWT.PUSH);
@@ -205,7 +205,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         note.setText("Получение обновит только существующую базу хранилища "
             + "после подтверждения. Затем можно выбрать отдельные объекты "
             + "для сравнения и объединения с EDT. Непринятые объекты "
-            + "останутся в журнале. Другие базы EDT не используются.");
+            + "останутся в журнале до подтверждения завершения разбора. "
+            + "Другие базы EDT не используются.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
@@ -267,13 +268,13 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     if (activeBranch != null) {
                         String intermediary = connection.infobaseType().name()
                             + ":" + connection.infobaseAddress().trim();
-                        applied = ReceiveRevisionStore.applied(
+                        applied = ReceiveRevisionStore.reviewed(
                             project, connection.address(), intermediary, activeBranch);
                     }
                     appliedRevisionLabel.setText(
                         formatAppliedVersion(applied, revision));
                     setMessage("Последняя версия хранилища прочитана: "
-                        + revision + ". Применённая версия EDT подтверждается отдельно.");
+                        + revision + ". Обработка входящих изменений подтверждается после завершения сравнения.");
                 }
                 refreshVersionsButton.setEnabled(true);
             },
