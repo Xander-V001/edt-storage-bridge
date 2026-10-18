@@ -261,6 +261,30 @@ public final class OutgoingBslWriteCoordinator {
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
+                    if (journal != null && mayAbort) {
+                        try { journal.abortBeforeMutation(); }
+                        catch (IOException ignored) { /* leave unknown marker */ }
+                    } else if (journal != null) {
+                        try {
+                            journal.event("INTERRUPTED",
+                                "stage-uncertain=true; manual-check-required");
+                        } catch (IOException ignored) { /* Error Log follows */ }
+                    }
+                    final Path diagnostic = journal == null ? null
+                        : journal.directory();
+                    final boolean uncertain = !mayAbort;
+                    if (!display.isDisposed()) display.asyncExec(() -> {
+                        if (!shell.isDisposed()) {
+                            MessageDialog.openWarning(shell,
+                                "Тестовое помещение прервано",
+                                (uncertain
+                                    ? "Конфигуратор мог уже изменить базу или "
+                                      + "хранилище. Повтор запрещён до сверки."
+                                    : "Помещение остановлено до захвата объектов.")
+                                + (diagnostic == null ? ""
+                                    : "\nЖурнал: " + diagnostic));
+                        }
+                    });
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
                     if (journal != null && mayAbort) {
