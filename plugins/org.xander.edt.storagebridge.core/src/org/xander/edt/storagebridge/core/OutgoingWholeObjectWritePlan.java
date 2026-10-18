@@ -75,7 +75,7 @@ public final class OutgoingWholeObjectWritePlan {
             roots.put(owner, owner + ".xml");
         }
         // The -Objects XML serializer independently validates native names.
-        OutgoingStorageObjectsXml.create(Set.copyOf(expectedNames));
+        OutgoingStorageObjectsXml.createWithSubordinates(Set.copyOf(expectedNames));
         var uniqueFiles = new LinkedHashSet<String>();
         var mainFiles = new LinkedHashSet<String>();
         for (String path : files) {
@@ -129,7 +129,7 @@ public final class OutgoingWholeObjectWritePlan {
             throw new IOException("Invalid whole-object native load scope");
         }
         Files.writeString(xmlObjects,
-            OutgoingStorageObjectsXml.create(classicOwners()),
+            OutgoingStorageObjectsXml.createWithSubordinates(classicOwners()),
             StandardCharsets.UTF_8);
         Files.writeString(loadList,
             String.join("\r\n", loadFiles) + "\r\n",

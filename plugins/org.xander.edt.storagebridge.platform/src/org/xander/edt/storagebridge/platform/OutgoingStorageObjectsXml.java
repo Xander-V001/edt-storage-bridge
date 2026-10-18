@@ -20,6 +20,16 @@ public final class OutgoingStorageObjectsXml {
     private OutgoingStorageObjectsXml() {}
 
     public static String create(Set<String> explicitClassicNames) {
+        return createInternal(explicitClassicNames, false);
+    }
+
+    /** For full-object operations that MUST include its subordinate objects. */
+    public static String createWithSubordinates(Set<String> explicitClassicNames) {
+        return createInternal(explicitClassicNames, true);
+    }
+
+    private static String createInternal(Set<String> explicitClassicNames,
+            boolean includeSubordinates) {
         Objects.requireNonNull(explicitClassicNames);
         if (explicitClassicNames.isEmpty()
                 || explicitClassicNames.size() > MAX_OBJECTS) {
@@ -50,7 +60,9 @@ public final class OutgoingStorageObjectsXml {
             // XML escaping is unnecessary by construction: the strict
             // metadata FQN alphabet contains no XML metacharacters.
             xml.append("  <Object fullName=\"").append(name)
-                .append("\" includeChildObjects=\"false\"/>\n");
+                 .append("\" includeChildObjects=\"")
+                .append(includeSubordinates ? "true" : "false")
+                .append("\"/>\n");
         }
         return xml.append("</Objects>\n").toString();
     }
