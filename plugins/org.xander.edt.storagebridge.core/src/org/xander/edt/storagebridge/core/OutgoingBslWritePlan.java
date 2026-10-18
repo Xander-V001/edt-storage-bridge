@@ -50,6 +50,24 @@ public final class OutgoingBslWritePlan {
     }
 
     public List<String> platformFiles() { return selected.platformFiles(); }
+
+    /**
+     * For verification after a Designer partial load, request the exact
+     * independent module names in a native selective dump. If this 1C
+     * version does not support one of these selectors, the operation must
+     * stop before Commit; there is no silent full-dump fallback.
+     */
+    public List<String> independentNativeNames() {
+        return selected.items().stream().map(item ->
+            item.classicOwner().startsWith("CommonModule.")
+                ? item.classicOwner()
+                : item.classicOwner() + "." +
+                    item.platformPath().substring(
+                        item.platformPath().lastIndexOf('/') + 1,
+                        item.platformPath().length() - 4)
+        ).distinct().toList();
+    }
+
     public Set<String> classicOwners() { return selected.classicOwners(); }
 
     public void verifyExport(Path nativeExport) throws IOException {
