@@ -1,4 +1,7 @@
-package org.xander.edt.storagebridge.platform;
+package org.xander.edt.storagebridge.core;
+
+import org.xander.edt.storagebridge.platform.OutgoingBslPreviewPlan;
+import org.xander.edt.storagebridge.platform.OutgoingStorageObjectsXml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -8,7 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
+
 
 /**
  * An intentionally narrow qualified candidate: ONLY modified standalone BSL
