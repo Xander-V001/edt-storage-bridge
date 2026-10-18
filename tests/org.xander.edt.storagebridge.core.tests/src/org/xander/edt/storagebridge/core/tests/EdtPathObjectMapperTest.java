@@ -27,7 +27,7 @@ public class EdtPathObjectMapperTest {
         assertEquals("CommonModules/Тест",
             EdtPathObjectMapper.topObject(Path.of(
                 "src/CommonModules/Тест/Module.bsl")));
-        assertEquals("Configuration",
+        assertEquals("Configuration/Configuration",
             EdtPathObjectMapper.topObject(Path.of(
                 "src/Configuration/Configuration.mdo")));
     }

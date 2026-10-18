@@ -6,7 +6,9 @@ import java.util.Set;
 
 /**
  * Official classic 1C repository -Objects XML format (NOT -listFile!).
- * Produces an explicit, nonempty and NON-recursive object selection.
+ * Produces an explicit, nonempty object selection. The default serializer
+ * is NON-recursive for module-only writes; the full-object serializer
+ * explicitly includes subordinate objects.
  *
  * This is a pure preview serializer. No Designer process, object capture
  * or repository commit is launched here. A separate validated mapping
@@ -60,7 +62,7 @@ public final class OutgoingStorageObjectsXml {
             // XML escaping is unnecessary by construction: the strict
             // metadata FQN alphabet contains no XML metacharacters.
             xml.append("  <Object fullName=\"").append(name)
-                 .append("\" includeChildObjects=\"")
+                .append("\" includeChildObjects=\"")
                 .append(includeSubordinates ? "true" : "false")
                 .append("\"/>\n");
         }

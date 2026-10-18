@@ -30,6 +30,14 @@ public final class OutgoingStorageObjectsXmlTest {
     }
 
     @Test
+    public void wholeObjectScopeExplicitlyIncludesSubordinates() {
+        String xml = OutgoingStorageObjectsXml.createWithSubordinates(
+            Set.of("Document.Order", "AccumulationRegister.Balance"));
+        assertEquals(2, xml.split("includeChildObjects=\\\"true\\\"").length - 1);
+        assertFalse(xml.contains("includeChildObjects=\\\"false\\\""));
+    }
+
+    @Test
     public void absentSelectionCanNeverBecomeLockEverything() {
         assertThrows(IllegalArgumentException.class,
             () -> OutgoingStorageObjectsXml.create(Set.of()));
