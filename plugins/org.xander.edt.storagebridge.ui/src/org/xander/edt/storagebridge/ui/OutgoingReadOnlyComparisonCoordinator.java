@@ -98,7 +98,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         settings.address(), expectedGit.branch(), intermediary);
                     if (journal.scannedRevision() != headRevision
                             || journal.lastScannedInfo() == null) {
-                        throw new IOException("Intermediary has no attested current inventory");
+                        throw new UnattestedSourceException();
                     }
                     var expectedVersions = ConfigDumpInfoIndex.readVersions(
                         journal.lastScannedInfo());
@@ -184,12 +184,12 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         if (shell.isDisposed()) return;
                         previewAccepted.set(MessageDialog.openQuestion(shell,
                             "Отличия EDT и хранилища — предварительный список",
-                            summary.describe(16) + "\\n\\n"
+                            summary.describe(16) + "\n\n"
                             + "Это список ФАЙЛОВЫХ отличий, не окончательный "
                             + "семантический состав помещения. "
                             + "Для проверки объектов и свойств откроется "
                             + "штатное сравнение EDT БЕЗ ОБЪЕДИНЕНИЯ. "
-                            + "Рабочий проект, база и хранилище не изменяются.\\n\\n"
+                            + "Рабочий проект, база и хранилище не изменяются.\n\n"
                             + "Открыть подробное сравнение?"));
                     });
                     if (!previewAccepted.get()) return Status.CANCEL_STATUS;
@@ -263,6 +263,21 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     return Status.CANCEL_STATUS;
+                } catch (UnattestedSourceException ex) {
+                    if (!display.isDisposed()) display.asyncExec(() -> {
+                        if (!shell.isDisposed()) {
+                            MessageDialog.openWarning(shell,
+                                "Невозможно подтвердить состояние хранилища",
+                                "Снимок состава объектов базы-посредника не "
+                                + "привязан к текущей реальной ревизии хранилища. "
+                                + "Показывать его как актуальную конфигурацию "
+                                + "нельзя. Проверьте завершение предыдущего "
+                                + "получения и фиксацию версии в EDT."
+                                + "\n\nНичего не изменено и не помещено.");
+                        }
+                    });
+                    return new Status(IStatus.WARNING, PLUGIN,
+                        "Outgoing review blocked: repository inventory not attested");
                 } catch (Exception ex) {
                     // Do not expose exception details, XML paths or credentials
                     // in user dialogs; native logs may contain sensitive data.
@@ -288,6 +303,10 @@ public final class OutgoingReadOnlyComparisonCoordinator {
         };
         job.setUser(true);
         job.schedule();
+    }
+
+    private static final class UnattestedSourceException extends IOException {
+        private static final long serialVersionUID = 1L;
     }
 
     private static void closeQuietly(SelectiveDumpRunner.ExportResult export,
