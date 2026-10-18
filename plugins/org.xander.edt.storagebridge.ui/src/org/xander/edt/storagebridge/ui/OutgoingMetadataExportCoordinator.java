@@ -22,6 +22,7 @@ import org.eclipse.swt.widgets.Shell;
 
 import org.xander.edt.storagebridge.core.OutgoingBslWritePlan;
 import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
+import org.xander.edt.storagebridge.core.OutgoingWholeObjectWritePlan;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
@@ -102,6 +103,7 @@ public final class OutgoingMetadataExportCoordinator {
                     phase = "NATIVE_EDT_EXPORT";
                     monitor.subTask("Экспорт изменённых объектов средствами EDT");
                     int files = 0;
+                    OutgoingWholeObjectWritePlan qualifiedWrite = null;
                     var exportable = plan.exportableOwners();
                     if (!exportable.isEmpty()) {
                         Path exportRoot = Files.createDirectory(folder.resolve("xml"));
@@ -109,6 +111,23 @@ public final class OutgoingMetadataExportCoordinator {
                         var result = EdtPublicServiceBridge.previewNativeMetadataExport(
                             project, exportable, exportRoot, monitor);
                         files = result.outputFiles().size();
+                        // Native export never silently defines a write scope.
+                        // Qualify ALL owners and ALL actual output files,
+                        // including forms/templates/roles/registers, as one
+                        // operation; any unsupported resource blocks writing.
+                        try {
+                            qualifiedWrite = OutgoingWholeObjectWritePlan.qualify(
+                                plan, result.edtOwners(),
+                                result.nativeQualifiedNames(),
+                                result.outputFiles());
+                            event(log, "WRITE_QUALIFIED",
+                                "owners=" + qualifiedWrite.classicOwners().size()
+                                + " resources=" + qualifiedWrite.loadFiles().size());
+                        } catch (IOException unsupported) {
+                            event(log, "WRITE_REJECTED",
+                                "reason=" + unsupported.getClass().getSimpleName()
+                                + " code=FULL_OBJECT_SCOPE_UNVERIFIED");
+                        }
                         event(log, "EXPORT_OK", "owners=" + exportable.size()
                             + " files=" + files + " elapsed_ms="
                             + elapsedMillis(exportStarted));
@@ -140,6 +159,7 @@ public final class OutgoingMetadataExportCoordinator {
                         + elapsedMillis(started));
                     final Path resultDir = folder;
                     final int fileCount = files;
+                    final OutgoingWholeObjectWritePlan approvedPlan = qualifiedWrite;
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (shell.isDisposed()) return;
                         MessageDialog.openInformation(shell,
@@ -152,19 +172,41 @@ public final class OutgoingMetadataExportCoordinator {
                             + "\n\nЭто диагностический экспорт без изменений "
                             + "проекта, базы и хранилища. "
                             + "Списки Lock/Load/Commit не сформированы.");
-                        // Preserve the previously implemented opt-in TEST
-                        // writer exclusively for the separately qualified
-                        // standalone BSL case. No non-BSL change can reach it.
-                        if (bslTestPlan != null && !shell.isDisposed()
+                        if (approvedPlan != null && !shell.isDisposed()) {
+                            if (MessageDialog.openQuestion(shell,
+                                    "Экспериментальная запись целых объектов",
+                                    "Штатный экспорт охватил все выбранные "
+                                    + "метаданные и их подчинённые файлы. "
+                                    + "Подготовить ТЕСТОВОЕ помещение "
+                                    + approvedPlan.classicOwners().size()
+                                    + " объектов без ограничения BSL? "
+                                    + "Рабочие хранилища не использовать. "
+                                    + "Перед записью будут ещё два подтверждения.")) {
+                                OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
+                                    shell, project, settings, expectedGit,
+                                    reviewedRevision, plan, approvedPlan);
+                            }
+                        } else if (bslTestPlan != null && !shell.isDisposed()
                                 && MessageDialog.openQuestion(shell,
-                                    "Отдельный тестовый режим BSL",
-                                    "Изменения состоят только из проверяемых "
-                                    + "BSL-модулей. Перейти к отдельной операции "
-                                    + "тестового помещения? Для этого ещё "
-                                    + "потребуется два подтверждения.")) {
+                                    "Тестовый режим отдельных модулей",
+                                    "Полная объектная выгрузка не прошла "
+                                    + "квалификацию для помещения. "
+                                    + "Изменения отдельно подходят под "
+                                    + "старый узкий BSL-тест. "
+                                    + "Испытать только его с двумя подтверждениями?")) {
                             OutgoingBslWriteCoordinator.confirmTestWrite(
                                 shell, project, settings, expectedGit,
                                 reviewedRevision, bslTestPlan);
+                        } else if (approvedPlan == null && !shell.isDisposed()) {
+                            MessageDialog.openInformation(shell,
+                                "Помещение объектов пока заблокировано",
+                                "XML для проверки подготовлен, но весь набор "
+                                + "объектов не прошёл проверку допустимой "
+                                + "области частичной загрузки. "
+                                + "Новые/удалённые объекты и корень конфигурации "
+                                + "требуют отдельной операции. "
+                                + "Данные тестового экспорта сохранены для "
+                                + "диагностики. Ничего в 1С не записывалось.");
                         }
                     });
                     return Status.OK_STATUS;
