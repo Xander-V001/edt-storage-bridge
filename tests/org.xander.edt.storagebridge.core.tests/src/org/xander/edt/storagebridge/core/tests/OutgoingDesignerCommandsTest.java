@@ -7,9 +7,15 @@ import org.xander.edt.storagebridge.platform.OutgoingDesignerCommands;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 
 public final class OutgoingDesignerCommandsTest {
+    /** Cross-platform absolute paths: Tycho tests run on Linux too. */
+    private static Path absolute(String file) {
+        return Path.of(System.getProperty("java.io.tmpdir"),
+            "edt-storage-native-command-test", file).toAbsolutePath();
+    }
+
     private static OutgoingDesignerCommands.Connection connection() {
         return new OutgoingDesignerCommands.Connection(
-            Path.of("C:/1cv8.exe"),
+            absolute("1cv8.exe"),
             new InfobaseLocation(InfobaseLocation.Kind.FILE, "C:/test-ib"),
             "testIB", "do-not-log-this-ib-pass",
             "C:/test-repository", "test-repo-user",
@@ -18,10 +24,10 @@ public final class OutgoingDesignerCommandsTest {
 
     @Test
     public void noFullScopeOrForceInNativeCommands() {
-        Path xml = Path.of("C:/tmp/objects.xml"),
-            load = Path.of("C:/tmp/list.txt"),
-            export = Path.of("C:/tmp/export"),
-            out = Path.of("C:/tmp/console.txt");
+        Path xml = absolute("objects.xml"),
+            load = absolute("list.txt"),
+            export = absolute("export"),
+            out = absolute("console.txt");
         for (var stage : OutgoingDesignerCommands.Stage.values()) {
             var args = OutgoingDesignerCommands.arguments(
                 connection(), stage, xml, export, load, out, "Test changes");
@@ -45,8 +51,8 @@ public final class OutgoingDesignerCommandsTest {
 
     @Test
     public void refusesMissingScopesAndMissingComment() {
-        Path path = Path.of("C:/tmp/objects.xml"),
-            out = Path.of("C:/tmp/log");
+        Path path = absolute("objects.xml"),
+            out = absolute("log");
         assertThrows(IllegalArgumentException.class, () ->
             OutgoingDesignerCommands.arguments(connection(),
                 OutgoingDesignerCommands.Stage.LOCK, null, null, null, out, null));
