@@ -74,6 +74,14 @@ public final class EdtPublicServiceBridge {
                 selectedObjects, initialFullReview, monitor);
     }
 
+    /** Read-only native comparison for outgoing review; merge disabled. */
+    public static IEditorPart openOutgoingReadOnlyEditor(
+            CompareMergeProcessDescriptor descriptor)
+            throws PartInitException {
+        return EdtDeltaComparisonService.openReadOnlyEditor(
+            descriptor, ServiceAccess.get(IDtComparisonEditorInputFactory.class));
+    }
+
     /** Must run on SWT UI thread; the public EDT editor factory is resolved on demand. */
     public static IEditorPart openEditor(CompareMergeProcessDescriptor descriptor)
             throws PartInitException {

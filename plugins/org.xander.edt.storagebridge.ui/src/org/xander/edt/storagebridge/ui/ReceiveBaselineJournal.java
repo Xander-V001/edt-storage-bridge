@@ -181,7 +181,7 @@ public final class ReceiveBaselineJournal {
         Files.createDirectories(lastScannedRevisionFile.getParent());
         Path temporary = lastScannedRevisionFile.resolveSibling(
             "last-scanned-native-revision.part");
-        String proof = nativeHead + "\\n" + fileDigest(info) + "\\n";
+        String proof = nativeHead + "\n" + fileDigest(info) + "\n";
         try {
             Files.writeString(temporary, proof, StandardCharsets.US_ASCII);
             try {

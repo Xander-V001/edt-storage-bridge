@@ -73,6 +73,33 @@ public final class ReceiveChangesCoordinator {
 
     private ReceiveChangesCoordinator() {}
 
+    /**
+     * Reuses the same project+intermediary exclusion as receive. No mutation
+     * of the intermediary is permitted while outgoing source is snapshotted.
+     * Release only after closing the read-only native comparison editor.
+     */
+    static AutoCloseable acquireOutgoingReview(IProject project,
+            StorageProjectSettings.Snapshot settings) throws IOException {
+        if (project == null || project.getLocationURI() == null) {
+            throw new IOException("Selected EDT project has no identity");
+        }
+        String key = project.getLocationURI().normalize().toString();
+        String source = settings.infobaseType().name() + ":"
+            + settings.infobaseAddress().trim()
+                .toLowerCase(java.util.Locale.ROOT);
+        if (!ACTIVE.add(key)) {
+            throw new IOException("A storage operation is active for the EDT project");
+        }
+        if (!ACTIVE_INTERMEDIARIES.add(source)) {
+            ACTIVE.remove(key);
+            throw new IOException("A storage operation is active for this intermediary");
+        }
+        return () -> {
+            ACTIVE_INTERMEDIARIES.remove(source);
+            ACTIVE.remove(key);
+        };
+    }
+
     /** Explicit caller-selected transport mode; never inferred from old pending items. */
     public enum ReceiveMode { INCREMENTAL, FULL_REVIEW }
 

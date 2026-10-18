@@ -224,6 +224,31 @@ public final class EdtDeltaComparisonService {
     }
 
     /**
+     * Outgoing differences must never be merged back into the EDT workspace.
+     * Documented EDT editor-input noMerge flag makes this preview-only.
+     */
+    public static IEditorPart openReadOnlyEditor(
+            CompareMergeProcessDescriptor descriptor,
+            IDtComparisonEditorInputFactory inputFactory)
+            throws PartInitException {
+        Objects.requireNonNull(inputFactory, "inputFactory");
+        Objects.requireNonNull(descriptor, "descriptor");
+        if (Display.getCurrent() == null) {
+            throw new IllegalStateException("EDT comparison requires SWT UI thread");
+        }
+        String id = findNativeComparisonEditorId();
+        IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+        if (window == null || window.getActivePage() == null) {
+            throw new PartInitException("No active Eclipse workbench");
+        }
+        IDtComparisonEditorInput input = inputFactory.create(
+            List.of(descriptor), true,
+            "Текущий проект EDT", "Состояние классического хранилища");
+        input.setRunInitialComparison(true);
+        return window.getActivePage().openEditor(input, id);
+    }
+
+    /**
      * The implementation is intentionally identified by Eclipse's own
      * org.eclipse.ui.editors declaration, not by a Java package import.
      * Reject ambiguous/missing registrations; never choose a generic editor.

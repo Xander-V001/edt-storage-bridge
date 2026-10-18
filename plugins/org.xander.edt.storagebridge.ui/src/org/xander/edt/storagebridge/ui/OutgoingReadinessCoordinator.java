@@ -140,17 +140,21 @@ public final class OutgoingReadinessCoordinator {
                             }
                             return;
                         }
-                        MessageDialog.openInformation(shell,
-                            "Помещение — актуальность подтверждена",
-                            "Последняя версия хранилища: " + latest
-                            + "\nВетка Git: " + git.branch()
-                            + "\nКоммит: " + git.head().substring(0,
-                                Math.min(12, git.head().length()))
-                            + "\n\n" + outgoingCandidates
-                            + "\n\nРеальное помещение пока заблокировано. "
-                            + "Нужно подтвердить происхождение изменений, "
-                            + "безопасную загрузку и результат Commit. "
-                            + "В хранилище ничего не записано.");
+                        boolean review = MessageDialog.openQuestion(shell,
+                            "Сверка перед помещением — только чтение",
+                            "Актуальная версия хранилища: " + latest
+                            + "\nВетка: " + git.branch()
+                            + "\n\nПоказать все отличия текущего проекта EDT "
+                            + "от состояния классического хранилища?"
+                            + "\n\nЭто выполняет ПОЛНУЮ XML-выгрузку из "
+                            + "существующей базы-посредника и может быть "
+                            + "длительным. Штатное сравнение EDT будет открыто "
+                            + "строго без объединения. База, хранилище, "
+                            + "рабочий EDT-проект и Git не изменяются.");
+                        if (review) {
+                            OutgoingReadOnlyComparisonCoordinator.review(
+                                shell, project, settings, git, latest);
+                        }
                     });
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
