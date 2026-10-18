@@ -243,10 +243,19 @@ public final class OutgoingBslWriteCoordinator {
                     }
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     journal.verified(newHead);
-                    // This records observation, not "received" or "applied":
-                    // last incoming revision remains a distinct checkpoint.
-                    ReceiveRevisionStore.recordObserved(project,
-                        settings.address(), source, newHead);
+                    // Native Commit succeeded. A preference storage failure
+                    // cannot undo it and must not turn the result into an
+                    // "uncertain write" or permit a second Commit.
+                    boolean checkpointSaved = true;
+                    try {
+                        ReceiveRevisionStore.recordObserved(project,
+                            settings.address(), source, newHead);
+                    } catch (org.osgi.service.prefs.BackingStoreException ex) {
+                        checkpointSaved = false;
+                        journal.event("CHECKPOINT_WARNING",
+                            "native-commit-verified; workspace-preference-flush-failed");
+                    }
+                    final boolean saved = checkpointSaved;
                     final Path diagnostics = root;
                     final long publishedVersion = newHead;
                     display.asyncExec(() -> {
@@ -256,6 +265,9 @@ public final class OutgoingBslWriteCoordinator {
                                 "Хранилище подтвердило новую версию "
                                 + publishedVersion + ".\n"
                                 + "Локальный журнал: " + diagnostics + "\n"
+                                + (saved ? "" : "Внимание: локальный показатель "
+                                    + "версии не сохранился. Сверьте следующую "
+                                    + "операцию с реальной версией хранилища.\n")
                                 + "Изменения проекта EDT и Git не выполнялись.");
                     });
                     return Status.OK_STATUS;
