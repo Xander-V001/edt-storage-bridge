@@ -1,5 +1,7 @@
 package org.xander.edt.storagebridge.ui;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Objects;
 
 import org.eclipse.core.resources.IProject;
@@ -10,16 +12,18 @@ import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
+import org.xander.edt.storagebridge.platform.InfobaseLocation;
+import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
+import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 
 /**
- * FAST outbound preparation status. No Designer startup and no XML export.
+ * Stage 1 of commit -> publish: actual latest classic repository revision
+ * versus verified incoming revision for the selected Git branch.
  *
- * Selecting objects must not require the slow native repository version
- * report, a 2+ GB configuration dump, EDT import, or native comparison.
- * A fresh object-scoped conflict check belongs to the ACTUAL publish step,
- * after selection and immediately before native Lock/Commit, not here.
- *
- * Completely independent of ReceiveChangesCoordinator and its import path.
+ * If remote is newer or incoming review is incomplete, offer the EXISTING
+ * receive mechanism. No custom Git merge, XML export, Designer lock or
+ * repository commit is performed here. A matching revision is never a
+ * substitute for validating an outgoing delta before writing.
  */
 public final class OutgoingReadinessCoordinator {
     private OutgoingReadinessCoordinator() {}
@@ -30,68 +34,110 @@ public final class OutgoingReadinessCoordinator {
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         Display display = shell.getDisplay();
-        Job job = new Job("1С: Подготовка выборочного помещения — "
-                + project.getName()) {
+        Job job = new Job("1С: Проверка перед помещением — " + project.getName()) {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
-                monitor.beginTask("Чтение локального состояния EDT", 2);
+                monitor.beginTask("Проверка коммита и версии хранилища", 3);
                 try {
-                    if (monitor.isCanceled()) {
-                        return Status.CANCEL_STATUS;
-                    }
-                    String branch = GitReceiveGuard.currentBranch(project);
+                    if (monitor.isCanceled()) return Status.CANCEL_STATUS;
+
+                    // A commit is mandatory under the accepted workflow.
+                    // This reads Git only and never switches branches.
+                    var git = GitReceiveGuard.requireCleanBranch(project);
                     monitor.worked(1);
 
+                    var kind = settings.infobaseType()
+                        == StorageProjectSettings.InfobaseType.FILE
+                            ? InfobaseLocation.Kind.FILE
+                            : InfobaseLocation.Kind.SERVER;
+                    var infobase = new InfobaseLocation(kind,
+                        settings.infobaseAddress());
+                    long latest = RepositoryLatestRevisionReader.latest(
+                        RepositoryHistoryRequest.latest(
+                            Path.of(settings.platformExecutable()).toAbsolutePath(),
+                            infobase, Duration.ofMinutes(5)),
+                        settings.infobaseUsername(), settings.infobasePassword(),
+                        settings.address(), settings.username(),
+                        settings.password(), monitor::isCanceled);
+                    if (monitor.isCanceled()) return Status.CANCEL_STATUS;
+                    monitor.worked(1);
+
+                    // The native revision is observed, NOT accepted merely
+                    // because the user pressed the outgoing command.
                     String intermediary = settings.infobaseType().name() + ":"
                         + settings.infobaseAddress().trim();
+                    ReceiveRevisionStore.recordObserved(project,
+                        settings.address(), intermediary, latest);
                     long applied = ReceiveRevisionStore.applied(project,
-                        settings.address(), intermediary, branch);
+                        settings.address(), intermediary, git.branch());
                     int pending = ReceivePendingStore.get(project,
-                        settings.address(), branch, intermediary).size();
+                        settings.address(), git.branch(), intermediary).size();
+
+                    GitReceiveGuard.requireUnchanged(project, git);
                     monitor.worked(1);
 
-                    // Never start Designer just to OPEN outgoing selection.
-                    // This is an informational staging screen, not a native
-                    // freshness check and not authorization to write.
-                    String report = "Подготовка выборочной отправки.\n\n"
-                        + "Git-ветка: " + branch + "\n"
-                        + "Отметка полного получения: "
-                        + (applied > 0 ? Long.toString(applied) : "не установлена")
-                        + "\nОжидающие входящие записи (все объекты): "
-                        + pending + "\n\n"
-                        + "Эти сведения НЕ блокируют выборочную отправку.\n"
-                        + "Коммит в Git перед выбором не требуется.\n"
-                        + "Для быстрого обычного помещения нужны только "
-                        + "выбранные объекты, их актуальные версии и "
-                        + "точный список захватов.\n"
-                        + "Если выбранный объект изменён другим "
-                        + "разработчиком, потребуется его сравнение.\n\n"
-                        + "Реальный экспорт, захват и Commit в данной "
-                        + "версии ещё не подключены. Ни 1С, ни Git не изменены.";
+                    // The dialog runs only after the background native report
+                    // has finished. Do not start receive on the job thread.
                     display.asyncExec(() -> {
-                        if (!shell.isDisposed()) {
-                            MessageDialog.openInformation(shell,
-                                "Помещение в хранилище — подготовка", report);
+                        if (shell.isDisposed()) return;
+                        if (latest != applied || pending != 0) {
+                            String reason = applied < 1
+                                ? "Нет подтверждения полного получения актуальной "
+                                    + "версии хранилища."
+                                : latest > applied
+                                    ? "Хранилище обновилось: версия " + latest
+                                        + ", обработанная версия " + applied + "."
+                                    : "Нужно завершить обработку изменений "
+                                        + "из хранилища.";
+                            if (pending > 0) {
+                                reason += "\nНеобработанных входящих объектов: "
+                                    + pending + ".";
+                            }
+                            boolean receive = MessageDialog.openQuestion(shell,
+                                "Перед помещением требуется обновление",
+                                reason + "\n\nЗапустить штатное получение "
+                                + "из хранилища? После объединения и "
+                                + "коммита повторите команду помещения.");
+                            if (receive) {
+                                ReceiveChangesCoordinator.receive(shell,
+                                    project, settings);
+                            }
+                            return;
                         }
+                        MessageDialog.openInformation(shell,
+                            "Помещение — актуальность подтверждена",
+                            "Последняя версия хранилища: " + latest
+                            + "\nВетка Git: " + git.branch()
+                            + "\nКоммит: "
+                            + git.head().substring(0,
+                                Math.min(12, git.head().length()))
+                            + "\n\nАктуальность проверена. "
+                            + "Это ещё НЕ проверка состава локальных изменений."
+                            + "\nШтатный экспорт EDT, выборочная загрузка и "
+                            + "Commit в этой исследовательской ветке пока "
+                            + "НЕ реализованы. Действия в хранилище "
+                            + "не выполнялись.");
                     });
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
-                    String problem = ex instanceof org.osgi.service.prefs.BackingStoreException
-                        ? "Не удалось прочитать список ожидающих изменений."
-                        : "Не удалось определить проект, Git-ветку или "
-                          + "его локальные настройки.";
+                    String message = ex instanceof java.io.IOException
+                        ? "Проверьте, что все изменения закоммичены в Git, "
+                            + "ветка не переключалась и доступ к хранилищу "
+                            + "настроен."
+                        : "Не удалось подтвердить актуальность "
+                            + "версии хранилища. Помещение отменено.";
                     display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
-                                "Подготовка выборочного помещения",
-                                problem + "\nОперации в хранилище не выполнялись.");
+                                "Помещение не начато",
+                                message + "\nНичего не записано в 1С.");
                         }
                     });
                     return new Status(IStatus.WARNING, BridgeActivator.PLUGIN_ID,
-                        "Read-only outgoing local preparation failed ("
+                        "Outgoing native revision preflight failed ("
                         + ex.getClass().getSimpleName() + ")");
                 } finally {
                     monitor.done();
