@@ -296,11 +296,12 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         } catch (IOException ignored) { /* Error Log follows */ }
                     }
                     final Path diag = journal != null ? journal.directory() : unresolved;
+                    final String interruptedStage = phase;
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
                                 "Тестовое помещение прервано",
-                                "Операция остановлена на этапе " + phase
+                                "Операция остановлена на этапе " + interruptedStage
                                 + ". Состояние базы/хранилища может "
                                 + "быть неопределённым. Повтор выполнять "
                                 + "только после сверки."
