@@ -28,6 +28,7 @@ import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
 import org.xander.edt.storagebridge.core.OutgoingDifferenceSummary;
+import org.xander.edt.storagebridge.core.OutgoingBslWritePlan;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
@@ -173,6 +174,17 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     var delta = OutgoingDeltaScanner.compare(
                         converted, Path.of(project.getLocation().toOSString()));
                     var summary = OutgoingDifferenceSummary.from(delta);
+                    // Publication is allowed only when EVERY changed resource
+                    // maps to one verified standalone modified BSL file.
+                    // Unrecognized metadata, forms, attributes, additions,
+                    // deletions block the native write path completely.
+                    OutgoingBslWritePlan eligible;
+                    try {
+                        eligible = OutgoingBslWritePlan.fromDelta(delta);
+                    } catch (IOException unsupported) {
+                        eligible = null;
+                    }
+                    final OutgoingBslWritePlan testWritePlan = eligible;
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
 
@@ -232,6 +244,31 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                                         protected IStatus run(IProgressMonitor m) {
                                             closeQuietly(retainedExport,
                                                 retainedConversion, lease);
+                                            if (!display.isDisposed()) {
+                                                display.asyncExec(() -> {
+                                                    if (shell.isDisposed()) return;
+                                                    if (testWritePlan == null) {
+                                                        MessageDialog.openInformation(shell,
+                                                            "Помещение пока заблокировано",
+                                                            "Сравнение завершено. "
+                                                            + "Найденные изменения включают "
+                                                            + "неподдерживаемые для тестового "
+                                                            + "помещения объекты либо нет "
+                                                            + "изменений. Изменения форм, "
+                                                            + "структуры, удалений и неизвестных "
+                                                            + "ресурсов нельзя автоматически "
+                                                            + "помещать без проверки транспорта."
+                                                            + "\nНикакие изменения в хранилище "
+                                                            + "не внесены.");
+                                                    } else {
+                                                        OutgoingBslWriteCoordinator
+                                                            .confirmTestWrite(shell,
+                                                                project, settings,
+                                                                expectedGit, headRevision,
+                                                                testWritePlan);
+                                                    }
+                                                });
+                                            }
                                             return Status.OK_STATUS;
                                         }
                                     };
