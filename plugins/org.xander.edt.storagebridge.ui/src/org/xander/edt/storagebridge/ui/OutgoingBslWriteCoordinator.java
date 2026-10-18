@@ -207,6 +207,14 @@ public final class OutgoingBslWriteCoordinator {
                         elapsedMillis(lockStarted));
                     requireHead(connection, reviewedRevision, monitor);
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
+                    // Repository Lock can update the connected infobase.
+                    // A HEAD check alone does not prove selected object
+                    // contents stayed unchanged; stop BEFORE Load if the
+                    // intermediary inventory changed under us.
+                    if (!baselineVersions.equals(inventory(probe, monitor))) {
+                        throw new IOException("Intermediary changed after Lock; "
+                            + "native objects may have been updated");
+                    }
 
                     phase = "LOAD";
                     monitor.subTask("Выборочная загрузка только BSL-модулей");
