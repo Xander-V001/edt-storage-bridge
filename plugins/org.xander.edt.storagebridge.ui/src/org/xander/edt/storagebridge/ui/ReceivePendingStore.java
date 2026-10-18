@@ -74,6 +74,32 @@ public final class ReceivePendingStore {
         node.flush();
     }
 
+    /**
+     * A review can intentionally KEEP local changes instead of taking the
+     * remote version byte-for-byte. Clear only identities that actually
+     * appeared in the review opened by EDT and for which the developer
+     * EXPLICITLY confirmed completion. Never invoke on editor close/cancel.
+     */
+    public static void acknowledgeReviewed(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> explicitlyReviewedNames) throws BackingStoreException {
+        Objects.requireNonNull(explicitlyReviewedNames);
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        // Validate ALL requested identities BEFORE modifying any preference.
+        for (String name : explicitlyReviewedNames) {
+            requireObject(name);
+            if (!name.equals(node.get(ITEM + digest(name), ""))) {
+                throw new IllegalStateException(
+                    "Reviewed metadata identity is not in the pending journal");
+            }
+        }
+        for (String name : explicitlyReviewedNames) {
+            node.remove(ITEM + digest(name));
+        }
+        node.flush();
+    }
+
     private static Preferences node(IProject project, String repositoryAddress,
             String branch, String intermediaryIdentity) throws BackingStoreException {
         Objects.requireNonNull(project, "project");
