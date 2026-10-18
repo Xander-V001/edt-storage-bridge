@@ -93,6 +93,19 @@ public final class OutgoingWholeObjectWritePlanTest {
                 List.of("Catalogs/Old.xml")));
     }
 
+    @Test
+    public void rootConfigurationIsNotMistakenForAnOrdinaryChildObject()
+            throws Exception {
+        var plan = selected(List.of(modified(
+            "src/Configuration/Configuration.mdo",
+            "Configuration/Configuration")));
+        assertThrows(IOException.class, () ->
+            OutgoingWholeObjectWritePlan.qualify(plan,
+                List.of("Configuration/Configuration"),
+                List.of("Configuration"),
+                List.of("Configuration.xml")));
+    }
+
     private static OutgoingDeltaScanner.Change modified(String file, String owner) {
         return new OutgoingDeltaScanner.Change(Path.of(file), owner,
             OutgoingDeltaScanner.Kind.MODIFIED);

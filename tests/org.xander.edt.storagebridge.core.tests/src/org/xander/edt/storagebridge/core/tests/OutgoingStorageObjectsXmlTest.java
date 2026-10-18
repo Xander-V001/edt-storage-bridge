@@ -38,6 +38,16 @@ public final class OutgoingStorageObjectsXmlTest {
     }
 
     @Test
+    public void recursiveSelectionCannotAccidentallyLockConfigurationRoot() {
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingStorageObjectsXml.createWithSubordinates(
+                Set.of("Configuration")));
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingStorageObjectsXml.createWithSubordinates(
+                Set.of("Configuration.Configuration")));
+    }
+
+    @Test
     public void absentSelectionCanNeverBecomeLockEverything() {
         assertThrows(IllegalArgumentException.class,
             () -> OutgoingStorageObjectsXml.create(Set.of()));
