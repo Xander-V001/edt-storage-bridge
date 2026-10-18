@@ -26,6 +26,8 @@ import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
+import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
+import org.xander.edt.storagebridge.core.OutgoingDifferenceSummary;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
@@ -155,6 +157,42 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     var descriptor = EdtPublicServiceBridge.prepare(
                         project, export.xmlDirectory(), converted,
                         List.of(), true, monitor);
+                    GitReceiveGuard.requireUnchanged(project, expectedGit);
+                    if (monitor.isCanceled()) return Status.CANCEL_STATUS;
+
+                    // Compare the actual converted repository EDT tree with
+                    // the real project. This finds candidates automatically
+                    // across ALL object/resource types; Git commit history
+                    // or manually selected BSL files are not required.
+                    // A file change is NOT proof of a semantic EDT change
+                    // and NEVER permits Lock/Load/Commit by itself.
+                    monitor.subTask("Поиск отличий файлов EDT и хранилища");
+                    if (project.getLocation() == null) {
+                        throw new IOException("EDT project has no local directory");
+                    }
+                    var delta = OutgoingDeltaScanner.compare(
+                        converted, Path.of(project.getLocation().toOSString()));
+                    var summary = OutgoingDifferenceSummary.from(delta);
+                    GitReceiveGuard.requireUnchanged(project, expectedGit);
+                    if (monitor.isCanceled()) return Status.CANCEL_STATUS;
+
+                    // A bounded candidate summary is shown BEFORE the native
+                    // comparison editor. Declining only aborts this preview:
+                    // source files, the workspace and the IB stay untouched.
+                    var previewAccepted = new AtomicBoolean(false);
+                    display.syncExec(() -> {
+                        if (shell.isDisposed()) return;
+                        previewAccepted.set(MessageDialog.openQuestion(shell,
+                            "Отличия EDT и хранилища — предварительный список",
+                            summary.describe(16) + "\\n\\n"
+                            + "Это список ФАЙЛОВЫХ отличий, не окончательный "
+                            + "семантический состав помещения. "
+                            + "Для проверки объектов и свойств откроется "
+                            + "штатное сравнение EDT БЕЗ ОБЪЕДИНЕНИЯ. "
+                            + "Рабочий проект, база и хранилище не изменяются.\\n\\n"
+                            + "Открыть подробное сравнение?"));
+                    });
+                    if (!previewAccepted.get()) return Status.CANCEL_STATUS;
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
 
