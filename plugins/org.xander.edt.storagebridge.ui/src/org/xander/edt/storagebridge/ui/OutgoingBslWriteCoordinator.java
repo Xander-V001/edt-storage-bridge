@@ -284,16 +284,9 @@ public final class OutgoingBslWriteCoordinator {
                     // Native Commit succeeded. A preference storage failure
                     // cannot undo it and must not turn the result into an
                     // "uncertain write" or permit a second Commit.
-                    boolean checkpointSaved = true;
-                    try {
-                        ReceiveRevisionStore.recordObserved(project,
-                            settings.address(), source, newHead);
-                    } catch (org.osgi.service.prefs.BackingStoreException ex) {
-                        checkpointSaved = false;
-                        journal.event("CHECKPOINT_WARNING",
-                            "native-commit-verified; workspace-preference-flush-failed");
-                    }
-                    final boolean saved = checkpointSaved;
+                    final boolean saved = OutgoingPublishCheckpoint.save(
+                        project, settings, reviewedGit, newHead,
+                        probe, journal, monitor);
                     final Path diagnostics = root;
                     final long publishedVersion = newHead;
                     display.asyncExec(() -> {

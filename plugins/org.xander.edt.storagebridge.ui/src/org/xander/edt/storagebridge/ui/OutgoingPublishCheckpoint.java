@@ -31,7 +31,7 @@ public final class OutgoingPublishCheckpoint {
             GitReceiveGuard.Baseline git,
             long newRevision, ChangeDetectionRequest probe,
             OutgoingOperationJournal journal,
-            IProgressMonitor monitor) throws InterruptedException {
+            IProgressMonitor monitor) {
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         Objects.requireNonNull(git);
@@ -60,7 +60,11 @@ public final class OutgoingPublishCheckpoint {
                 settings.address(), source, git.branch(), git.head(), newRevision);
             journal.event("CHECKPOINT", "git-publication-baseline-written");
             return true;
-        } catch (IOException | BackingStoreException | IllegalStateException ex) {
+        } catch (IOException | BackingStoreException | IllegalStateException
+                | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             try {
                 journal.event("CHECKPOINT_WARNING",
                     "native-commit-verified local-proof-failed="

@@ -266,16 +266,9 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     journal.verified(revisionAfter);
 
-                    boolean stored = true;
-                    try {
-                        ReceiveRevisionStore.recordObserved(project,
-                            settings.address(), intermediary, revisionAfter);
-                    } catch (org.osgi.service.prefs.BackingStoreException ex) {
-                        stored = false;
-                        journal.event("CHECKPOINT_WARNING",
-                            "native-revision-verified-local-pref-not-saved");
-                    }
-                    final boolean checkpoint = stored;
+                    final boolean checkpoint = OutgoingPublishCheckpoint.save(
+                        project, settings, reviewedGit, revisionAfter,
+                        inventoryRequest, journal, monitor);
                     final long finalRevision = revisionAfter;
                     final Path diag = root;
                     if (!display.isDisposed()) display.asyncExec(() -> {
