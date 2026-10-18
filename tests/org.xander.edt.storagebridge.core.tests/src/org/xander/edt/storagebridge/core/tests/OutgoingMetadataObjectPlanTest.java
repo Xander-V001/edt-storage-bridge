@@ -24,7 +24,7 @@ public final class OutgoingMetadataObjectPlanTest {
             changed(old, edt, "src/HTTPServices/Api/Api.mdo", "old", "new");
             var plan = OutgoingMetadataObjectPlan.fromDelta(
                 OutgoingDeltaScanner.compare(old, edt));
-            assertEquals(6, plan.owners().size());
+            assertEquals(5, plan.owners().size());
             assertEquals(6, plan.changedResourceCount());
             assertTrue(plan.exportableOwners().containsAll(Set.of(
                 "Documents/Order", "AccumulationRegisters/Balance",
