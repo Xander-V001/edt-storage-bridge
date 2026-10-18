@@ -2,8 +2,6 @@ package org.xander.edt.storagebridge.ui;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.core.resources.IProject;
@@ -46,18 +44,18 @@ public final class OutgoingReadinessCoordinator {
                 monitor.beginTask("Проверка исходящей отправки (только чтение)", 4);
                 try {
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
-                    // The selected Git branch is the single task branch.
-                    // Require a clean worktree; outbound snapshots must not
-                    // unexpectedly incorporate uncommitted local edits.
-                    var git = GitReceiveGuard.requireCleanBranch(project);
+                    // A local Git commit is NOT required to prepare an
+                    // outgoing selection. Inspect the active branch only;
+                    // choosing current EDT content is an explicit later step.
+                    String branchName = GitReceiveGuard.currentBranch(project);
                     monitor.worked(1);
 
                     String intermediary = settings.infobaseType().name() + ":"
                         + settings.infobaseAddress().trim();
                     long applied = ReceiveRevisionStore.applied(project,
-                        settings.address(), intermediary, git.branch());
+                        settings.address(), intermediary, branchName);
                     int incoming = ReceivePendingStore.get(project,
-                        settings.address(), git.branch(), intermediary).size();
+                        settings.address(), branchName, intermediary).size();
                     monitor.worked(1);
 
                     InfobaseLocation.Kind kind =
@@ -88,18 +86,20 @@ public final class OutgoingReadinessCoordinator {
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
                     monitor.worked(1);
 
-                    // Re-check Git after the external report request: the
-                    // entire read-only assessment belongs to ONE branch/HEAD.
-                    GitReceiveGuard.requireUnchanged(project, git);
+                    // A branch switch invalidates this read-only report.
+                    // New/dirty Git changes are NOT a global outbound blocker.
+                    if (!branchName.equals(GitReceiveGuard.currentBranch(project))) {
+                        throw new java.io.IOException("Git branch changed during review");
+                    }
                     monitor.worked(1);
 
-                    // Outbound content baseline and isolated Designer
-                    // round-trip have NOT been implemented/verified yet.
-                    // Always block real writes at this development stage.
+                    // Project-wide status is context, not permission to write.
+                    // The eventual per-selection preflight must compare against
+                    // fresh classic storage objects and verify own native locks.
                     var result = OutgoingSafetyGate.evaluate(
                         new OutgoingSafetyGate.Evidence(nativeHead, applied,
-                            incoming, true, false, false));
-                    String report = formatReport(git, nativeHead, applied,
+                            incoming, null));
+                    String report = formatReport(branchName, nativeHead, applied,
                         incoming, revisionFailure, result);
 
                     display.asyncExec(() -> {
@@ -120,12 +120,12 @@ public final class OutgoingReadinessCoordinator {
                     String problem = ex instanceof org.osgi.service.prefs.BackingStoreException
                         ? "Не удалось прочитать журнал входящих изменений."
                         : ex instanceof java.io.IOException
-                            ? "Git не подтвердил чистую ветку и неизменный HEAD."
+                            ? "Не удалось определить стабильную ветку Git проекта."
                             : "Не удалось проверить настройки и состояние проекта.";
                     display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
-                                "Отправка EDT в хранилище заблокирована",
+                                "Проверка исходящей отправки не завершена",
                                 problem + "\nНичего не выгружено и не записано в 1С.");
                         }
                     });
@@ -141,14 +141,14 @@ public final class OutgoingReadinessCoordinator {
         job.schedule();
     }
 
-    private static String formatReport(GitReceiveGuard.Baseline git,
+    private static String formatReport(String branchName,
             long nativeHead, long applied, int pending,
             String nativeFailure, OutgoingSafetyGate.Decision decision) {
         var report = new StringBuilder(1024);
-        report.append("Проверка только для чтения. Запись в 1С отключена.\n\n")
-            .append("Ветка Git: ").append(git.branch()).append("\n")
-            .append("HEAD Git: ").append(git.head(), 0, Math.min(12, git.head().length()))
-            .append("\n")
+        report.append("Можно готовить выборочную отправку (только чтение).\n")
+            .append("Ветка Git: ").append(branchName).append("\n")
+            .append("Коммит в Git для подготовки не обязателен.\n")
+            .append("Запись в хранилище пока не реализована.\n\n")
             .append("Последняя ревизия хранилища: ")
             .append(nativeHead > 0 ? Long.toString(nativeHead) : "не подтверждена")
             .append("\n")
@@ -161,34 +161,31 @@ public final class OutgoingReadinessCoordinator {
         if (nativeFailure != null) {
             report.append("Отчёт 1С: ").append(nativeFailure).append("\n\n");
         }
-        if (decision.prerequisitesSatisfied()) {
-            // Not reachable until a separate trusted baseline AND scratch
-            // validation are implemented; no write command exists here.
-            report.append("Предварительные проверки пройдены. "
-                + "Реальная отправка в этом режиме отсутствует.");
-        } else {
-            report.append("Помещение в хранилище НЕ РАЗРЕШЕНО:\n");
-            List<String> blockers = new ArrayList<>();
-            for (OutgoingSafetyGate.Blocker blocker : decision.blockers()) {
-                blockers.add(switch (blocker) {
-                    case NATIVE_HEAD_UNKNOWN ->
-                        "неизвестна актуальная версия хранилища";
-                    case APPLIED_REVISION_UNKNOWN ->
-                        "нет подтверждённой полностью применённой ревизии EDT";
-                    case REVISION_DIVERGED ->
-                        "последняя версия хранилища отличается от применённой EDT";
-                    case INCOMING_PENDING ->
-                        "остались необработанные входящие изменения";
-                    case GIT_NOT_CLEAN ->
-                        "ветка Git содержит незакоммиченные изменения";
-                    case VERIFIED_CONTENT_BASELINE_MISSING ->
-                        "ещё не подготовлен проверенный baseline содержимого";
-                    case ISOLATED_VALIDATION_MISSING ->
-                        "ещё не выполнена проверка в изолированной базе 1С";
-                });
-            }
-            for (String blocker : blockers) {
-                report.append("• ").append(blocker).append("\n");
+        report.append("Дальше: выбрать объекты EDT, сравнить только их "
+            + "с актуальными объектами хранилища, показать отличия, "
+            + "захватить выбранные объекты и поместить после явного "
+            + "подтверждения.\n");
+        if (!decision.notices().isEmpty()) {
+            report.append("\nСведения для проверки выбранных объектов:\n");
+            for (OutgoingSafetyGate.Notice notice : decision.notices()) {
+                String message = switch (notice) {
+                    case HEAD_REPORT_UNAVAILABLE ->
+                        "Номер версии по TXT не считан; актуальность выбранных "
+                        + "объектов потребуется проверить отдельно";
+                    case PROJECT_WIDE_APPLIED_REVISION_UNKNOWN ->
+                        "Нет общей отметки полного получения — это не запрет "
+                        + "выборочной отправки";
+                    case PROJECT_WIDE_REVISIONS_DIFFER ->
+                        "Ревизии различаются — проверяем конфликты только "
+                        + "в выбранных объектах";
+                    case OTHER_INCOMING_CHANGES_MAY_EXIST ->
+                        "Есть входящие изменения — при выборе объектов "
+                        + "проверим пересечения";
+                    case LOCAL_GIT_CHANGES_MAY_BE_INCLUDED ->
+                        "Есть локальные изменения Git — выбор включаемого "
+                        + "содержимого требуется подтвердить";
+                };
+                report.append("• ").append(message).append("\n");
             }
         }
         report.append("\nЭтот режим не захватывает объекты, не обновляет "
