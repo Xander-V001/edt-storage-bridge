@@ -5,29 +5,31 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Independent, read-only prerequisite gate for EDT -> classic repository
- * publishing. This class does NOT read/write EDT, Git or a 1C infobase.
+ * Read-only outgoing preparation diagnostics, NOT a repository write gate.
  *
- * A matching native HEAD and inbound applied revision are NECESSARY but not
- * SUFFICIENT for outbound commit. A trustworthy content baseline and isolated
- * validation of the selected XML are further mandatory prerequisites.
+ * The classic storage operation is OBJECT-SCOPED. A missing project-wide
+ * applied revision, pending changes in unrelated objects, a dirty Git
+ * worktree, or the absence of a standing scratch infobase MUST NOT prevent
+ * selecting local objects for review.
+ *
+ * Actual publishing will require a NEW, operation-specific confirmation
+ * after fresh comparison against the selected objects' repository state,
+ * native lock ownership, exact loaded-object diff and explicit user consent.
+ * This class never grants permission to run Designer write operations.
  */
 public final class OutgoingSafetyGate {
     public static final long UNKNOWN = -1L;
 
-    public enum Blocker {
-        NATIVE_HEAD_UNKNOWN,
-        APPLIED_REVISION_UNKNOWN,
-        REVISION_DIVERGED,
-        INCOMING_PENDING,
-        GIT_NOT_CLEAN,
-        VERIFIED_CONTENT_BASELINE_MISSING,
-        ISOLATED_VALIDATION_MISSING
+    public enum Notice {
+        HEAD_REPORT_UNAVAILABLE,
+        PROJECT_WIDE_APPLIED_REVISION_UNKNOWN,
+        PROJECT_WIDE_REVISIONS_DIFFER,
+        OTHER_INCOMING_CHANGES_MAY_EXIST,
+        LOCAL_GIT_CHANGES_MAY_BE_INCLUDED
     }
 
     public record Evidence(long nativeHead, long appliedRevision,
-            int incomingPending, boolean cleanGit,
-            boolean verifiedContentBaseline, boolean isolatedValidation) {
+            int incomingPending, boolean gitWorkingTreeClean) {
         public Evidence {
             if (incomingPending < 0) {
                 throw new IllegalArgumentException("Negative pending count");
@@ -35,19 +37,17 @@ public final class OutgoingSafetyGate {
         }
     }
 
-    public record Decision(List<Blocker> blockers) {
+    public record Decision(List<Notice> notices) {
         public Decision {
-            blockers = List.copyOf(Objects.requireNonNull(blockers));
+            notices = List.copyOf(Objects.requireNonNull(notices));
         }
 
         /**
-         * ONLY preliminary read-only prerequisites. This is NOT permission
-         * to run LoadConfigFromFiles, Lock or Commit: a future operation must
-         * independently re-check revision, exact selection, current locks,
-         * backup, preview and user confirmation immediately before writing.
+         * Read-only object selection and snapshot preparation may proceed.
+         * This is NEVER an authorization for Lock, Load or Commit.
          */
-        public boolean prerequisitesSatisfied() {
-            return blockers.isEmpty();
+        public boolean mayPrepareSelection() {
+            return true;
         }
     }
 
@@ -55,29 +55,22 @@ public final class OutgoingSafetyGate {
 
     public static Decision evaluate(Evidence evidence) {
         Objects.requireNonNull(evidence);
-        var blockers = new ArrayList<Blocker>();
+        var notices = new ArrayList<Notice>();
         if (evidence.nativeHead() <= 0) {
-            blockers.add(Blocker.NATIVE_HEAD_UNKNOWN);
+            notices.add(Notice.HEAD_REPORT_UNAVAILABLE);
         }
         if (evidence.appliedRevision() <= 0) {
-            blockers.add(Blocker.APPLIED_REVISION_UNKNOWN);
-        }
-        if (evidence.nativeHead() > 0 && evidence.appliedRevision() > 0
+            notices.add(Notice.PROJECT_WIDE_APPLIED_REVISION_UNKNOWN);
+        } else if (evidence.nativeHead() > 0
                 && evidence.nativeHead() != evidence.appliedRevision()) {
-            blockers.add(Blocker.REVISION_DIVERGED);
+            notices.add(Notice.PROJECT_WIDE_REVISIONS_DIFFER);
         }
         if (evidence.incomingPending() > 0) {
-            blockers.add(Blocker.INCOMING_PENDING);
+            notices.add(Notice.OTHER_INCOMING_CHANGES_MAY_EXIST);
         }
-        if (!evidence.cleanGit()) {
-            blockers.add(Blocker.GIT_NOT_CLEAN);
+        if (!evidence.gitWorkingTreeClean()) {
+            notices.add(Notice.LOCAL_GIT_CHANGES_MAY_BE_INCLUDED);
         }
-        if (!evidence.verifiedContentBaseline()) {
-            blockers.add(Blocker.VERIFIED_CONTENT_BASELINE_MISSING);
-        }
-        if (!evidence.isolatedValidation()) {
-            blockers.add(Blocker.ISOLATED_VALIDATION_MISSING);
-        }
-        return new Decision(blockers);
+        return new Decision(notices);
     }
 }
