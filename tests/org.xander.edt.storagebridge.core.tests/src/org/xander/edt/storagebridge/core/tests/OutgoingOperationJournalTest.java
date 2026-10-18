@@ -44,6 +44,23 @@ public final class OutgoingOperationJournalTest {
         } finally { clean(folder); }
     }
 
+    @Test
+    public void cannotAdvanceOrClearUnfinishedNativeWrite() throws Exception {
+        Path root = Files.createTempDirectory("outgoing-stage-invariant-");
+        try {
+            var op = OutgoingOperationJournal.begin(root, "test-lock-state",
+                SHA, 50);
+            assertThrows(IOException.class, () -> op.before("COMMIT"));
+            assertThrows(IOException.class, () -> op.verified(51));
+            op.before("LOCK");
+            assertThrows(IOException.class, () -> op.before("LOAD"));
+            assertThrows(IOException.class, op::abortBeforeMutation);
+            op.after("LOCK", 0);
+            op.before("LOAD");
+            assertThrows(IOException.class, () -> op.verified(51));
+        } finally { clean(root); }
+    }
+
     private static void clean(Path root) throws Exception {
         try (var entries = Files.walk(root)) {
             for (var entry : entries.sorted(Comparator.reverseOrder()).toList())
