@@ -632,16 +632,55 @@ public final class ReceiveChangesCoordinator {
                                         // or branch switch during the scan too.
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
-                                        // A selected checkbox or closing the
-                                        // native editor NEVER certifies a merge.
-                                        // Partial, rejected or unresolved objects
-                                        // cannot advance the global checkpoint.
+                                        // Two distinct facts:
+                                        // 1) byte-identical mirror (strict APPLIED),
+                                        // 2) user-reviewed repository revision
+                                        //    (the developer may intentionally KEEP
+                                        //     local edits in a compared object).
+                                        // The second is the meaningful checkpoint
+                                        // for future receive/publish operations.
                                         long fullyApplied = ReceiveRevisionStore.UNKNOWN;
+                                        long fullyReviewed = ReceiveRevisionStore.UNKNOWN;
                                         String reason = null;
-                                        if (verified.remainingPending() == 0
-                                                && verified.identicalOwners()
-                                                    == verified.checkedOwners()
-                                                && revisionForReview.get() > 0) {
+                                        boolean identical = verified.remainingPending() == 0
+                                            && verified.identicalOwners()
+                                                == verified.checkedOwners();
+                                        boolean reviewFinished = identical;
+
+                                        if (!identical && revisionForReview.get() > 0) {
+                                            var outstanding = ReceivePendingStore.get(
+                                                project, settings.address(), branch,
+                                                intermediaryIdentity);
+                                            // Never acknowledge remote objects that
+                                            // were not included in THIS review.
+                                            if (!selectedPendingNames.containsAll(outstanding)) {
+                                                reason = "Не все ожидающие объекты входили "
+                                                    + "в открытое сравнение. Их нужно "
+                                                    + "рассмотреть отдельно.";
+                                            } else {
+                                                reviewFinished = confirmOnUi(shell,
+                                                    "Завершение получения из хранилища",
+                                                    "Обнаружены отличия рабочего EDT "
+                                                    + "от выгрузки хранилища. Это может "
+                                                    + "быть результат сознательного "
+                                                    + "решения оставить локальную версию.\n\n"
+                                                    + "Вы завершили разбор ВСЕХ показанных "
+                                                    + "изменений версии "
+                                                    + revisionForReview.get()
+                                                    + " и подтверждаете итоговый выбор?\n"
+                                                    + "«Да» отметит эту версию как "
+                                                    + "ОБРАБОТАННУЮ, даже если отдельные "
+                                                    + "локальные значения отличаются.\n"
+                                                    + "Если вы лишь закрыли редактор "
+                                                    + "без завершения объединения, "
+                                                    + "выберите «Нет».");
+                                                if (!reviewFinished) {
+                                                    reason = "Разбор входящих изменений "
+                                                        + "не подтверждён разработчиком.";
+                                                }
+                                            }
+                                        }
+                                        if (reviewFinished && revisionForReview.get() > 0) {
                                             var attestation = RepositoryHeadAttestation
                                                 .confirm(revisionForReview.get(),
                                                     () -> readLatestRevisionOrUnknown(
@@ -657,41 +696,67 @@ public final class ReceiveChangesCoordinator {
                                             }
                                             switch (attestation.state()) {
                                                 case CONFIRMED -> {
-                                                    ReceiveRevisionStore.recordApplied(
+                                                    // Both statuses refer to the
+                                                    // same proven native HEAD. Commit
+                                                    // review BEFORE clearing any
+                                                    // user-confirmed pending items:
+                                                    // a crash cannot lose the fact
+                                                    // that the user approved the
+                                                    // resolution.
+                                                    ReceiveRevisionStore.recordReviewed(
                                                         project, settings.address(),
                                                         intermediaryIdentity, branch,
                                                         attestation.observed());
-                                                    fullyApplied = attestation.observed();
+                                                    fullyReviewed = attestation.observed();
+                                                    if (identical) {
+                                                        ReceiveRevisionStore.recordApplied(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, branch,
+                                                            attestation.observed());
+                                                        fullyApplied = attestation.observed();
+                                                    } else {
+                                                        var remainingSelected =
+                                                            new java.util.LinkedHashSet<>(
+                                                                ReceivePendingStore.get(
+                                                                    project, settings.address(),
+                                                                    branch, intermediaryIdentity));
+                                                        if (!selectedPendingNames.containsAll(
+                                                                remainingSelected)) {
+                                                            throw new IOException(
+                                                                "Pending changes changed "
+                                                                + "while review was finishing");
+                                                        }
+                                                        ReceivePendingStore.acknowledgeReviewed(
+                                                            project, settings.address(), branch,
+                                                            intermediaryIdentity,
+                                                            remainingSelected);
+                                                    }
                                                 }
                                                 case CHANGED -> reason =
-                                                    "Хранилище изменилось после подготовки "
-                                                    + "сравнения: ожидаемая версия "
+                                                    "Хранилище изменилось в ходе сравнения: "
+                                                    + "ожидалась версия "
                                                     + revisionForReview.get()
                                                     + ", актуальная "
                                                     + attestation.observed()
-                                                    + ". Повышение версии запрещено.";
+                                                    + ". Новую версию ещё нужно получить.";
                                                 case UNAVAILABLE -> reason =
-                                                    "После " + attestation.attempts()
-                                                    + " попыток не удалось получить "
-                                                    + "штатный TXT-отчёт с номером версии "
-                                                    + "хранилища. Объекты совпали, но "
-                                                    + "подтверждение ревизии не завершено. "
-                                                    + "Ожидалась версия "
-                                                    + revisionForReview.get() + ".";
+                                                    "Не удалось прочитать номер версии "
+                                                    + "по штатному отчёту 1С после "
+                                                    + attestation.attempts()
+                                                    + " попыток. Отметка обработки "
+                                                    + "не записана.";
                                                 case CANCELLED -> reason =
-                                                    "Проверка номера версии была отменена. "
-                                                    + "Принятые объекты сохранены, "
-                                                    + "подтверждение ревизии не завершено.";
+                                                    "Проверка актуального номера версии "
+                                                    + "отменена. Отметка обработки "
+                                                    + "не записана.";
                                             }
-                                        } else if (verified.remainingPending() == 0
-                                                && verified.identicalOwners()
-                                                    != verified.checkedOwners()) {
-                                            reason = "Не все выбранные владельцы объектов "
-                                                + "полностью совпали с XML-источником EDT.";
-                                        } else if (verified.remainingPending() == 0) {
-                                            reason = "Номер ревизии до и после обновления "
-                                                + "не был подтверждён по отчёту 1С.";
+                                        } else if (reviewFinished) {
+                                            reason = "Не удалось подтвердить номер версии "
+                                                + "хранилища до и после получения.";
                                         }
+                                        int pendingAfter = ReceivePendingStore.get(
+                                            project, settings.address(), branch,
+                                            intermediaryIdentity).size();
                                         StringBuilder report = new StringBuilder(
                                             "Проверено владельцев объектов: ")
                                             .append(verified.checkedOwners())
@@ -700,31 +765,33 @@ public final class ReceiveChangesCoordinator {
                                             .append(".\nСнято записей ожидания: ")
                                             .append(verified.confirmedPending())
                                             .append(".\nОсталось ожидающих записей: ")
-                                            .append(verified.remainingPending()).append(".");
+                                            .append(pendingAfter).append(".");
                                         if (verified.diagnosticFile() != null) {
                                             report.append("\nПодробности несовпадений: ")
                                                 .append(verified.diagnosticFile())
                                                 .append("\nФайл может содержать имена "
                                                     + "объектов, проверьте перед отправкой.");
                                         }
-                                        if (fullyApplied > 0) {
-                                            report.append("\nПолностью применённая "
-                                                + "версия EDT: ").append(fullyApplied);
+                                        if (fullyReviewed > 0) {
+                                            report.append("\\nОбработанная разработчиком "
+                                                + "версия хранилища: ")
+                                                .append(fullyReviewed);
+                                            if (fullyApplied > 0) {
+                                                report.append("\\nСодержимое EDT "
+                                                    + "также совпадает с хранилищем.");
+                                            } else {
+                                                report.append("\\nСохранены выбранные "
+                                                    + "разработчиком локальные отличия.");
+                                            }
                                         } else {
-                                            report.append("\nПолностью применённая "
-                                                + "версия НЕ повышена.");
+                                            report.append("\\nВерсия хранилища "
+                                                + "НЕ отмечена как обработанная.");
                                             if (reason != null) {
-                                                report.append("\nПричина: ").append(reason);
-                                            } else if (verified.remainingPending() > 0) {
-                                                report.append("\nПричина: ")
-                                                    .append(verified.confirmedPending() > 0
-                                                        ? "Часть самостоятельно версионируемых "
-                                                          + "ресурсов подтверждена отдельно; "
-                                                          + "остальные изменения всё ещё "
-                                                          + "не подтверждены."
-                                                        : "Объекты не прошли проверку точного "
-                                                          + "совпадения после EDT Merge.")
-                                                    .append(" Подробности — в отчёте проверки.");
+                                                report.append("\\nПричина: ").append(reason);
+                                            } else if (pendingAfter > 0) {
+                                                report.append("\\nПричина: "
+                                                    + "не все входящие изменения "
+                                                    + "были разобраны.");
                                             }
                                         }
                                         informationOnUi(shell, "Итог объединения EDT",
