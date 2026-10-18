@@ -71,6 +71,35 @@ public final class OutgoingOperationJournal {
         return journal;
     }
 
+    /**
+     * Read-only diagnostic lookup of the last operation whose completion
+     * could not be proven. Never removes locks or resets a journal.
+     */
+    public static Path unresolvedDirectory(Path workspaceState, String scope)
+            throws IOException {
+        Objects.requireNonNull(workspaceState);
+        if (scope == null || scope.isBlank())
+            throw new IllegalArgumentException("No operation scope");
+        Path base = workspaceState.toAbsolutePath().normalize()
+            .resolve("outgoing").resolve(sha256(scope));
+        Path active = base.resolve("active.txt");
+        if (!Files.exists(active, LinkOption.NOFOLLOW_LINKS)) return null;
+        if (!Files.isRegularFile(active, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(active) > 128)
+            throw new IOException("Corrupted outgoing active-operation marker");
+        String id = Files.readString(active, StandardCharsets.US_ASCII).trim();
+        try {
+            UUID.fromString(id);
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Invalid outgoing operation ID", ex);
+        }
+        Path folder = base.resolve(id);
+        if (!Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(folder))
+            throw new IOException("Unresolved native operation folder missing");
+        return folder;
+    }
+
     public Path directory() { return directory; }
     public String id() { return runId; }
 
