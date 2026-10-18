@@ -142,6 +142,14 @@ public final class OutgoingBslWriteCoordinator {
                     Path root = journal.directory();
                     journal.event("SCOPE", "owners=" + plan.classicOwners().size()
                         + " modules=" + plan.platformFiles().size());
+                    // The local journal lists every requested identity and
+                    // relative file; credentials and full source are excluded.
+                    for (String owner : plan.classicOwners()) {
+                        journal.event("OWNER", "classic=" + owner);
+                    }
+                    for (String filename : plan.platformFiles()) {
+                        journal.event("MODULE", "file=" + filename);
+                    }
                     Path objects = root.resolve("objects.xml");
                     Path files = root.resolve("load-list.txt");
                     plan.writeScopes(objects, files);
@@ -154,6 +162,12 @@ public final class OutgoingBslWriteCoordinator {
                     journal.event("EDT_EXPORT_OK",
                         "owners=" + result.exportedOwners().size()
                         + " files=" + result.platformLoadCandidates().size());
+                    for (String filename : plan.platformFiles()) {
+                        Path resource = nativeExport.resolve(filename);
+                        journal.event("ARTIFACT",
+                            "file=" + filename + " bytes=" + Files.size(resource)
+                            + " sha256=" + fileDigest(resource));
+                    }
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     requireHead(connection, reviewedRevision, monitor);
                     if (!baselineVersions.equals(inventory(probe, monitor))) {
@@ -199,6 +213,8 @@ public final class OutgoingBslWriteCoordinator {
                                 throw new IOException(
                                     "Native verification differs from exported EDT module");
                             }
+                            journal.event("ROUND_TRIP_OK",
+                                "file=" + file + " sha256=" + fileDigest(installed));
                         }
                     }
                     var after = inventory(probe, monitor);
@@ -288,6 +304,21 @@ public final class OutgoingBslWriteCoordinator {
         };
         job.setUser(true);
         job.schedule();
+    }
+
+    private static String fileDigest(Path file) throws IOException {
+        try {
+            var hash = java.security.MessageDigest.getInstance("SHA-256");
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int size;
+                while ((size = input.read(buffer)) != -1)
+                    hash.update(buffer, 0, size);
+            }
+            return java.util.HexFormat.of().formatHex(hash.digest());
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
     }
 
     private static Map<String, ConfigDumpInfoIndex.Version> inventory(
