@@ -161,12 +161,18 @@ public final class OutgoingBslWriteCoordinator {
                     Path objects = root.resolve("objects.xml");
                     Path files = root.resolve("load-list.txt");
                     plan.writeScopes(objects, files);
+                    journal.selectedScope(plan.classicOwners().size(),
+                        plan.platformFiles().size(), fileDigest(objects));
+                    journal.observedRevision("PREFLIGHT_HEAD", reviewedRevision);
                     Path nativeExport = Files.createDirectory(root.resolve("export"));
 
                     phase = "NATIVE_EDT_EXPORT";
                     monitor.subTask("Штатный выборочный EDT-экспорт исходящих объектов");
+                    long exportStarted = System.nanoTime();
                     var result = EdtPublicServiceBridge.previewNativeBslExport(
                         project, plan.sourceFiles(), nativeExport, monitor);
+                    journal.stageDetail("EDT_EXPORT", "COMPLETED",
+                        elapsedMillis(exportStarted));
                     plan.verifyExport(result.directory());
                     journal.event("EDT_EXPORT_OK",
                         "owners=" + result.exportedOwners().size()
@@ -192,19 +198,25 @@ public final class OutgoingBslWriteCoordinator {
                     mayAbort = false;
                     phase = "LOCK";
                     monitor.subTask("Захват подтверждённых объектов в хранилище");
+                    long lockStarted = System.nanoTime();
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOCK,
                         objects, nativeExport, files, "", NATIVE_TIMEOUT,
                         journal, monitor::isCanceled);
+                    journal.stageDetail("LOCK", "PROCESS_OK",
+                        elapsedMillis(lockStarted));
                     requireHead(connection, reviewedRevision, monitor);
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
 
                     phase = "LOAD";
                     monitor.subTask("Выборочная загрузка только BSL-модулей");
+                    long loadStarted = System.nanoTime();
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOAD,
                         objects, nativeExport, files, "", NATIVE_TIMEOUT,
                         journal, monitor::isCanceled);
+                    journal.stageDetail("LOAD", "PROCESS_OK",
+                        elapsedMillis(loadStarted));
 
                     // An EXIT 0 does not establish object equality.
                     // Check the native 1C content from the SAME intermediary.
@@ -242,13 +254,17 @@ public final class OutgoingBslWriteCoordinator {
 
                     phase = "COMMIT";
                     monitor.subTask("Помещение подтверждённых BSL в тестовое хранилище");
+                    long commitStarted = System.nanoTime();
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.COMMIT,
                         objects, nativeExport, files,
                         "EDT Storage Bridge: confirmed test BSL changes",
                         NATIVE_TIMEOUT, journal, monitor::isCanceled);
+                    journal.stageDetail("COMMIT", "PROCESS_OK",
+                        elapsedMillis(commitStarted));
                     phase = "VERIFY_NEW_HEAD";
                     long newHead = head(connection, monitor);
+                    journal.observedRevision("AFTER_COMMIT", newHead);
                     // Changes from another writer during our operation are
                     // not treated as our successful single publication.
                     if (newHead != reviewedRevision + 1L) {
@@ -357,6 +373,11 @@ public final class OutgoingBslWriteCoordinator {
         };
         job.setUser(true);
         job.schedule();
+    }
+
+    private static long elapsedMillis(long startNano) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            Math.max(0L, System.nanoTime() - startNano));
     }
 
     private static String fileDigest(Path file) throws IOException {
