@@ -14,6 +14,8 @@ import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
 import com._1c.g5.v8.dt.core.filesystem.IQualifiedNameFilePathConverter;
 import com._1c.g5.v8.dt.core.platform.IConfigurationProvider;
 import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
+import com._1c.g5.v8.dt.core.platform.IBmModelManager;
+import com._1c.g5.v8.dt.export.IExportOperationFactory;
 import com._1c.g5.v8.dt.import_.IImportServiceRegistry;
 import com._1c.g5.wiring.ServiceAccess;
 
@@ -42,6 +44,18 @@ public final class EdtPublicServiceBridge {
         return new EdtProjectInspector(
             ServiceAccess.get(IConfigurationProvider.class))
             .hasConfigurationModel(project);
+    }
+
+    /** Explicit read-only native BSL export preview; no Designer or storage writes. */
+    public static EdtNativeOutgoingExportService.Preview previewNativeBslExport(
+            IProject project, List<String> selectedFiles, Path target,
+            IProgressMonitor monitor) throws IOException {
+        return new EdtNativeOutgoingExportService(
+            ServiceAccess.get(IV8ProjectManager.class),
+            ServiceAccess.get(IBmModelManager.class),
+            ServiceAccess.get(IQualifiedNameFilePathConverter.class),
+            ServiceAccess.get(IExportOperationFactory.class))
+            .preview(project, selectedFiles, target, monitor);
     }
 
     /** Prepare external comparison without writing to the open EDT project. */

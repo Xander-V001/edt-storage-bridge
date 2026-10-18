@@ -6,8 +6,11 @@ Bundle-Version: 0.1.0.qualifier
 Bundle-Vendor: Xander-V001
 Bundle-RequiredExecutionEnvironment: JavaSE-25
 Require-Bundle: org.eclipse.core.resources,
- org.eclipse.core.runtime
-Import-Package: com._1c.g5.v8.dt.compare.core,
+ org.eclipse.core.runtime,
+ org.xander.edt.storagebridge.platform
+Import-Package: com._1c.g5.v8.bm.core,
+ com._1c.g5.v8.dt.export,
+ com._1c.g5.v8.dt.compare.core,
  com._1c.g5.v8.dt.compare.datasource,
  com._1c.g5.v8.dt.compare.matching,
  com._1c.g5.v8.dt.compare.ui.editor,
@@ -18,6 +21,7 @@ Import-Package: com._1c.g5.v8.dt.compare.core,
  com._1c.g5.v8.dt.platform.version,
  com._1c.g5.wiring,
  com.google.inject,
+ org.eclipse.emf.ecore,
  org.eclipse.swt.widgets,
  org.eclipse.ui,
  org.eclipse.xtext.naming
