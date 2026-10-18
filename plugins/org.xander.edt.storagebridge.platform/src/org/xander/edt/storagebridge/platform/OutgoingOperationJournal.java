@@ -100,6 +100,41 @@ public final class OutgoingOperationJournal {
         return folder;
     }
 
+    /**
+     * Diagnostic events may only contain controlled metadata, never command
+     * lines, object names, paths, comments, passwords or raw exception text.
+     */
+    public void stageDetail(String stage, String outcome, long elapsedMillis)
+            throws IOException {
+        if (stage == null || !stage.matches("[A-Z_]{2,30}")
+                || outcome == null || !outcome.matches("[A-Z_]{2,30}")
+                || elapsedMillis < 0) {
+            throw new IllegalArgumentException("Unsafe stage diagnostic");
+        }
+        event("STAGE_DETAIL", "stage=" + stage + " outcome=" + outcome
+            + " elapsed_ms=" + elapsedMillis);
+    }
+
+    public void selectedScope(int objects, int files, String sha256Digest)
+            throws IOException {
+        if (objects < 1 || files < 0 || sha256Digest == null
+                || !sha256Digest.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("Invalid scope evidence");
+        }
+        event("SELECTED_SCOPE", "objects=" + objects + " files=" + files
+            + " digest=" + sha256Digest);
+    }
+
+    public void observedRevision(String checkpoint, long revision)
+            throws IOException {
+        if (checkpoint == null || !checkpoint.matches("[A-Z_]{2,30}")
+                || revision < 1) {
+            throw new IllegalArgumentException("Invalid repository checkpoint");
+        }
+        event("OBSERVED_REVISION", "checkpoint=" + checkpoint
+            + " revision=" + revision);
+    }
+
     public Path directory() { return directory; }
     public String id() { return runId; }
 
