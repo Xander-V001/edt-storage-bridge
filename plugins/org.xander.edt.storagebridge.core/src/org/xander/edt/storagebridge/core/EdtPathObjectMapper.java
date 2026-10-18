@@ -21,7 +21,7 @@ public final class EdtPathObjectMapper {
         }
         String group = path.getName(1).toString();
         if ("Configuration".equals(group)) {
-            return "Configuration";
+            return "Configuration/Configuration";
         }
         String element = path.getName(2).toString();
         if (element.isBlank() || element.startsWith(".")) {
