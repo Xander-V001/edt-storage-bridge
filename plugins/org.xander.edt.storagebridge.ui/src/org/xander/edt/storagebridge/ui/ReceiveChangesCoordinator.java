@@ -429,6 +429,16 @@ public final class ReceiveChangesCoordinator {
                     intermediaryIdentity, observedRevision);
                 if (revisionBeforeUpdate == observedRevision
                         && revisionBeforeUpdate > 0) {
+                    // Only an unchanged native HEAD surrounding the actual
+                    // repository update may establish a NEW snapshot proof.
+                    journal.recordScannedRevision(observedRevision);
+                    revisionForReview.set(observedRevision);
+                } else if (retryPendingOnly && !recovery
+                        && journal.scannedRevision() == observedRevision) {
+                    // An earlier fresh update already tied this exact
+                    // ConfigDumpInfo inventory to the native revision.
+                    // Pending-only retry has independently verified that
+                    // the intermediary content did not change.
                     revisionForReview.set(observedRevision);
                 }
             }
