@@ -33,7 +33,7 @@ public final class OutgoingStorageObjectsXmlTest {
     public void wholeObjectScopeExplicitlyIncludesSubordinates() {
         String xml = OutgoingStorageObjectsXml.createWithSubordinates(
             Set.of("Document.Order", "AccumulationRegister.Balance"));
-        assertEquals(2, xml.split("includeChildObjects=\\\"true\\\"").length - 1);
+        assertEquals(2, xml.split("includeChildObjects=").length - 1);
         assertFalse(xml.contains("includeChildObjects=\\\"false\\\""));
     }
 

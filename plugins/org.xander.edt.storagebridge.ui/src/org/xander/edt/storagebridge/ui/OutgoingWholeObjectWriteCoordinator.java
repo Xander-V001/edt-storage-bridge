@@ -289,7 +289,24 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     if (journal != null && beforeMutation) {
                         try { journal.abortBeforeMutation(); }
                         catch (IOException ignored) { /* fail closed */ }
+                    } else if (journal != null) {
+                        try {
+                            journal.event("INTERRUPTED", "phase=" + phase
+                                + " native_state_uncertain=true");
+                        } catch (IOException ignored) { /* Error Log follows */ }
                     }
+                    final Path diag = journal != null ? journal.directory() : unresolved;
+                    if (!display.isDisposed()) display.asyncExec(() -> {
+                        if (!shell.isDisposed()) {
+                            MessageDialog.openWarning(shell,
+                                "Тестовое помещение прервано",
+                                "Операция остановлена на этапе " + phase
+                                + ". Состояние базы/хранилища может "
+                                + "быть неопределённым. Повтор выполнять "
+                                + "только после сверки."
+                                + (diag == null ? "" : "\nЖурнал: " + diag));
+                        }
+                    });
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
                     if (journal != null && beforeMutation) {
@@ -342,10 +359,22 @@ public final class OutgoingWholeObjectWriteCoordinator {
             Path left = expected.resolve(name);
             Path right = actual.resolve(name);
             if (!Files.isRegularFile(right, LinkOption.NOFOLLOW_LINKS)
-                    || Files.isSymbolicLink(right)
-                    || Files.mismatch(left, right) != -1L) {
+                    || Files.isSymbolicLink(right)) {
+                journal.event("ROUND_TRIP_MISSING",
+                    "file=" + safeLogName(name));
+                throw new IOException("Native round-trip missing selected resource");
+            }
+            if (Files.mismatch(left, right) != -1L) {
+                journal.event("ROUND_TRIP_DIFF",
+                    "file=" + safeLogName(name)
+                    + " before_sha256=" + digest(left)
+                    + " after_sha256=" + digest(right));
                 throw new IOException("Native round-trip differs for selected resource");
             }
+            journal.event("ROUND_TRIP_MATCH",
+                "file=" + safeLogName(name)
+                + " bytes=" + Files.size(right)
+                + " sha256=" + digest(right));
         }
         // Detect any additional downloaded resources that our EDT export
         // omitted (e.g., forgotten form extensions). Extra platform files
@@ -367,6 +396,28 @@ public final class OutgoingWholeObjectWriteCoordinator {
         }
         journal.event("ROUND_TRIP_OK",
             "verified_files=" + plan.loadFiles().size());
+    }
+
+    private static String safeLogName(String name) {
+        // Native file paths may be long, but event fields are strictly bounded.
+        // Raw 1C process arguments and passwords are NEVER included.
+        return name.length() > 2048 ? name.substring(0, 2048) : name;
+    }
+
+    private static String digest(Path file) throws IOException {
+        try {
+            var hash = java.security.MessageDigest.getInstance("SHA-256");
+            try (var in = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = in.read(buffer)) != -1) {
+                    hash.update(buffer, 0, count);
+                }
+            }
+            return java.util.HexFormat.of().formatHex(hash.digest());
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private static String sha256(String input) {
