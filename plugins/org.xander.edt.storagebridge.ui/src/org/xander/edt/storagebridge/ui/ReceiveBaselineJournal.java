@@ -211,7 +211,7 @@ public final class ReceiveBaselineJournal {
         // the last-scanned inventory. Never infer a revision without proof.
         if (lines.size() == 1) {
             String[] legacy = lines.get(0).split(
-                java.util.regex.Pattern.quote("\\\\n"), -1);
+                java.util.regex.Pattern.quote("\\n"), -1);
             if (legacy.length == 3 && legacy[2].isEmpty()) {
                 lines = java.util.List.of(legacy[0], legacy[1]);
             }
