@@ -58,6 +58,18 @@ public final class EdtPublicServiceBridge {
             .preview(project, selectedFiles, target, monitor);
     }
 
+    /** Read-only whole-owner export for ALL native EDT metadata kinds. */
+    public static EdtNativeOutgoingExportService.MetadataPreview
+            previewNativeMetadataExport(IProject project, List<String> owners,
+            Path target, IProgressMonitor monitor) throws IOException {
+        return new EdtNativeOutgoingExportService(
+            ServiceAccess.get(IV8ProjectManager.class),
+            ServiceAccess.get(IBmModelManager.class),
+            ServiceAccess.get(IQualifiedNameFilePathConverter.class),
+            ServiceAccess.get(IExportOperationFactory.class))
+            .previewMetadataOwners(project, owners, target, monitor);
+    }
+
     /** Prepare external comparison without writing to the open EDT project. */
     public static CompareMergeProcessDescriptor prepare(IProject project,
             Path platformXml, Path convertedEdtDestination,
