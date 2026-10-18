@@ -109,6 +109,31 @@ public final class OutgoingDesignerRunner {
         if (Files.size(file) > MAX_BYTES)
             throw new IOException("Native diagnostic too large");
         byte[] raw = Files.readAllBytes(file);
+        // /Out from 1C Designer can use UTF-8, UTF-16 with BOM,
+        // UTF-16LE without BOM, or Windows-1251.
+        if (raw.length >= 2) {
+            if (((raw[0] & 255) == 0xFF && (raw[1] & 255) == 0xFE)
+                    || ((raw[0] & 255) == 0xFE && (raw[1] & 255) == 0xFF)) {
+                return StandardCharsets.UTF_16.decode(
+                    ByteBuffer.wrap(raw)).toString();
+            }
+        }
+        if (raw.length >= 16) {
+            int oddZeroes = 0, evenZeroes = 0;
+            int limit = Math.min(raw.length & ~1, 2048);
+            for (int i = 0; i < limit; i += 2) {
+                if (raw[i] == 0) evenZeroes++;
+                if (raw[i + 1] == 0) oddZeroes++;
+            }
+            if (oddZeroes > limit / 5 && evenZeroes < limit / 20) {
+                return StandardCharsets.UTF_16LE.decode(
+                    ByteBuffer.wrap(raw)).toString();
+            }
+            if (evenZeroes > limit / 5 && oddZeroes < limit / 20) {
+                return StandardCharsets.UTF_16BE.decode(
+                    ByteBuffer.wrap(raw)).toString();
+            }
+        }
         for (var charset : List.of(StandardCharsets.UTF_8,
                 java.nio.charset.Charset.forName("windows-1251"))) {
             try {
