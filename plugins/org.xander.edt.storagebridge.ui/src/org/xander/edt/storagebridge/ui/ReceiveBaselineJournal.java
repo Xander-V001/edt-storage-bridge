@@ -205,6 +205,17 @@ public final class ReceiveBaselineJournal {
         }
         var lines = Files.readAllLines(lastScannedRevisionFile,
             StandardCharsets.US_ASCII);
+        // Earlier builds accidentally stored the two literal characters
+        // backslash + n instead of line endings. Accept ONLY the exact
+        // two-field legacy form, and still require matching SHA-256 of
+        // the last-scanned inventory. Never infer a revision without proof.
+        if (lines.size() == 1) {
+            String[] legacy = lines.get(0).split(
+                java.util.regex.Pattern.quote("\\\\n"), -1);
+            if (legacy.length == 3 && legacy[2].isEmpty()) {
+                lines = java.util.List.of(legacy[0], legacy[1]);
+            }
+        }
         if (lines.size() != 2 || !lines.get(0).matches("[1-9][0-9]{0,15}")
                 || !lines.get(1).matches("[0-9a-f]{64}")) {
             return -1;
