@@ -91,6 +91,7 @@ public final class OutgoingBslWriteCoordinator {
             protected IStatus run(IProgressMonitor monitor) {
                 OutgoingOperationJournal journal = null;
                 boolean mayAbort = true;
+                String phase = "PREFLIGHT";
                 try {
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
@@ -125,6 +126,7 @@ public final class OutgoingBslWriteCoordinator {
                         settings.infobasePassword(), settings.address(),
                         settings.username(), settings.password());
 
+                    phase = "VERIFY_BASELINE";
                     monitor.subTask("Контроль исходной версии перед помещением");
                     requireHead(connection, reviewedRevision, monitor);
                     if (!baselineVersions.equals(inventory(probe, monitor))) {
@@ -155,6 +157,7 @@ public final class OutgoingBslWriteCoordinator {
                     plan.writeScopes(objects, files);
                     Path nativeExport = Files.createDirectory(root.resolve("export"));
 
+                    phase = "NATIVE_EDT_EXPORT";
                     monitor.subTask("Штатный выборочный EDT-экспорт исходящих объектов");
                     var result = EdtPublicServiceBridge.previewNativeBslExport(
                         project, plan.sourceFiles(), nativeExport, monitor);
@@ -181,6 +184,7 @@ public final class OutgoingBslWriteCoordinator {
                     // Every mutating stage leaves a durable UNCERTAIN marker
                     // before the native process launches. Never auto-retry.
                     mayAbort = false;
+                    phase = "LOCK";
                     monitor.subTask("Захват подтверждённых объектов в хранилище");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOCK,
@@ -189,6 +193,7 @@ public final class OutgoingBslWriteCoordinator {
                     requireHead(connection, reviewedRevision, monitor);
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
 
+                    phase = "LOAD";
                     monitor.subTask("Выборочная загрузка только BSL-модулей");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOAD,
@@ -197,6 +202,7 @@ public final class OutgoingBslWriteCoordinator {
 
                     // An EXIT 0 does not establish object equality.
                     // Check the native 1C content from the SAME intermediary.
+                    phase = "VERIFY_LOADED_MODULES";
                     monitor.subTask("Независимая выборочная проверка загрузки");
                     try (var verified = new SelectiveDumpRunner().export(
                             new SelectiveDumpRequest(exe, location,
@@ -228,12 +234,14 @@ public final class OutgoingBslWriteCoordinator {
                     if (monitor.isCanceled())
                         throw new IOException("Cancelled after native Load");
 
+                    phase = "COMMIT";
                     monitor.subTask("Помещение подтверждённых BSL в тестовое хранилище");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.COMMIT,
                         objects, nativeExport, files,
                         "EDT Storage Bridge: confirmed test BSL changes",
                         NATIVE_TIMEOUT, journal, monitor::isCanceled);
+                    phase = "VERIFY_NEW_HEAD";
                     long newHead = head(connection, monitor);
                     // Changes from another writer during our operation are
                     // not treated as our successful single publication.
@@ -308,12 +316,13 @@ public final class OutgoingBslWriteCoordinator {
                     if (journal != null) {
                         try { journal.event("FAILURE", "type="
                             + ex.getClass().getSimpleName()
+                            + " phase=" + phase
                             + " stage-uncertain=" + !mayAbort); }
                         catch (IOException ignored) { /* preserve Error Log */ }
                     }
                     Platform.getLog(OutgoingBslWriteCoordinator.class).log(
                         new Status(IStatus.ERROR, PLUGIN,
-                            "Outgoing native TEST publish failed", ex));
+                            "Outgoing native TEST publish failed at " + phase, ex));
                     final Path diagnosticPath = journal == null ? null
                         : journal.directory();
                     final boolean uncertain = !mayAbort;
@@ -321,7 +330,8 @@ public final class OutgoingBslWriteCoordinator {
                         if (!shell.isDisposed())
                             MessageDialog.openWarning(shell,
                                 "Тестовое помещение остановлено",
-                                "Не удалось завершить исходящую операцию.\n"
+                                "Не удалось завершить исходящую операцию.\nЭтап: "
+                                + phase + "\n"
                                 + (uncertain
                                     ? "Lock/Load/Commit могли изменить тестовую "
                                       + "базу или хранилище. НЕ ПОВТОРЯЙТЕ "
