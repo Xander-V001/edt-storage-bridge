@@ -9,7 +9,12 @@ import java.util.Objects;
  */
 public final class NativeEdtMergeEvidence {
     public record Snapshot(String lastStatus, boolean finished,
-            boolean cancelled, boolean mergeStarted) {}
+            boolean cancelled, boolean mergeStarted) {
+        /** EDT itself, not a closing dialog or manual approval, confirms Merge. */
+        public boolean appliedByEdt() {
+            return finished && !cancelled;
+        }
+    }
 
     private String last = "UNKNOWN";
     private boolean finished;

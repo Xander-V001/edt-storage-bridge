@@ -20,6 +20,20 @@ public final class NativeEdtMergeEvidenceTest {
     }
 
     @Test
+    public void closingEditorOrConfirmingSettingsDoesNotApplyNativeMerge() {
+        var recorder = new NativeEdtMergeEvidence();
+        recorder.observe("COMPARISON_PROCESS_FINISHED");
+        recorder.observe("MERGE_PROCESS_DISCARDED");
+        assertFalse(recorder.snapshot().appliedByEdt());
+
+        var actuallyApplied = new NativeEdtMergeEvidence();
+        actuallyApplied.observe("MERGE_PROCESS_STARTED");
+        actuallyApplied.observe("MERGE_PROCESS_FINISHED");
+        actuallyApplied.observe("MERGE_PROCESS_DISCARDED");
+        assertTrue(actuallyApplied.snapshot().appliedByEdt());
+    }
+
+    @Test
     public void cancellationOrJustComparisonIsNotMerge() {
         var recorder = new NativeEdtMergeEvidence();
         recorder.observe("COMPARISON_PROCESS_FINISHED");

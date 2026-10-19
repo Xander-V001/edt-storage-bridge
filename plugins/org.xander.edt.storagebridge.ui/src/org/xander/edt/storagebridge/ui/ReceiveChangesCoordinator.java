@@ -774,33 +774,28 @@ public final class ReceiveChangesCoordinator {
                                             revisionForReview.get() > 0
                                                 ? Long.toString(revisionForReview.get())
                                                 : "не подтверждена";
+                                        // A user confirmation or the Settings
+                                        // dialog's OK is NOT proof that native
+                                        // EDT executed Merge into the active
+                                        // workspace. Only a completed EDT
+                                        // merge lifecycle can acknowledge
+                                        // incoming changes.
                                         boolean nativeFinished =
                                             nativeEvidence.finished();
                                         boolean nativeCancelled =
                                             nativeEvidence.cancelled();
-                                        boolean mergeConfirmed = nativeFinished
-                                            || (!nativeCancelled && confirmOnUi(shell,
-                                            "Завершение объединения в EDT",
-                                            "Штатный редактор EDT закрыт.\n\n"
-                                            + "Кнопка «ОК» в окне «Настройка "
-                                            + "объединения модулей» задаёт только "
-                                            + "настройки. Само применение выполняется "
-                                            + "командой «Объединить» в основном "
-                                            + "редакторе сравнения EDT.\n\n"
-                                            + "Вы выполнили объединение и завершили "
-                                            + "разбор всех изменений, показанных "
-                                            + "в этом сравнении?\n\n"
-                                            + "Подтверждение означает, что вы "
-                                            + "принимаете результат EDT, включая "
-                                            + "сознательно оставленные локальные "
-                                            + "отличия. Плагин НЕ будет сравнивать "
-                                            + "BSL/XML побайтово.\n\n"
-                                            + "Статус операции EDT: " + nativeMergeStatus
-                                            + ".\n"
-                                            + "Версия источника: " + revisionLabel
-                                            + ".\n«Да» — завершено в EDT; "
-                                            + "«Нет» — оставить изменения "
-                                            + "ожидающими."));
+                                        boolean mergeConfirmed =
+                                            nativeEvidence.appliedByEdt();
+                                        if (!mergeConfirmed) {
+                                            BridgeActivator.getDefault().getLog().warn(
+                                                "EDT editor closed without a completed "
+                                                + "native merge event; status="
+                                                + nativeMergeStatus
+                                                + "; started="
+                                                + nativeEvidence.mergeStarted()
+                                                + "; cancelled=" + nativeCancelled
+                                                + ". Pending changes preserved.");
+                                        }
 
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
@@ -813,10 +808,22 @@ public final class ReceiveChangesCoordinator {
 
                                         if (!mergeConfirmed) {
                                             reason = nativeCancelled
-                                                ? "EDT сообщил об отмене объединения. "
+                                                ? "EDT сообщила об отмене объединения. "
                                                     + "Ожидающие записи сохранены."
-                                                : "Не подтверждено выполнение объединения "
-                                                    + "в EDT. Записи ожидания сохранены.";
+                                                : nativeEvidence.mergeStarted()
+                                                    ? "EDT начала объединение, но "
+                                                        + "не подтвердила его "
+                                                        + "завершение. Изменения "
+                                                        + "не отмечены полученными."
+                                                    : "Штатная операция «Объединить» "
+                                                        + "не подтверждена событиями "
+                                                        + "EDT. Окно «Настройка "
+                                                        + "объединения модулей» "
+                                                        + "только задаёт правила; "
+                                                        + "само применение выполняется "
+                                                        + "в основном редакторе "
+                                                        + "сравнения EDT. Записи "
+                                                        + "ожидания сохранены.";
                                         } else {
                                             // Developer-reviewed EDT objects and
                                             // the repository HEAD are independent
