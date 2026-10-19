@@ -193,6 +193,10 @@ public final class ReceiveChangesCoordinator {
         // repository revision. Preserve the exact missing proof reason for
         // the user instead of reporting that they failed to review objects.
         AtomicReference<String> revisionProofIssue = new AtomicReference<>();
+        // Semantic changes are inventoried BEFORE we create Designer's
+        // transport list. True removals/replacements cannot be treated as
+        // ordinary partial updates even if their names look exportable.
+        AtomicBoolean changeScopeRequiresFull = new AtomicBoolean(false);
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -429,15 +433,20 @@ public final class ReceiveChangesCoordinator {
                     monitor.subTask(selectAllRemote
                         ? "Проверка всех актуальных объектов хранилища"
                         : "Поиск версий объектов, изменённых после предыдущего получения");
-                    Set<String> remoteNames = new LinkedHashSet<>(
-                        RemoteReceiveScopePlanner.candidates(
-                            lastScanned, remote.configDumpInfo(), selectAllRemote));
-                    if (selectAllRemote && lastScanned != null) {
-                        // Deleted 1C metadata has no right-side XML descriptor.
-                        // Preserve the debt for native comparison/verification.
-                        remoteNames.addAll(RemoteReceiveScopePlanner.removedSince(
-                            lastScanned, remote.configDumpInfo()));
-                    }
+                    // Store EXACT changed ConfigDumpInfo identities. The
+                    // parent/resource expansion used for Designer -listFile
+                    // must never add synthetic entries to pending.
+                    var discovered = RemoteReceiveScopePlanner.discover(
+                        lastScanned, remote.configDumpInfo(), selectAllRemote);
+                    Set<String> remoteNames = discovered.pendingIdentities();
+                    changeScopeRequiresFull.set(
+                        discovered.requiresFullNativeComparison());
+                    BridgeActivator.getDefault().getLog().info(
+                        "Repository delta: changed=" + discovered.present().size()
+                        + "; removed=" + discovered.removed().size()
+                        + "; renamed=" + discovered.renamed().size()
+                        + "; replaced=" + discovered.replaced().size()
+                        + "; fullNeeded=" + changeScopeRequiresFull.get());
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {
                         throw new InterruptedException(
@@ -536,80 +545,66 @@ public final class ReceiveChangesCoordinator {
             final Set<String> absentFromRemote = ReceiveReviewScope
                 .missingFromSource(pending, currentInventory);
 
-            if (reviewCandidates.isEmpty() && !fullReview) {
-                if (pending.isEmpty()) {
-                    informationOnUi(shell, "Новых изменений нет",
-                        "Новых изменений хранилища для сравнения "
-                        + "в EDT не обнаружено.");
-                    return;
-                }
-                informationOnUi(shell, "Нет объектов для выборочного сравнения",
-                    "Все оставшиеся записи относятся к отсутствующим "
-                    + "в текущем хранилище объектам. Они не были показаны "
-                    + "EDT и не могут быть списаны как полученные."
-                    + ReceivePendingExplanation.format(
-                        pending, Set.of(), absentFromRemote));
+            if (pending.isEmpty() && !fullReview) {
+                informationOnUi(shell, "Новых изменений нет",
+                    "В хранилище нет новых изменений для сравнения в EDT.");
                 return;
             }
-
-            // A selective XML export cannot import standalone root/Language
-            // descriptors into an existing EDT model. Instead of silently
-            // leaving "2 pending" after accepting all visible checkboxes,
-            // explicitly offer native FULL comparison during THIS receive.
-            // The intermediary has already been updated; promoting review
-            // here does NOT run a second Designer repository update.
+            // The FULL native EDT comparison, not a shortened transport
+            // selection, is REQUIRED when partial XML cannot express the
+            // complete repository delta. Do not offer the old
+            // "compare the others" choice: that silently excluded real
+            // metadata and created false pending debts.
             final var exportPlan = fullReview ? null
                 : SelectiveDumpPlanner.planIncludingRelated(
                     reviewCandidates, currentInventory);
-            boolean promoteToFull = false;
-            if (exportPlan != null && !exportPlan.deferred().isEmpty()) {
-                String deferredNames = exportPlan.deferred().stream()
-                    .sorted().limit(12).map(name -> "• " + name)
-                    .collect(java.util.stream.Collectors.joining("\n"));
-                int action = choiceOnUi(shell,
-                    "Есть изменения вне выборочного сравнения",
-                    "В хранилище есть изменения, которые нельзя "
-                    + "показать в выборочной сверке:\n"
-                    + deferredNames
-                    + (exportPlan.deferred().size() > 12
-                        ? "\n…и ещё " + (exportPlan.deferred().size() - 12)
-                        : "")
-                    + "\n\nЧтобы включить их в штатное объединение EDT, "
-                    + "нужна полная выгрузка конфигурации. "
-                    + "Она может занять больше времени.\n\n"
-                    + "База 1С уже обновлена. Повторно обновлять её "
-                    + "из хранилища не будем.\n"
-                    + "«Сравнить остальные» оставит перечисленные "
-                    + "изменения на потом.",
-                    "Сравнить остальные", "Полная сверка", "Отмена");
-                if (action == 1) {
-                    promoteToFull = true;
-                } else if (action != 0) {
+            boolean needsFull = fullReview
+                || changeScopeRequiresFull.get()
+                || !absentFromRemote.isEmpty()
+                || (exportPlan != null && !exportPlan.deferred().isEmpty());
+            if (needsFull && !fullReview) {
+                int deferred = exportPlan == null ? 0
+                    : exportPlan.deferred().size();
+                boolean accept = confirmOnUi(shell,
+                    "Нужна полная сверка изменений",
+                    "Выборочная выгрузка не охватывает все изменения "
+                    + "хранилища.\n\n"
+                    + "Изменений корня, языков и других специальных "
+                    + "ресурсов: " + deferred + ".\n"
+                    + "Записей об отсутствующих в источнике объектах: "
+                    + absentFromRemote.size() + ".\n\n"
+                    + "Чтобы ничего не пропустить, плагин подготовит "
+                    + "ПОЛНОЕ штатное сравнение EDT. "
+                    + "База-посредник уже обновлена; повторно обновлять "
+                    + "её не потребуется.\n"
+                    + "Это может занять больше времени.\n"
+                    + "Если отменить, все изменения останутся в журнале.",
+                    "Полная сверка");
+                if (!accept) {
                     return;
                 }
             }
-            final boolean fullNativeComparison = fullReview || promoteToFull;
-            final Set<String> deferredDuringReview = fullNativeComparison
-                ? Set.of() : Set.copyOf(exportPlan.deferred());
+            final boolean fullNativeComparison = needsFull;
+            // If a native global comparison was necessary it must use the
+            // complete source and the complete EDT scope. Exact current
+            // identities are eligible; removed objects require additional
+            // proof of native deletion and are not silently accepted.
+            final Set<String> deferredDuringReview = Set.of();
             final Set<String> selectedPendingNames =
                 ReceiveReviewScope.eligible(pending, currentInventory,
                     deferredDuringReview, fullNativeComparison);
             List<String> selectedList = new ArrayList<>();
             Set<String> selected;
             if (fullNativeComparison) {
-                // ALL current metadata (including root and Languages) are
-                // imported into detached EDT and shown in a GLOBAL native
-                // EDT comparison; no selective object list is used.
                 selected = Set.of();
             } else {
                 selectedList.addAll(exportPlan.exportable());
                 if (selectedList.isEmpty()) {
-                    informationOnUi(shell, "Необходима полная сверка",
-                        "Выборочных объектов для сравнения нет. "
-                        + "Изменения корня и языков остаются неразобранными."
-                        + ReceivePendingExplanation.format(
-                            pending, deferredDuringReview, absentFromRemote));
-                    return;
+                    // A non-empty pending set with no exportable current
+                    // names MUST go through full review, never a fake
+                    // successful selective comparison.
+                    throw new IOException(
+                        "Nonempty pending changes have no selective XML scope");
                 }
                 selected = topObjects(selectedList);
                 phase.set("Проверка типов выборочно выгружаемых объектов 1С");
