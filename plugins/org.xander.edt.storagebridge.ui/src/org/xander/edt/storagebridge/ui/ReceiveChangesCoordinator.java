@@ -186,6 +186,10 @@ public final class ReceiveChangesCoordinator {
         // A real native repository revision, NEVER a ConfigDumpInfo token.
         // Unknown revision must not block the existing XML receiving flow.
         AtomicLong revisionForReview = new AtomicLong(ReceiveRevisionStore.UNKNOWN);
+        // A successful object comparison does not establish the native
+        // repository revision. Preserve the exact missing proof reason for
+        // the user instead of reporting that they failed to review objects.
+        AtomicReference<String> revisionProofIssue = new AtomicReference<>();
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -469,6 +473,45 @@ public final class ReceiveChangesCoordinator {
                     revisionForReview.set(observedRevision);
                 }
             }
+            if (revisionForReview.get() < 1) {
+                // Never infer a reviewed version from a ConfigDumpInfo token.
+                // A report failure, a concurrent repository Commit or an
+                // uncertain recovery must all remain explicit and distinct.
+                final String proofProblem;
+                if (observedRevision < 1) {
+                    proofProblem = "Не удалось определить текущую версию "
+                        + "хранилища по штатному отчёту 1С. Объекты "
+                        + "сравнивались, но обработанная версия не доказана.";
+                } else if (retryPendingOnly) {
+                    proofProblem = "Повторная проверка ожидающих объектов "
+                        + "не связана с подтверждённым снимком версии "
+                        + observedRevision + ". Нельзя считать эту версию "
+                        + "обработанной без восстановления привязки.";
+                } else if (recovery) {
+                    proofProblem = "После восстановления прерванного получения "
+                        + "не подтверждена связь текущего снимка объектов "
+                        + "с версией " + observedRevision + " хранилища.";
+                } else if (revisionBeforeUpdate < 1) {
+                    proofProblem = "Не удалось определить версию хранилища "
+                        + "ДО получения изменений. Текущая версия "
+                        + observedRevision + " прочитана, но нельзя "
+                        + "доказать, что она не сменилась во время получения.";
+                } else {
+                    proofProblem = "Версия хранилища изменилась во время "
+                        + "получения: до обновления "
+                        + revisionBeforeUpdate + ", после обновления "
+                        + observedRevision + ". Требуется повторная "
+                        + "проверка актуальности изменений.";
+                }
+                revisionProofIssue.set(proofProblem);
+                BridgeActivator.getDefault().getLog().warn(
+                    "Receive revision attestation unavailable: before="
+                    + revisionBeforeUpdate + " after=" + observedRevision
+                    + " retryPendingOnly=" + retryPendingOnly
+                    + " recovery=" + recovery
+                    + " mode=" + mode
+                    + "; changes remain pending until verified review.");
+            }
 
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
@@ -683,6 +726,12 @@ public final class ReceiveChangesCoordinator {
                                             && verified.identicalOwners()
                                                 == verified.checkedOwners();
                                         boolean reviewFinished = identical;
+                                        if (revisionForReview.get() < 1) {
+                                            reason = revisionProofIssue.get() == null
+                                                ? "Не удалось подтвердить ревизию "
+                                                    + "хранилища для этой сверки."
+                                                : revisionProofIssue.get();
+                                        }
 
                                         if (!identical && revisionForReview.get() > 0) {
                                             var outstanding = ReceivePendingStore.get(
@@ -827,8 +876,9 @@ public final class ReceiveChangesCoordinator {
                                                 report.append("\nПричина: ").append(reason);
                                             } else if (pendingAfter > 0) {
                                                 report.append("\nПричина: "
-                                                    + "не все входящие изменения "
-                                                    + "были разобраны.");
+                                                    + "остались неподтверждённые "
+                                                    + "входящие объекты. Их имена "
+                                                    + "приведены в диагностике.");
                                             }
                                         }
                                         informationOnUi(shell, "Итог объединения EDT",
