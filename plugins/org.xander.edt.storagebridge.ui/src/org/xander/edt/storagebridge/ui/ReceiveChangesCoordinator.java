@@ -614,7 +614,7 @@ public final class ReceiveChangesCoordinator {
             phase.set(fullNativeComparison
                 ? (mode == ReceiveMode.FULL_REVIEW
                     ? "Повторная полная выгрузка XML по запросу"
-                    : "Первоначальная полная выгрузка XML")
+                    : "Полная выгрузка XML для разбора корневых изменений")
                 : "Выборочная выгрузка объектов 1С");
             export = progress(jobProgress, 20, monitor -> {
                 monitor.beginTask(fullNativeComparison
@@ -1010,10 +1010,11 @@ public final class ReceiveChangesCoordinator {
                                                 acknowledgedCount =
                                                     decision.acknowledged().size();
                                                 if (!decision.allReviewed()) {
-                                                    reason = "Часть изменений не "
-                                                        + "входила в показанное EDT "
-                                                        + "сравнение и оставлена "
-                                                        + "ожидающей.";
+                                                    reason = "Плагин не включил "
+                                                        + "все изменения в текущее "
+                                                        + "сравнение EDT. "
+                                                        + "Ниже перечислено, "
+                                                        + "что именно не показано.";
                                                 }
                                                 BridgeActivator.getDefault().getLog().info(
                                                     "Native EDT review recorded; "
@@ -1025,35 +1026,43 @@ public final class ReceiveChangesCoordinator {
                                             }
                                         }
 
-                                        int pendingAfter = ReceivePendingStore.get(
-                                            project, settings.address(), branch,
-                                            intermediaryIdentity).size();
+                                        Set<String> remainingPending =
+                                            ReceivePendingStore.get(
+                                                project, settings.address(),
+                                                branch, intermediaryIdentity);
+                                        int pendingAfter = remainingPending.size();
                                         StringBuilder report = new StringBuilder(
-                                            "Результат штатного объединения EDT: ")
+                                            "Штатное объединение EDT: ")
                                             .append(nativeFinished
-                                                ? "завершён штатным механизмом EDT."
-                                                : (mergeConfirmed
-                                                    ? "подтверждён разработчиком."
-                                                    : "не подтверждён."))
-                                            .append("\nЗаписей ожидания закрыто: ")
+                                                ? "завершено."
+                                                : "не подтверждено.")
+                                            .append("\nРазобрано изменений из хранилища: ")
                                             .append(acknowledgedCount)
-                                            .append(".\nОсталось ожидающих записей: ")
+                                            .append(".\nНе разобрано: ")
                                             .append(pendingAfter).append(".");
+                                        if (pendingAfter > 0) {
+                                            report.append(
+                                                ReceivePendingExplanation.format(
+                                                    remainingPending,
+                                                    deferredDuringReview,
+                                                    absentFromRemote));
+                                        }
                                         if (confirmedRevision > 0) {
                                             report.append("\nВерсия хранилища ")
                                                 .append(confirmedRevision)
                                                 .append(" отмечена как обработанная.");
-                                            report.append("\nЛокальные отличия, ")
-                                                .append("сохранённые в EDT, ")
-                                                .append("не считаются ошибкой.");
+                                        } else if (pendingAfter > 0) {
+                                            report.append("\nВерсия хранилища "
+                                                + "пока не отмечена как полностью "
+                                                + "разобранная из-за перечисленных "
+                                                + "изменений.");
                                         } else {
-                                            report.append("\nОбработка версии ")
-                                                .append("хранилища целиком ")
-                                                .append("не подтверждена.");
+                                            report.append("\nВсе записи разобраны, "
+                                                + "но номер версии хранилища "
+                                                + "ещё не подтверждён.");
                                         }
                                         if (reason != null) {
-                                            report.append("\nПричина: ")
-                                                .append(reason);
+                                            report.append("\n").append(reason);
                                         }
                                         informationOnUi(shell, "Результат объединения EDT",
                                             report.toString());
