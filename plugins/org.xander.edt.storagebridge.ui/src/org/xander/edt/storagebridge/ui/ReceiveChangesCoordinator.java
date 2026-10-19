@@ -38,6 +38,7 @@ import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
+import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
@@ -433,11 +434,28 @@ public final class ReceiveChangesCoordinator {
                     monitor.subTask(selectAllRemote
                         ? "Проверка всех актуальных объектов хранилища"
                         : "Поиск версий объектов, изменённых после предыдущего получения");
-                    // Store EXACT changed ConfigDumpInfo identities. The
-                    // parent/resource expansion used for Designer -listFile
-                    // must never add synthetic entries to pending.
-                    var discovered = RemoteReceiveScopePlanner.discover(
-                        lastScanned, remote.configDumpInfo(), selectAllRemote);
+                    // The platform itself generates ConfigDumpInfo.xml
+                    // (-configDumpInfoOnly) AND determines incremental
+                    // changes (-getChanges -configDumpInfoForChanges).
+                    // The plugin never edits either native version file.
+                    // Our inventory comparison is only a safety cross-check
+                    // and a deletion detector if the platform needs FullDump.
+                    RemoteReceiveScopePlanner.Changes discovered;
+                    if (selectAllRemote) {
+                        discovered = RemoteReceiveScopePlanner.discover(
+                            lastScanned, remote.configDumpInfo(), true);
+                    } else {
+                        phase.set("Штатное определение изменений платформой 1С");
+                        monitor.subTask("Конфигуратор 1С формирует список изменений");
+                        var nativeDelta = new ChangedObjectsProbe().detectNative(
+                            detect, lastScanned, canceled);
+                        discovered = RemoteReceiveScopePlanner.reconcileNative(
+                            lastScanned, remote.configDumpInfo(), nativeDelta);
+                        BridgeActivator.getDefault().getLog().info(
+                            "Native getChanges: changed="
+                            + nativeDelta.exactNames().size()
+                            + "; fullDump=" + nativeDelta.fullDump());
+                    }
                     Set<String> remoteNames = discovered.pendingIdentities();
                     changeScopeRequiresFull.set(
                         discovered.requiresFullNativeComparison());
