@@ -537,6 +537,12 @@ public final class ReceiveChangesCoordinator {
                 .missingFromSource(pending, currentInventory);
 
             if (reviewCandidates.isEmpty() && !fullReview) {
+                if (pending.isEmpty()) {
+                    informationOnUi(shell, "Новых изменений нет",
+                        "Новых изменений хранилища для сравнения "
+                        + "в EDT не обнаружено.");
+                    return;
+                }
                 informationOnUi(shell, "Нет объектов для выборочного сравнения",
                     "Все оставшиеся записи относятся к отсутствующим "
                     + "в текущем хранилище объектам. Они не были показаны "
