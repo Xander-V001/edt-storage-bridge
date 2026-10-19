@@ -87,6 +87,32 @@ public final class EdtOwnerContentVerifierTest {
     }
 
     @Test
+    public void deletedNestedFormIsVerifiedOnlyWhenEntireParentMatches()
+            throws Exception {
+        Path project = Files.createTempDirectory("edt-deleted-form-live-");
+        Path stage = Files.createTempDirectory("edt-deleted-form-remote-");
+        try {
+            for (Path root : new Path[]{project, stage}) {
+                Files.createDirectories(root.resolve("src/Documents/Order"));
+                Files.writeString(root.resolve(
+                    "src/Documents/Order/Order.mdo"), "same");
+            }
+            // The repository removed a form: no form exists on the
+            // imported right side. A left-side form still exists.
+            Path leftover = Files.createDirectories(project.resolve(
+                "src/Documents/Order/Forms/Removed"));
+            Files.writeString(leftover.resolve("Form.form"), "local");
+            assertFalse(EdtOwnerContentVerifier.isExactlyApplied(
+                project, stage, "Documents/Order"));
+            remove(project.resolve("src/Documents/Order/Forms"));
+            assertTrue(EdtOwnerContentVerifier.isExactlyApplied(
+                project, stage, "Documents/Order"));
+        } finally {
+            remove(project); remove(stage);
+        }
+    }
+
+    @Test
     public void diagnosticsNeverTreatMissingStageDescriptorAsApplied()
             throws Exception {
         Path project = Files.createTempDirectory("edt-owner-active-");

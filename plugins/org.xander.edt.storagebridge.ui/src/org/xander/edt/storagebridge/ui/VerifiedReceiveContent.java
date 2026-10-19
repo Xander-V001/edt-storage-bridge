@@ -165,8 +165,18 @@ public final class VerifiedReceiveContent {
             if ("Configuration/Configuration".equals(owner)) {
                 continue; // embedded roots/languages are checked as a whole
             }
-            if (EdtOwnerContentVerifier.isTopLevelDeletionApplied(
-                    projectRoot, stage, owner)) {
+            // A removed independently developed child (Form/Template/
+            // Module) can have a still-existing parent. The deletion is
+            // proven only if the WHOLE resulting parent owner now matches
+            // the native repository source. Missing an owner is separately
+            // checked on both sides. Never infer deletion from the absence
+            // of an individual ConfigDumpInfo name alone.
+            boolean parentMatches = EdtOwnerContentVerifier.isExactlyApplied(
+                projectRoot, stage, owner);
+            boolean ownerDeleted = !parentMatches
+                && EdtOwnerContentVerifier.isTopLevelDeletionApplied(
+                    projectRoot, stage, owner);
+            if (parentMatches || ownerDeleted) {
                 verifiedNames.add(deletedName);
             } else if (differences.size() < 500) {
                 differences.add(owner + " — отсутствующий справа объект "
