@@ -10,6 +10,7 @@ import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.PartInitException;
 
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessDescriptor;
+import com._1c.g5.v8.dt.compare.core.IComparisonManager;
 import com._1c.g5.v8.dt.compare.ui.editor.IDtComparisonEditorInputFactory;
 import com._1c.g5.v8.dt.core.filesystem.IQualifiedNameFilePathConverter;
 import com._1c.g5.v8.dt.core.platform.IConfigurationProvider;
@@ -92,6 +93,25 @@ public final class EdtPublicServiceBridge {
             throws PartInitException {
         return EdtDeltaComparisonService.openReadOnlyEditor(
             descriptor, ServiceAccess.get(IDtComparisonEditorInputFactory.class));
+    }
+
+    /**
+     * Read the public EDT comparison manager's own process status for
+     * diagnostics. A missing/evicted status is UNKNOWN, never evidence
+     * of a successful or failed merge. This does not run a merge or compare
+     * text: it only asks the EDT engine about its native job.
+     */
+    public static String incomingMergeStatus(
+            CompareMergeProcessDescriptor descriptor) {
+        if (descriptor == null) return "UNKNOWN";
+        try {
+            IComparisonManager manager = ServiceAccess.get(IComparisonManager.class);
+            if (manager == null) return "UNAVAILABLE";
+            var status = manager.getStatus(descriptor.getHandle());
+            return status == null ? "UNKNOWN" : status.name();
+        } catch (RuntimeException ex) {
+            return "UNAVAILABLE";
+        }
     }
 
     /** Must run on SWT UI thread; the public EDT editor factory is resolved on demand. */

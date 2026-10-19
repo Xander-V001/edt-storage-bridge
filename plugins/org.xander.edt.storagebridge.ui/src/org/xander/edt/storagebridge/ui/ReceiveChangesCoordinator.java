@@ -685,6 +685,18 @@ public final class ReceiveChangesCoordinator {
                     public void partClosed(IWorkbenchPartReference part) {
                         if (part == editorReference) {
                             page.removePartListener(this);
+                            // EDT owns the actual compare/merge operation.
+                            // Its public status helps distinguish mere dialog
+                            // configuration from an executed native merge;
+                            // UNKNOWN after an editor was disposed is not proof
+                            // either way. Neither case causes bytewise veto.
+                            final String nativeMergeStatus =
+                                EdtPublicServiceBridge.incomingMergeStatus(nativeDescriptor);
+                            BridgeActivator.getDefault().getLog().info(
+                                "EDT comparison editor closed; native status="
+                                + nativeMergeStatus + "; sourceRevisionProven="
+                                + (revisionForReview.get() > 0)
+                                + "; mode=" + mode);
                             // The initial full dump may contain many thousands
                             // of files. Never compare or recursively delete it
                             // on the SWT event thread when the editor closes.
@@ -715,6 +727,11 @@ public final class ReceiveChangesCoordinator {
                                         boolean mergeConfirmed = confirmOnUi(shell,
                                             "Завершение объединения в EDT",
                                             "Штатный редактор EDT закрыт.\n\n"
+                                            + "Кнопка «ОК» в окне «Настройка "
+                                            + "объединения модулей» задаёт только "
+                                            + "настройки. Само применение выполняется "
+                                            + "командой «Объединить» в основном "
+                                            + "редакторе сравнения EDT.\n\n"
                                             + "Вы выполнили объединение и завершили "
                                             + "разбор всех изменений, показанных "
                                             + "в этом сравнении?\n\n"
@@ -723,6 +740,8 @@ public final class ReceiveChangesCoordinator {
                                             + "сознательно оставленные локальные "
                                             + "отличия. Плагин НЕ будет сравнивать "
                                             + "BSL/XML побайтово.\n\n"
+                                            + "Статус операции EDT: " + nativeMergeStatus
+                                            + ".\n"
                                             + "Версия источника: " + revisionLabel
                                             + ".\n«Да» — завершено в EDT; "
                                             + "«Нет» — оставить изменения "
