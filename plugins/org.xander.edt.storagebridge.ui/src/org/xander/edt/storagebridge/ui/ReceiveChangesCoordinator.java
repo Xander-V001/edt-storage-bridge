@@ -198,6 +198,11 @@ public final class ReceiveChangesCoordinator {
         // transport list. True removals/replacements cannot be treated as
         // ordinary partial updates even if their names look exportable.
         AtomicBoolean changeScopeRequiresFull = new AtomicBoolean(false);
+        // Native -getChanges may mention independently developed properties
+        // not in the versioned inventory. Keep these exact 1C names instead
+        // of classifying them as deleted or fabricating parents.
+        AtomicReference<Set<String>> unindexedNativeNames =
+            new AtomicReference<>(Set.of());
         try {
             if (settings.platformExecutable().isBlank()
                     || settings.infobaseAddress().isBlank()
@@ -459,6 +464,7 @@ public final class ReceiveChangesCoordinator {
                     Set<String> remoteNames = discovered.pendingIdentities();
                     changeScopeRequiresFull.set(
                         discovered.requiresFullNativeComparison());
+                    unindexedNativeNames.set(discovered.unindexed());
                     BridgeActivator.getDefault().getLog().info(
                         "Repository delta: changed=" + discovered.present().size()
                         + "; removed=" + discovered.removed().size()
@@ -560,8 +566,12 @@ public final class ReceiveChangesCoordinator {
                 journal.lastScannedInfo());
             Set<String> reviewCandidates = RemoteReceiveScopePlanner
                 .availableInFullReview(pending, currentInventory);
-            final Set<String> absentFromRemote = ReceiveReviewScope
-                .missingFromSource(pending, currentInventory);
+            var notInSource = new LinkedHashSet<>(pending);
+            notInSource.removeAll(reviewCandidates);
+            // These exact names were emitted by 1C itself in this receive,
+            // even though they have no independent ConfigDumpInfo token.
+            notInSource.removeAll(unindexedNativeNames.get());
+            final Set<String> absentFromRemote = Set.copyOf(notInSource);
 
             if (pending.isEmpty() && !fullReview) {
                 informationOnUi(shell, "Новых изменений нет",
@@ -608,9 +618,15 @@ public final class ReceiveChangesCoordinator {
             // identities are eligible; removed objects require additional
             // proof of native deletion and are not silently accepted.
             final Set<String> deferredDuringReview = Set.of();
-            final Set<String> selectedPendingNames =
+            var sourceCovered = new LinkedHashSet<>(
                 ReceiveReviewScope.eligible(pending, currentInventory,
-                    deferredDuringReview, fullNativeComparison);
+                    deferredDuringReview, fullNativeComparison));
+            // Global native EDT comparison also covers 1C-reported nested
+            // properties that are not individually versioned in XML.
+            if (fullNativeComparison) {
+                sourceCovered.addAll(unindexedNativeNames.get());
+            }
+            final Set<String> selectedPendingNames = Set.copyOf(sourceCovered);
             List<String> selectedList = new ArrayList<>();
             Set<String> selected;
             if (fullNativeComparison) {
