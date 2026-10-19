@@ -17,6 +17,8 @@ public final class NativeEdtMergeEvidenceTest {
         assertTrue(state.mergeStarted());
         assertFalse(state.cancelled());
         assertEquals("MERGE_PROCESS_DISCARDED", state.lastStatus());
+        assertTrue(state.discarded());
+        assertTrue(state.canReleaseStaging());
     }
 
     @Test
@@ -31,6 +33,35 @@ public final class NativeEdtMergeEvidenceTest {
         actuallyApplied.observe("MERGE_PROCESS_FINISHED");
         actuallyApplied.observe("MERGE_PROCESS_DISCARDED");
         assertTrue(actuallyApplied.snapshot().appliedByEdt());
+    }
+
+    @Test
+    public void mergeCompletingAfterEditorCloseIsStillObserved() throws Exception {
+        var events = new NativeEdtMergeEvidence();
+        var producer = new Thread(() -> {
+            try {
+                Thread.sleep(80);
+                events.observe("MERGE_PROCESS_STARTED");
+                Thread.sleep(80);
+                events.observe("MERGE_PROCESS_FINISHED");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        producer.start();
+        var result = events.awaitAfterEditorClose(400, 1000, () -> false);
+        producer.join();
+        assertTrue(result.appliedByEdt());
+        assertTrue(result.canReleaseStaging());
+    }
+
+    @Test
+    public void unknownMergeStatusAfterClosingCannotReleaseSource() throws Exception {
+        var events = new NativeEdtMergeEvidence();
+        events.observe("COMPARISON_PROCESS_FINISHED");
+        var result = events.awaitAfterEditorClose(30, 100, () -> false);
+        assertFalse(result.appliedByEdt());
+        assertFalse(result.canReleaseStaging());
     }
 
     @Test

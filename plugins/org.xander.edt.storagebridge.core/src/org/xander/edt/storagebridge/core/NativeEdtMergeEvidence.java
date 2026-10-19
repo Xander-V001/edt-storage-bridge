@@ -9,7 +9,15 @@ import java.util.Objects;
  */
 public final class NativeEdtMergeEvidence {
     public record Snapshot(String lastStatus, boolean finished,
-            boolean cancelled, boolean mergeStarted) {
+            boolean cancelled, boolean mergeStarted, boolean discarded) {
+        /**
+         * EDT has released the comparison session, finished all post-merge
+         * actions, or explicitly cancelled the operation.
+         */
+        public boolean canReleaseStaging() {
+            return finished || cancelled || discarded;
+        }
+
         /** EDT itself, not a closing dialog or manual approval, confirms Merge. */
         public boolean appliedByEdt() {
             return finished && !cancelled;
@@ -20,6 +28,7 @@ public final class NativeEdtMergeEvidence {
     private boolean finished;
     private boolean cancelled;
     private boolean started;
+    private boolean discarded;
 
     public synchronized void observe(String status) {
         Objects.requireNonNull(status);
@@ -32,15 +41,49 @@ public final class NativeEdtMergeEvidence {
                 started = true;
                 finished = true;
             }
+            case "MERGE_PROCESS_DISCARDED" -> discarded = true;
             case "COMPARISON_MERGE_PROCESS_CANCELLED",
                  "MERGE_PROCESS_USING_EXTERNAL_TOOL_CANCELED" -> {
                 if (!finished) cancelled = true;
             }
-            default -> { /* Native comparison and discard statuses. */ }
+            default -> { /* Native comparison status. */ }
         }
+        notifyAll();
     }
 
     public synchronized Snapshot snapshot() {
-        return new Snapshot(last, finished, cancelled, started);
+        return new Snapshot(last, finished, cancelled, started, discarded);
+    }
+
+    /**
+     * Wait ON A BACKGROUND ECLIPSE JOB until EDT's asynchronous native merge
+     * has finished or its comparison was discarded/cancelled. Closing an SWT
+     * editor is not a completion signal. This uses only observed EDT events
+     * and must never be called on the SWT thread.
+     *
+     * No merge started: allow a short grace interval for EDT's async job
+     * scheduling. Once started: wait up to the long limit, never indefinitely.
+     */
+    public synchronized Snapshot awaitAfterEditorClose(
+            long graceMilliseconds, long mergeTimeoutMilliseconds,
+            java.util.function.BooleanSupplier canceled)
+            throws InterruptedException {
+        Objects.requireNonNull(canceled);
+        if (graceMilliseconds < 1 || mergeTimeoutMilliseconds < graceMilliseconds) {
+            throw new IllegalArgumentException("Invalid EDT merge wait limits");
+        }
+        long begun = System.nanoTime();
+        while (!finished && !cancelled && !discarded) {
+            if (canceled.getAsBoolean()) {
+                throw new InterruptedException("EDT merge wait cancelled");
+            }
+            long timeout = (started ? mergeTimeoutMilliseconds
+                : graceMilliseconds);
+            long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - begun);
+            if (elapsed >= timeout) break;
+            wait(Math.min(250L, Math.max(1L, timeout - elapsed)));
+        }
+        return snapshot();
     }
 }
