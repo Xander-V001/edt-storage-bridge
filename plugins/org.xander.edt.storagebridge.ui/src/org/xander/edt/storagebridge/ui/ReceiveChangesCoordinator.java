@@ -31,6 +31,8 @@ import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
 import org.xander.edt.storagebridge.core.ReceiveConfirmationTexts;
+import org.xander.edt.storagebridge.core.ReceivePendingExplanation;
+import org.xander.edt.storagebridge.core.ReceiveReviewScope;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
@@ -523,91 +525,103 @@ public final class ReceiveChangesCoordinator {
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
-            Set<String> reviewCandidates = pending;
-            if (fullReview) {
-                // An old pending identity may refer to a deleted/renamed
-                // metadata object. It is not present in this full export:
-                // keep it pending, but do not require an impossible .mdo.
-                Set<String> currentInventory = ConfigDumpInfoIndex.exportableNames(
-                    journal.lastScannedInfo());
-                reviewCandidates = RemoteReceiveScopePlanner.availableInFullReview(
-                    pending, currentInventory);
-                if (reviewCandidates.size() < pending.size()) {
-                    informationOnUi(shell, "Полная сверка с хранилищем",
-                        "Найдено отсутствующих в текущем хранилище ожидающих "
-                        + "записей: " + (pending.size() - reviewCandidates.size())
-                        + ". Удаления/переименования сохраняются в журнале "
-                        + "и не будут автоматически применены в EDT.");
-                }
-            }
-            // Missing entries include remote-deleted objects. Their parent
-            // may still exist (a deleted Form), or the complete top-level
-            // owner may be gone (a deleted Report). Both remain in the
-            // journal until the editor's result is checked.
-            Set<String> absentFromRemote = new LinkedHashSet<>(pending);
-            absentFromRemote.removeAll(reviewCandidates);
-            if (!fullReview) {
-                absentFromRemote.clear();
-            }
-            final Set<String> deletedPendingNames = Set.copyOf(absentFromRemote);
+            // Pending identifiers describe changes in the source 1C storage,
+            // NOT changes already presented in the native EDT merge editor.
+            // In particular, ConfigDumpInfo Configuration/Language entries
+            // are deliberately deferred from SELECTIVE XML conversion.
+            Set<String> currentInventory = ConfigDumpInfoIndex.exportableNames(
+                journal.lastScannedInfo());
+            Set<String> reviewCandidates = RemoteReceiveScopePlanner
+                .availableInFullReview(pending, currentInventory);
+            final Set<String> absentFromRemote = ReceiveReviewScope
+                .missingFromSource(pending, currentInventory);
+
             if (reviewCandidates.isEmpty() && !fullReview) {
-                informationOnUi(shell, "Работа с хранилищем",
-                    "Новых и ожидающих изменений хранилища для этого проекта EDT "
-                    + "не обнаружено. Полное соответствие EDT хранилищу "
-                    + "не подтверждается до проверки итогового сравнения.");
+                informationOnUi(shell, "Нет объектов для выборочного сравнения",
+                    "Все оставшиеся записи относятся к отсутствующим "
+                    + "в текущем хранилище объектам. Они не были показаны "
+                    + "EDT и не могут быть списаны как полученные."
+                    + ReceivePendingExplanation.format(
+                        pending, Set.of(), absentFromRemote));
                 return;
             }
-            // The FULL workflow must not build any metadata selection:
-            // full Designer XML -> full native EDT import -> GLOBAL native
-            // comparison. ConfigDumpInfo is the durable pending journal,
-            // NOT a filter over the real imported configuration contents.
-            //
-            // Selective mode alone retains explicit roots to limit work.
-            Set<String> selectedPendingNames = new LinkedHashSet<>(pending);
-            List<String> selectedList = new ArrayList<>();
-            Set<String> selected;
-            if (fullReview) {
-                selected = Set.of();
-            } else {
-                // Pull every independently developed resource under each
-                // affected owner from the CURRENT repository inventory.
-                // A changed form alone must never create a truncated parent.
-                var exportPlan = SelectiveDumpPlanner.planIncludingRelated(
-                    reviewCandidates, ConfigDumpInfoIndex.exportableNames(
-                        journal.lastScannedInfo()));
-                if (exportPlan.exportable().isEmpty()) {
-                    informationOnUi(shell, "Работа с хранилищем",
-                        "Найдены только изменения корня конфигурации или языка. "
-                        + "Для них выполняется полная сверка; ожидающие "
-                        + "записи сохранены без изменения.");
+
+            // A selective XML export cannot import standalone root/Language
+            // descriptors into an existing EDT model. Instead of silently
+            // leaving "2 pending" after accepting all visible checkboxes,
+            // explicitly offer native FULL comparison during THIS receive.
+            // The intermediary has already been updated; promoting review
+            // here does NOT run a second Designer repository update.
+            final var exportPlan = fullReview ? null
+                : SelectiveDumpPlanner.planIncludingRelated(
+                    reviewCandidates, currentInventory);
+            boolean promoteToFull = false;
+            if (exportPlan != null && !exportPlan.deferred().isEmpty()) {
+                String deferredNames = exportPlan.deferred().stream()
+                    .sorted().limit(12).map(name -> "• " + name)
+                    .collect(java.util.stream.Collectors.joining("\n"));
+                int action = choiceOnUi(shell,
+                    "Есть изменения вне выборочного сравнения",
+                    "В хранилище есть изменения, которые нельзя "
+                    + "показать в выборочной сверке:\n"
+                    + deferredNames
+                    + (exportPlan.deferred().size() > 12
+                        ? "\n…и ещё " + (exportPlan.deferred().size() - 12)
+                        : "")
+                    + "\n\nЧтобы включить их в штатное объединение EDT, "
+                    + "нужна полная выгрузка конфигурации. "
+                    + "Она может занять больше времени.\n\n"
+                    + "База 1С уже обновлена. Повторно обновлять её "
+                    + "из хранилища не будем.\n"
+                    + "«Сравнить остальные» оставит перечисленные "
+                    + "изменения на потом.",
+                    "Сравнить остальные", "Полная сверка", "Отмена");
+                if (action == 1) {
+                    promoteToFull = true;
+                } else if (action != 0) {
                     return;
                 }
-                if (!exportPlan.deferred().isEmpty()) {
-                    informationOnUi(shell, "Работа с хранилищем",
-                        "Отложено корневых изменений: "
-                        + exportPlan.deferred().size()
-                        + ". Их следует принять через полную сверку. "
-                        + "Остальные объекты будут переданы в сравнение.");
-                }
-                selectedPendingNames.removeAll(exportPlan.deferred());
+            }
+            final boolean fullNativeComparison = fullReview || promoteToFull;
+            final Set<String> deferredDuringReview = fullNativeComparison
+                ? Set.of() : Set.copyOf(exportPlan.deferred());
+            final Set<String> selectedPendingNames =
+                ReceiveReviewScope.eligible(pending, currentInventory,
+                    deferredDuringReview, fullNativeComparison);
+            List<String> selectedList = new ArrayList<>();
+            Set<String> selected;
+            if (fullNativeComparison) {
+                // ALL current metadata (including root and Languages) are
+                // imported into detached EDT and shown in a GLOBAL native
+                // EDT comparison; no selective object list is used.
+                selected = Set.of();
+            } else {
                 selectedList.addAll(exportPlan.exportable());
+                if (selectedList.isEmpty()) {
+                    informationOnUi(shell, "Необходима полная сверка",
+                        "Выборочных объектов для сравнения нет. "
+                        + "Изменения корня и языков остаются неразобранными."
+                        + ReceivePendingExplanation.format(
+                            pending, deferredDuringReview, absentFromRemote));
+                    return;
+                }
                 selected = topObjects(selectedList);
                 phase.set("Проверка типов выборочно выгружаемых объектов 1С");
                 EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
             }
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
-            phase.set(fullReview
+            phase.set(fullNativeComparison
                 ? (mode == ReceiveMode.FULL_REVIEW
                     ? "Повторная полная выгрузка XML по запросу"
                     : "Первоначальная полная выгрузка XML")
                 : "Выборочная выгрузка объектов 1С");
             export = progress(jobProgress, 20, monitor -> {
-                monitor.beginTask(fullReview
+                monitor.beginTask(fullNativeComparison
                     ? "Полная XML-выгрузка в отдельный каталог"
                     : "Выгрузка только изменённых объектов", 1);
                 var runner = new SelectiveDumpRunner();
-                SelectiveDumpRunner.ExportResult result = fullReview
+                SelectiveDumpRunner.ExportResult result = fullNativeComparison
                     ? runner.exportInitialFull(
                         new InitialFullDumpRequest(executable, transport,
                             Duration.ofHours(2), settings.infobaseUsername(),
@@ -631,7 +645,7 @@ public final class ReceiveChangesCoordinator {
                 monitor.beginTask("Подготовка штатного сравнения EDT", 1);
                 var descriptor = EdtPublicServiceBridge.prepare(project,
                     selectedExport.xmlDirectory(), converted, selectedList,
-                    fullReview, monitor);
+                    fullNativeComparison, monitor);
                 monitor.worked(1);
                 return descriptor;
             });
@@ -643,7 +657,7 @@ public final class ReceiveChangesCoordinator {
             // Force a separate, explicit acknowledgement before opening it.
             if (!confirmOnUi(shell,
                     "Проверка перед объединением EDT",
-                    (fullReview
+                    (fullNativeComparison
                         ? "ПОЛНАЯ СВЕРКА: сравниваются ВСЕ объекты и ресурсы "
                           + "обоих проектов штатным глобальным механизмом EDT. "
                           + "Вложенные формы, модули, подсистемы, изображения "
