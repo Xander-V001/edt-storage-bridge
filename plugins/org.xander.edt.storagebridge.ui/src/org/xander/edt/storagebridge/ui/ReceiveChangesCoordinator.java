@@ -844,8 +844,40 @@ public final class ReceiveChangesCoordinator {
                                                     case UNAVAILABLE ->
                                                         inventoryOnly = true;
                                                 }
+                                            } else if (revisionBeforeUpdate > 0
+                                                    && observedRevision > 0
+                                                    && revisionBeforeUpdate
+                                                        != observedRevision) {
+                                                // A POSITIVE difference between
+                                                // two native HEAD reads is an
+                                                // actual race, NOT a missing
+                                                // report. Never downgrade a
+                                                // witnessed remote change to
+                                                // weak IB-inventory equality.
+                                                reason = "Во время получения "
+                                                    + "зафиксирована смена версии "
+                                                    + "хранилища: "
+                                                    + revisionBeforeUpdate
+                                                    + " → " + observedRevision
+                                                    + ". Требуется новое получение.";
                                             } else {
                                                 inventoryOnly = true;
+                                            }
+                                            if (inventoryOnly && observedRevision > 0) {
+                                                long now = readLatestRevisionOrUnknown(
+                                                    executable, transport, settings,
+                                                    Duration.ofSeconds(30),
+                                                    monitor::isCanceled);
+                                                if (now > 0 && now != observedRevision) {
+                                                    inventoryOnly = false;
+                                                    reason = "Хранилище изменилось "
+                                                        + "после подготовки "
+                                                        + "сравнения: было "
+                                                        + observedRevision
+                                                        + ", теперь " + now
+                                                        + ". Списание ожиданий "
+                                                        + "отменено.";
+                                                }
                                             }
                                             if (inventoryOnly) {
                                                 // ConfigDumpInfo is NOT a HEAD.
