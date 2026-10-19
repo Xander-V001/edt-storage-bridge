@@ -249,20 +249,17 @@ public final class EdtSelectiveReviewService {
 
 
     /**
-     * Keep EDT's native compare/merge editor fully writable (noMerge=false in
-     * EdtDeltaComparisonService). IMPORTANT: method-structure merge takes
-     * individual procedures and can leave differences outside those methods
-     * in the manager module even after "Take right" was selected.
-     * Compare/merge BSL as ONE text resource instead, so the standard EDT
-     * "Take right" applies to the complete selected module. This is the
-     * documented standard setting, not a custom BSL copying workaround.
+     * Preserve native EDT's procedure-level BSL comparison and merge.
+     * This lets the developer inspect and accept individual changed procedures
+     * while still using EDT's own full merge engine. Procedure-level granularity
+     * is NOT evidence that native EDT failed to apply or persist a merge.
      *
-     * Deletion of main-side objects is enabled only as a user-selectable EDT
-     * merge action: it is NEVER an automatic delete.
+     * Deletion of main-side objects remains available as a user-selectable EDT
+     * action. The plugin does not execute deletions automatically.
      */
     public static ComparisonProcessSettings incomingMergeSettings() {
         return ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
-            .parseBslModuleStructure(false)
+            .parseBslModuleStructure(true)
             .mainSideObjectsDeletionAllowed(true)
             .build();
     }
