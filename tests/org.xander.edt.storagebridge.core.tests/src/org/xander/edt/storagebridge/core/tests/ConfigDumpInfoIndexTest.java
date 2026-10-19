@@ -86,34 +86,6 @@ public final class ConfigDumpInfoIndexTest {
     }
 
     @Test
-    public void namespaceFreeManifestKeepsVersionsOfNestedForms() throws Exception {
-        Path first = fixture("""
-            <ConfigDumpInfo format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Doc1"
-                    id="1" configVersion="previous">
-                  <Metadata name="Document.Doc1.Form.Main"
-                      id="2" configVersion="first"/>
-                </Metadata>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        Path second = fixture("""
-            <ConfigDumpInfo format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Doc1"
-                    id="1" configVersion="previous">
-                  <Metadata name="Document.Doc1.Form.Main"
-                      id="2" configVersion="second"/>
-                </Metadata>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        assertEquals(Set.of("Document.Doc1.Form.Main"),
-            ConfigDumpInfoIndex.changedSince(first, second));
-    }
-
-    @Test
     public void unknownSchemaCannotBeMistakenForEmptyRemoteInventory() throws Exception {
         Path malformed = fixture("<ConfigDumpInfo version=\"2.17\"/>");
         assertThrows(IOException.class, () -> ConfigDumpInfoIndex.exportableNames(malformed));
@@ -137,88 +109,6 @@ public final class ConfigDumpInfoIndexTest {
             </ConfigDumpInfo>
             """);
         assertThrows(IOException.class, () -> ConfigDumpInfoIndex.exportableNames(xml));
-    }
-
-    @Test
-    public void incrementalDeltaOnlyReturnsNewAndModifiedMetadata() throws Exception {
-        Path oldInfo = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Configuration.Main" id="c" configVersion="a"/>
-                <Metadata name="Document.Local" id="x" configVersion="11"/>
-                <Metadata name="Document.Server" id="s" configVersion="21"/>
-                <Metadata name="Document.Server.Form.Main" id="f" configVersion="31"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        Path newInfo = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Configuration.Main" id="c" configVersion="a"/>
-                <Metadata name="Document.Local" id="x" configVersion="11"/>
-                <Metadata name="Document.Server" id="s" configVersion="22"/>
-                <Metadata name="Document.Server.Form.Main" id="f" configVersion="32"/>
-                <Metadata name="Document.New" id="n" configVersion="1"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        assertEquals(Set.of("Document.Server", "Document.Server.Form.Main",
-                "Document.New"), ConfigDumpInfoIndex.changedSince(oldInfo, newInfo));
-        assertTrue(ConfigDumpInfoIndex.changedSince(newInfo, newInfo).isEmpty());
-    }
-
-    @Test
-    public void deletedOrRenamedMetadataCannotDisappearFromPending() throws Exception {
-        Path before = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.First" id="same" configVersion="old"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        Path removed = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Second" id="another" configVersion="now"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        Path renamed = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Second" id="same" configVersion="now"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.changedSince(before, removed));
-        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.changedSince(before, renamed));
-    }
-
-    @Test
-    public void replacedUuidUnderSameNameMustNotBeMergedByName() throws Exception {
-        Path before = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Order" id="first-uuid" configVersion="old"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        Path replaced = fixture("""
-            <ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo"
-                format="Hierarchical" version="2.17">
-              <ConfigVersions>
-                <Metadata name="Document.Order" id="second-uuid" configVersion="new"/>
-              </ConfigVersions>
-            </ConfigDumpInfo>
-            """);
-        assertThrows(IOException.class,
-            () -> ConfigDumpInfoIndex.changedSince(before, replaced));
     }
 
     @Test

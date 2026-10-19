@@ -59,4 +59,31 @@ public final class ChangedObjectsProbeNativeTest {
             Files.deleteIfExists(file);
         }
     }
+
+    @Test
+    public void prepareNativeUpdateKeepsItsDumpTargetEmptyAndBaselineUntouched()
+            throws Exception {
+        Path work = Files.createTempDirectory("native-update-stage-");
+        Path original = Files.createTempFile("1c-native-source-", ".xml");
+        try {
+            Files.writeString(original, "unchanged source from 1C");
+            var nativeStage = ChangedObjectsProbe.prepareWorkspace(work, original);
+            assertEquals("unchanged source from 1C",
+                Files.readString(nativeStage.baselineCopy()));
+            try (var files = Files.list(nativeStage.inspectionDirectory())) {
+                assertEquals(0L, files.count());
+            }
+            assertFalse(nativeStage.baselineCopy()
+                .startsWith(nativeStage.inspectionDirectory()));
+            assertEquals("unchanged source from 1C", Files.readString(original));
+        } finally {
+            try (var entries = Files.walk(work)) {
+                for (Path entry : entries.sorted(
+                        java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(entry);
+                }
+            }
+            Files.deleteIfExists(original);
+        }
+    }
 }
