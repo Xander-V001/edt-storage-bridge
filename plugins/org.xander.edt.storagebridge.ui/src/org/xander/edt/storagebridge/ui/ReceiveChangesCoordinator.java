@@ -659,9 +659,21 @@ public final class ReceiveChangesCoordinator {
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             uiCall(shell, parent -> {
                 phase.set("Открытие редактора сравнения EDT");
-                IEditorPart editor = EdtPublicServiceBridge.openEditor(nativeDescriptor);
+                // Watch native EDT events BEFORE the compare editor runs;
+                // getStatus at partClosed may already return null after
+                // EDT discards its finished merge session.
+                final var nativeMergeWitness =
+                    EdtPublicServiceBridge.observeIncomingMerge(nativeDescriptor);
+                IEditorPart editor;
+                try {
+                    editor = EdtPublicServiceBridge.openEditor(nativeDescriptor);
+                } catch (Exception ex) {
+                    nativeMergeWitness.close();
+                    throw ex;
+                }
                 if (editor == null || editor.getSite() == null
                         || editor.getSite().getPage() == null) {
+                    nativeMergeWitness.close();
                     throw new IOException("EDT comparison editor failed to initialize");
                 }
                 final IWorkbenchPage page = editor.getSite().getPage();
@@ -675,6 +687,7 @@ public final class ReceiveChangesCoordinator {
                 } catch (Exception ex) {
                     // Do not leave an editor pointing to a stage that the outer
                     // finally block must clean up on a failed initialization.
+                    nativeMergeWitness.close();
                     page.closeEditor(editor, false);
                     throw ex;
                 }
@@ -685,16 +698,22 @@ public final class ReceiveChangesCoordinator {
                     public void partClosed(IWorkbenchPartReference part) {
                         if (part == editorReference) {
                             page.removePartListener(this);
-                            // EDT owns the actual compare/merge operation.
-                            // Its public status helps distinguish mere dialog
-                            // configuration from an executed native merge;
-                            // UNKNOWN after an editor was disposed is not proof
-                            // either way. Neither case causes bytewise veto.
+                            // EDT can discard its comparison session as
+                            // part of editor close. Retain the successful
+                            // MERGE_PROCESS_FINISHED event observed BEFORE
+                            // disposal; a later DISCARDED status must not
+                            // erase evidence of native merge.
+                            final var nativeEvidence = nativeMergeWitness.snapshot();
+                            nativeMergeWitness.close();
                             final String nativeMergeStatus =
-                                EdtPublicServiceBridge.incomingMergeStatus(nativeDescriptor);
+                                nativeEvidence.lastStatus();
                             BridgeActivator.getDefault().getLog().info(
                                 "EDT comparison editor closed; native status="
-                                + nativeMergeStatus + "; sourceRevisionProven="
+                                + nativeMergeStatus
+                                + "; mergeStarted=" + nativeEvidence.mergeStarted()
+                                + "; mergeFinished=" + nativeEvidence.finished()
+                                + "; cancelled=" + nativeEvidence.cancelled()
+                                + "; sourceRevisionProven="
                                 + (revisionForReview.get() > 0)
                                 + "; mode=" + mode);
                             // The initial full dump may contain many thousands
@@ -725,13 +744,9 @@ public final class ReceiveChangesCoordinator {
                                                 ? Long.toString(revisionForReview.get())
                                                 : "не подтверждена";
                                         boolean nativeFinished =
-                                            org.xander.edt.storagebridge.core
-                                                .EdtMergeAcceptance.nativeMergeFinished(
-                                                    nativeMergeStatus);
+                                            nativeEvidence.finished();
                                         boolean nativeCancelled =
-                                            org.xander.edt.storagebridge.core
-                                                .EdtMergeAcceptance.nativeMergeCancelled(
-                                                    nativeMergeStatus);
+                                            nativeEvidence.cancelled();
                                         boolean mergeConfirmed = nativeFinished
                                             || (!nativeCancelled && confirmOnUi(shell,
                                             "Завершение объединения в EDT",
@@ -924,6 +939,7 @@ public final class ReceiveChangesCoordinator {
                     page.addPartListener(listener);
                     // Staging is now owned by the comparison editor listener.
                 } catch (RuntimeException ex) {
+                    nativeMergeWitness.close();
                     page.closeEditor(editor, false);
                     throw ex;
                 }

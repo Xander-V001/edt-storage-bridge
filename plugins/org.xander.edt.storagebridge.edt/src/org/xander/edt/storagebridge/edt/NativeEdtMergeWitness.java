@@ -5,7 +5,6 @@ import org.xander.edt.storagebridge.core.NativeEdtMergeEvidence;
 
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessBatch;
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessBatchStatus;
-import com._1c.g5.v8.dt.compare.core.CompareMergeProcessHandle;
 import com._1c.g5.v8.dt.compare.core.ComparisonProcessHandle;
 import com._1c.g5.v8.dt.compare.core.ComparisonProcessStatus;
 import com._1c.g5.v8.dt.compare.core.IComparisonManager;
