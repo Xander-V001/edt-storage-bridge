@@ -450,7 +450,7 @@ public final class ReceiveChangesCoordinator {
                     RemoteReceiveScopePlanner.Changes discovered;
                     if (selectAllRemote) {
                         discovered = RemoteReceiveScopePlanner.fullInventory(
-                            remote.configDumpInfo());
+                            lastScanned, remote.configDumpInfo());
                     } else {
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");

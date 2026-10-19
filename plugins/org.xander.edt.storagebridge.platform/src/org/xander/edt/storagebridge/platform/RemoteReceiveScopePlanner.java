@@ -37,10 +37,22 @@ public final class RemoteReceiveScopePlanner {
         }
     }
 
-    /** Explicit initial/full review uses the CURRENT platform inventory. */
-    public static Changes fullInventory(Path currentInfo) throws IOException {
-        return new Changes(ConfigDumpInfoIndex.exportableNames(currentInfo),
-            Set.of(), Set.of(), true);
+    /**
+     * Explicit initial/full review compares the current native inventory.
+     * A missing former identity is still an unresolved deletion. Never
+     * discard deletions merely because the user requested FULL comparison.
+     * Both inputs are platform-created files, not fabricated version tokens.
+     */
+    public static Changes fullInventory(Path previousInfo, Path currentInfo)
+            throws IOException {
+        var current = ConfigDumpInfoIndex.exportableNames(currentInfo);
+        if (previousInfo == null) {
+            return new Changes(current, Set.of(), Set.of(), true);
+        }
+        var removed = new LinkedHashSet<>(
+            ConfigDumpInfoIndex.exportableNames(previousInfo));
+        removed.removeAll(current);
+        return new Changes(current, removed, Set.of(), true);
     }
 
     /**

@@ -108,7 +108,26 @@ public final class RemoteReceiveScopePlannerTest {
             assertEquals(Set.of("Configuration", "Language.Русский"),
                 full.pendingIdentities());
             assertEquals(full.pendingIdentities(),
-                RemoteReceiveScopePlanner.fullInventory(now).pendingIdentities());
+                RemoteReceiveScopePlanner.fullInventory(old, now).pendingIdentities());
+        } finally {
+            Files.deleteIfExists(old);
+            Files.deleteIfExists(now);
+        }
+    }
+
+    @Test
+    public void fullReviewPreservesDeletedObjectAsPendingDebt() throws Exception {
+        Path old = inventory("""
+            <Metadata name="Document.Kept" id="k" configVersion="1"/>
+            <Metadata name="Document.Gone" id="g" configVersion="1"/>""");
+        Path now = inventory("""
+            <Metadata name="Document.Kept" id="k" configVersion="1"/>""");
+        try {
+            var full = RemoteReceiveScopePlanner.fullInventory(old, now);
+            assertEquals(Set.of("Document.Gone"), full.removed());
+            assertEquals(Set.of("Document.Kept", "Document.Gone"),
+                full.pendingIdentities());
+            assertTrue(full.requiresFullNativeComparison());
         } finally {
             Files.deleteIfExists(old);
             Files.deleteIfExists(now);
