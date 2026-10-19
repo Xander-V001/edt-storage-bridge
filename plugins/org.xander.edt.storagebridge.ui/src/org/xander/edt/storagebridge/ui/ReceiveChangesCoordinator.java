@@ -272,7 +272,7 @@ public final class ReceiveChangesCoordinator {
             // changed-object list. Retrying it must not force another native
             // repository update. Require a read-only intermediary version
             // check before using those names against the existing 1C base.
-            boolean retryPendingOnly = mode == ReceiveMode.INCREMENTAL
+            boolean pendingRetryRequested = mode == ReceiveMode.INCREMENTAL
                 && !recovery && !firstInventory
                 && !ReceivePendingStore.get(project, settings.address(),
                     branch, intermediaryIdentity).isEmpty()
@@ -283,6 +283,41 @@ public final class ReceiveChangesCoordinator {
                         : "только их выборочную выгрузку")
                     + " БЕЗ обновления базы-посредника? Сначала будет выполнена "
                     + "проверка, что конфигурация базы не изменилась.");
+
+            // A pending-only retry is safe ONLY against the same verified
+            // intermediary snapshot. An earlier EDT merge cannot guarantee
+            // that the database and its metadata version tokens are unchanged.
+            // Preflight is read-only; if different, switch to the normal,
+            // separately CONFIRMED repository receive rather than failing
+            // with a hidden IOException or silently reusing stale objects.
+            boolean canRetryPendingOnly = pendingRetryRequested;
+            if (pendingRetryRequested) {
+                boolean sameInventory = progress(jobProgress, 5, monitor -> {
+                    phase.set("Чтение снимка базы перед повторной выгрузкой");
+                    monitor.beginTask("Контроль базы-посредника (только чтение)", 2);
+                    try (var snapshot = new ConfigVersionSnapshotRunner()
+                            .capture(detect, monitor::isCanceled)) {
+                        monitor.worked(1);
+                        phase.set("Сопоставление с сохранённым составом базы");
+                        var saved = ConfigDumpInfoIndex.readVersions(previousInventory);
+                        var current = ConfigDumpInfoIndex.readVersions(
+                            snapshot.configDumpInfo());
+                        monitor.worked(1);
+                        return saved.equals(current);
+                    }
+                });
+                if (!sameInventory) {
+                    informationOnUi(shell, "База-посредник изменилась",
+                        "Текущие версии или состав метаданных базы отличаются "
+                        + "от снимка предыдущего получения. Повторять выгрузку "
+                        + "СТАРЫХ объектов небезопасно. Можно перейти к новому "
+                        + "штатному получению из хранилища, которое отдельно "
+                        + "попросит разрешение обновить базу-посредник. "
+                        + "Рабочий EDT-проект и Git пока не менялись.");
+                    canRetryPendingOnly = false;
+                }
+            }
+            final boolean retryPendingOnly = canRetryPendingOnly;
             phase.set("Подтверждение получения из хранилища");
             if (!retryPendingOnly && (!recovery || resumePrepared) && !confirmOnUi(shell,
                     "Получить изменения из хранилища 1С",
@@ -323,30 +358,12 @@ public final class ReceiveChangesCoordinator {
                         executable, transport, settings, jobProgress::isCanceled)
                     : ReceiveRevisionStore.UNKNOWN;
 
-            if (retryPendingOnly) {
-                progress(jobProgress, 45, monitor -> {
-                    phase.set("Проверка состояния базы перед повторной выгрузкой");
-                    monitor.beginTask("Сверка базы с последним снимком", 1);
-                    try (var snapshot = new ConfigVersionSnapshotRunner()
-                            .capture(detect, monitor::isCanceled)) {
-                        if (!ConfigDumpInfoIndex.readVersions(previousInventory)
-                                .equals(ConfigDumpInfoIndex.readVersions(
-                                    snapshot.configDumpInfo()))) {
-                            throw new IOException(
-                                "Конфигурация базы-посредника изменилась "
-                                + "после прошлого получения. Повторная "
-                                + "выгрузка прежних объектов заблокирована.");
-                        }
-                    }
-                    monitor.worked(1);
-                    return null;
-                });
-            } else {
+            if (!retryPendingOnly) {
             // The PRE-update ConfigDumpInfo belongs to the intermediary only.
             // It is NEVER the baseline of the current EDT project. The first
             // scan must inventory the entire remote configuration; later scans
             // use the last remote snapshot recorded FOR THIS EDT/GIT BRANCH.
-            progress(jobProgress, 45, monitor -> {
+            progress(jobProgress, pendingRetryRequested ? 40 : 45, monitor -> {
                 BooleanSupplier canceled = monitor::isCanceled;
                 monitor.beginTask("Получение состояния хранилища 1С", 4);
                 if (!recovery || resumePrepared) {
@@ -1371,6 +1388,12 @@ public final class ReceiveChangesCoordinator {
                     || reason.equals("Укажи существующую базу хранилища и исполняемый файл платформы 1С в настройках.")
                     || reason.equals("1C executable not found")
                     || reason.equals("1C did not return a valid versions file")
+                    || reason.equals("Config version snapshot timed out")
+                    || reason.equals("Config version snapshot cancelled")
+                    || reason.equals("Version-only command produced unexpected configuration files")
+                    || reason.equals("ConfigDumpInfo.xml missing or too large")
+                    || reason.equals("Unknown ConfigDumpInfo.xml schema")
+                    || reason.equals("Cannot parse ConfigDumpInfo version list")
                     || reason.equals("Designer version snapshot failed")
                     || reason.equals("1C could not produce a verified changes list")
                     || reason.equals("No trusted ConfigDumpInfo.xml baseline is available")
