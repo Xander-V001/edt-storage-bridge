@@ -114,6 +114,21 @@ public final class EdtPublicServiceBridge {
         }
     }
 
+    /**
+     * Register BEFORE opening the editor so merge-finished events are not
+     * lost when EDT disposes a comparison session on editor close.
+     */
+    public static NativeEdtMergeWitness observeIncomingMerge(
+            CompareMergeProcessDescriptor descriptor) {
+        try {
+            return NativeEdtMergeWitness.observe(
+                ServiceAccess.get(IComparisonManager.class),
+                descriptor.getHandle());
+        } catch (RuntimeException ex) {
+            return NativeEdtMergeWitness.unavailable();
+        }
+    }
+
     /** Must run on SWT UI thread; the public EDT editor factory is resolved on demand. */
     public static IEditorPart openEditor(CompareMergeProcessDescriptor descriptor)
             throws PartInitException {
