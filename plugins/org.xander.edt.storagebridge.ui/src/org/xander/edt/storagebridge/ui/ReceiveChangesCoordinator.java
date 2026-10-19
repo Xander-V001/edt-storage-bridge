@@ -30,6 +30,7 @@ import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
+import org.xander.edt.storagebridge.core.ReceiveConfirmationTexts;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
@@ -272,26 +273,26 @@ public final class ReceiveChangesCoordinator {
             // changed-object list. Retrying it must not force another native
             // repository update. Require a read-only intermediary version
             // check before using those names against the existing 1C base.
-            boolean pendingRetryRequested = mode == ReceiveMode.INCREMENTAL
+            // A pending-only retry and a fresh repository update are different
+            // operations. Cancel means CANCEL, never an implicit update.
+            boolean pendingAvailable = mode == ReceiveMode.INCREMENTAL
                 && !recovery && !firstInventory
                 && !ReceivePendingStore.get(project, settings.address(),
-                    branch, intermediaryIdentity).isEmpty()
-                && confirmOnUi(shell, "Повторная выгрузка уже найденных объектов",
-                    "Есть объекты хранилища, оставшиеся после предыдущего "
-                    + "получения. Повторить "
-                    + (fullReview ? "полную выгрузку"
-                        : "только их выборочную выгрузку")
-                    + " БЕЗ обновления базы-посредника? Сначала будет выполнена "
-                    + "проверка, что конфигурация базы не изменилась.");
+                    branch, intermediaryIdentity).isEmpty();
+            int pendingChoice = -1;
+            if (pendingAvailable) {
+                pendingChoice = choiceOnUi(shell, "Как получить изменения?",
+                    ReceiveConfirmationTexts.pendingChoices(
+                        settings.address(), settings.infobaseAddress(), fullReview),
+                    "Повторно сравнить", "Обновить и сравнить", "Отмена");
+                if (pendingChoice != 0 && pendingChoice != 1) {
+                    return;
+                }
+            }
 
-            // A pending-only retry is safe ONLY against the same verified
-            // intermediary snapshot. An earlier EDT merge cannot guarantee
-            // that the database and its metadata version tokens are unchanged.
-            // Preflight is read-only; if different, switch to the normal,
-            // separately CONFIRMED repository receive rather than failing
-            // with a hidden IOException or silently reusing stale objects.
-            boolean canRetryPendingOnly = pendingRetryRequested;
-            if (pendingRetryRequested) {
+            boolean canRetryPendingOnly = pendingChoice == 0;
+            boolean freshUpdateApproved = pendingChoice == 1;
+            if (canRetryPendingOnly) {
                 boolean sameInventory = progress(jobProgress, 5, monitor -> {
                     phase.set("Чтение снимка базы перед повторной выгрузкой");
                     monitor.beginTask("Контроль базы-посредника (только чтение)", 2);
@@ -307,43 +308,32 @@ public final class ReceiveChangesCoordinator {
                     }
                 });
                 if (!sameInventory) {
-                    informationOnUi(shell, "База-посредник изменилась",
-                        "Текущие версии или состав метаданных базы отличаются "
-                        + "от снимка предыдущего получения. Повторять выгрузку "
-                        + "СТАРЫХ объектов небезопасно. Можно перейти к новому "
-                        + "штатному получению из хранилища, которое отдельно "
-                        + "попросит разрешение обновить базу-посредник. "
-                        + "Рабочий EDT-проект и Git пока не менялись.");
+                    // A changed staging base cannot be reused against the old
+                    // pending identities. Offer a NEW, explicitly approved
+                    // update; never silently load the wrong snapshot.
+                    freshUpdateApproved = confirmOnUi(shell,
+                        "База 1С изменилась",
+                        ReceiveConfirmationTexts.changedIntermediary(
+                            settings.address(), settings.infobaseAddress()),
+                        "Обновить и сравнить");
+                    if (!freshUpdateApproved) {
+                        return;
+                    }
                     canRetryPendingOnly = false;
                 }
             }
             final boolean retryPendingOnly = canRetryPendingOnly;
             phase.set("Подтверждение получения из хранилища");
-            if (!retryPendingOnly && (!recovery || resumePrepared) && !confirmOnUi(shell,
-                    "Получить изменения из хранилища 1С",
-                    "База-посредник: " + settings.infobaseAddress() + "\n"
-                    + "Хранилище: " + settings.address() + "\n"
-                    + (fullReview
-                        ? (mode == ReceiveMode.FULL_REVIEW
-                            ? "ПОЛНАЯ СВЕРКА ПО ЗАПРОСУ: будет повторно выгружена "
-                              + "ВСЯ конфигурация, не только новые изменения. "
-                            : "ПЕРВАЯ СВЕРКА: будет ОДИН полный XML-дамп ")
-                          + "во временный каталог вне EDT и Git. "
-                          + "Это не сброс и не перезапись проекта. "
-                          + "Он может занять много времени и диска. "
-                          + "Рабочий проект EDT не перезаписывается напрямую. "
-                          + "В редакторе EDT нужно вручную выбрать изменения. "
-                          + "Следующее обычное получение останется выборочным. "
-                        : "Сравниваем с сохранённым состоянием хранилища "
-                          + "для текущего проекта EDT и Git-ветки. ")
-                    + "Изменится конфигурация только указанной базы, "
-                    + "она не связана с EDT. "
-                    + "Несохранённые локальные изменения этой базы могут быть потеряны. "
-                    + (settings.password().isEmpty() && settings.infobasePassword().isEmpty() ? "" :
-                         "Пароли ИБ и хранилища передаются штатному Конфигуратору "
-                        + "через параметры запуска и может быть доступен "
-                        + "администраторам этой системы. ")
-                    + "Продолжить?")) {
+            if (!retryPendingOnly && !freshUpdateApproved
+                    && (!recovery || resumePrepared)
+                    && !confirmOnUi(shell,
+                        mode == ReceiveMode.FULL_REVIEW
+                            ? "Полная сверка с хранилищем"
+                            : "Получить изменения из хранилища",
+                        ReceiveConfirmationTexts.freshReceive(
+                            settings.address(), settings.infobaseAddress(),
+                            fullReview, mode == ReceiveMode.FULL_REVIEW),
+                        "Обновить и сравнить")) {
                 return;
             }
 
@@ -363,7 +353,7 @@ public final class ReceiveChangesCoordinator {
             // It is NEVER the baseline of the current EDT project. The first
             // scan must inventory the entire remote configuration; later scans
             // use the last remote snapshot recorded FOR THIS EDT/GIT BRANCH.
-            progress(jobProgress, pendingRetryRequested ? 40 : 45, monitor -> {
+            progress(jobProgress, pendingChoice == 0 ? 40 : 45, monitor -> {
                 BooleanSupplier canceled = monitor::isCanceled;
                 monitor.beginTask("Получение состояния хранилища 1С", 4);
                 if (!recovery || resumePrepared) {
@@ -1193,8 +1183,20 @@ public final class ReceiveChangesCoordinator {
 
     private static boolean confirmOnUi(Shell shell, String title,
             String message) throws Exception {
-        return uiCall(shell, active ->
-            MessageDialog.openConfirm(active, title, message));
+        return confirmOnUi(shell, title, message, "Продолжить");
+    }
+
+    /** Concrete action names are safer than OK for a mutating Designer call. */
+    private static boolean confirmOnUi(Shell shell, String title,
+            String message, String action) throws Exception {
+        return choiceOnUi(shell, title, message, action, "Отмена") == 0;
+    }
+
+    /** 0 = repeat read-only, 1 = confirmed fresh update, 2/-1 = cancel. */
+    private static int choiceOnUi(Shell shell, String title,
+            String message, String... buttons) throws Exception {
+        return uiCall(shell, active -> new MessageDialog(active, title,
+            null, message, MessageDialog.QUESTION, buttons, 0).open());
     }
 
     /** Non-blocking completion/error notice; never manipulates SWT from a Job. */
