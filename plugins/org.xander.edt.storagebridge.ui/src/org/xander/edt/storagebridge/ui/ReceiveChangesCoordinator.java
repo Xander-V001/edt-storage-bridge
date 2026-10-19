@@ -466,11 +466,12 @@ public final class ReceiveChangesCoordinator {
                         // same intermediary configuration. Comparing native
                         // manifests here is CONSISTENCY checking, not our own
                         // change detection (which belongs to -getChanges).
-                        if (!ConfigDumpInfoIndex.readVersions(
-                                remote.configDumpInfo()).equals(
-                                ConfigDumpInfoIndex.readVersions(
-                                    nativeDump.xmlDirectory()
-                                        .resolve("ConfigDumpInfo.xml")))) {
+                        if (!nativeDelta.fullDump()
+                                && !ConfigDumpInfoIndex.readVersions(
+                                    remote.configDumpInfo()).equals(
+                                    ConfigDumpInfoIndex.readVersions(
+                                        nativeDump.xmlDirectory()
+                                            .resolve("ConfigDumpInfo.xml")))) {
                             throw new IOException(
                                 "База-посредник изменилась во время выгрузки 1С");
                         }

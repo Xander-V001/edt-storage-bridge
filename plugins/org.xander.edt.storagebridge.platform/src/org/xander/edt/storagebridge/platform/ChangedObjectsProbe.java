@@ -174,12 +174,19 @@ public final class ChangedObjectsProbe {
 
                 NativeChanges result = parseNativeFile(changes);
                 Path producedVersions = inspection.resolve("ConfigDumpInfo.xml");
-                if (!Files.isRegularFile(producedVersions, LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("Native increment has no ConfigDumpInfo.xml");
+                if (!result.fullDump()) {
+                    if (!Files.isRegularFile(producedVersions,
+                            LinkOption.NOFOLLOW_LINKS)) {
+                        throw new IOException(
+                            "Native increment has no ConfigDumpInfo.xml");
+                    }
+                    // Only 1C generates the new version manifest.
+                    ConfigDumpInfoIndex.exportableNames(producedVersions);
                 }
-                // Only 1C is authorized to produce this file. Validate it but
-                // never synthesize, edit, or filter its contents.
-                ConfigDumpInfoIndex.exportableNames(producedVersions);
+                // FullDump is a PLATFORM instruction to run a global
+                // comparison; its incomplete XML stage is not imported.
+                // A missing delta manifest in that case must not prevent
+                // the explicitly confirmed full export.
                 if (!result.fullDump() && !result.exactNames().isEmpty()) {
                     try (var exported = Files.walk(inspection)) {
                         if (exported.noneMatch(file -> Files.isRegularFile(file,
