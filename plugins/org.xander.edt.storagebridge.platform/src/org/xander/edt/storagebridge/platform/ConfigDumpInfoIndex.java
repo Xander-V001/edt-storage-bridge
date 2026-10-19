@@ -12,14 +12,13 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * Native 1C ConfigDumpInfo.xml inventory and deterministic version delta.
+ * Read ONLY platform-created ConfigDumpInfo.xml metadata identity NAMES.
  *
- * The first scan inventories ALL remote objects, never just the changes made
- * to an intermediary during its latest update. A later scan compares two
- * remote manifests recorded for the SAME EDT project and Git branch.
+ * The 1C internal id and configVersion values are opaque. They may be parsed
+ * for structural validation, but MUST NOT be used to calculate which objects
+ * changed. The only authoritative incremental diff is native -getChanges.
  *
- * The configVersion values are opaque: we only test equality, never derive
- * or manufacture them. Missing/renamed objects are not silently dropped.
+ * This class never modifies or synthesizes a ConfigDumpInfo.xml file.
  */
 public final class ConfigDumpInfoIndex {
     private static final long MAX_BYTES = 64L * 1024 * 1024;

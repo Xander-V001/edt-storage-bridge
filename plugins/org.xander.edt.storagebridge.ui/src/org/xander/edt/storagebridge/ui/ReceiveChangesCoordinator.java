@@ -312,11 +312,13 @@ public final class ReceiveChangesCoordinator {
                             .capture(detect, monitor::isCanceled)) {
                         monitor.worked(1);
                         phase.set("Сопоставление с сохранённым составом базы");
-                        var saved = ConfigDumpInfoIndex.readVersions(previousInventory);
-                        var current = ConfigDumpInfoIndex.readVersions(
-                            snapshot.configDumpInfo());
+                        // A repeat-only operation requires the SAME native
+                        // source manifest, byte-for-byte. Never compare
+                        // the platform's opaque id/configVersion ourselves.
+                        boolean unchanged = Files.mismatch(previousInventory,
+                            snapshot.configDumpInfo()) == -1;
                         monitor.worked(1);
-                        return saved.equals(current);
+                        return unchanged;
                     }
                 });
                 if (!sameInventory) {
@@ -381,9 +383,8 @@ public final class ReceiveChangesCoordinator {
                         monitor.subTask("Сравнение с сохранённым снимком до обновления");
                         try (var current = new ConfigVersionSnapshotRunner()
                                 .capture(detect, canceled)) {
-                            if (!ConfigDumpInfoIndex.readVersions(journal.path())
-                                    .equals(ConfigDumpInfoIndex.readVersions(
-                                        current.configDumpInfo()))) {
+                            if (Files.mismatch(journal.path(),
+                                    current.configDumpInfo()) != -1) {
                                 throw new IOException(
                                     "База-посредник изменилась после подготовки. "
                                     + "Автоматическое повторное обновление запрещено.");
@@ -1346,14 +1347,14 @@ public final class ReceiveChangesCoordinator {
         if (staged == null) {
             throw new IOException("Receive source inventory is unavailable");
         }
-        var expected = ConfigDumpInfoIndex.readVersions(staged);
         try (var current = new ConfigVersionSnapshotRunner().capture(
                 request, monitor::isCanceled)) {
             if (monitor.isCanceled()) {
                 throw new InterruptedException("Receive inventory check cancelled");
             }
-            return expected.equals(
-                ConfigDumpInfoIndex.readVersions(current.configDumpInfo()));
+            // Strict native snapshot identity, not a Java interpretation
+            // of opaque 1C internal per-object version tokens.
+            return Files.mismatch(staged, current.configDumpInfo()) == -1;
         }
     }
 
