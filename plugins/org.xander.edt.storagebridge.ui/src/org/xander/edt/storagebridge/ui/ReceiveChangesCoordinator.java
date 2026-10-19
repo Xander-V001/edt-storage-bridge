@@ -697,22 +697,93 @@ public final class ReceiveChangesCoordinator {
                     ready.workingRoot(), ready.xmlDirectory());
                 nativePatch.set(null);
             }
-            // Converted EDT files, like 1C XML, never go inside active Git.
+            // Converted EDT files, like native 1C XML, stay OUTSIDE Git.
             phase.set("Создание временных файлов сравнения EDT");
             conversionRoot = Files.createTempDirectory("edt-storage-edt-delta-");
             Path converted = Files.createDirectory(conversionRoot.resolve("edt"));
-            SelectiveDumpRunner.ExportResult selectedExport = export;
+            // The native patch may contain an external property without
+            // its owner descriptor. Let EDT's OWN importer decide if the
+            // patch is usable. Only if EDT refuses it, offer a separately
+            // confirmed full source. Never re-run -listFile or invent XML.
+            final AtomicReference<SelectiveDumpRunner.ExportResult> stagedExport =
+                new AtomicReference<>(export);
+            final AtomicReference<Path> stagedConversion =
+                new AtomicReference<>(conversionRoot);
+            final AtomicBoolean effectiveFull =
+                new AtomicBoolean(fullNativeComparison);
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
             var nativeDescriptor = progress(jobProgress, 25, monitor -> {
-                monitor.beginTask("Подготовка штатного сравнения EDT", 1);
-                var descriptor = EdtPublicServiceBridge.prepare(project,
-                    selectedExport.xmlDirectory(), converted, selectedList,
-                    fullNativeComparison, monitor);
-                monitor.worked(1);
-                return descriptor;
+                monitor.beginTask("Подготовка штатного сравнения EDT", 2);
+                try {
+                    var descriptor = EdtPublicServiceBridge.prepare(
+                        project, stagedExport.get().xmlDirectory(), converted,
+                        selectedList, effectiveFull.get(), monitor);
+                    monitor.worked(2);
+                    return descriptor;
+                } catch (EdtSelectiveReviewService.NativeEdtImportFailure
+                        | EdtSelectiveReviewService.MissingConvertedOwnersException
+                        | EdtSelectiveReviewService.MissingEmbeddedLanguagesException ex) {
+                    if (effectiveFull.get()) {
+                        throw ex;
+                    }
+                    boolean useFull = confirmOnUi(shell,
+                        "EDT не смогла открыть выборочную выгрузку 1С",
+                        "Конфигуратор 1С сформировал изменения штатно, "
+                        + "но EDT не смогла преобразовать их в отдельный "
+                        + "источник для сравнения. Принудительно дополнять "
+                        + "XML или создавать собственный список объектов "
+                        + "плагин не будет.\n\n"
+                        + "Можно выгрузить конфигурацию полностью и "
+                        + "открыть штатное сравнение EDT. "
+                        + "База-посредник из хранилища повторно "
+                        + "не обновляется. Операция может занять долгое время.",
+                        "Полная сверка");
+                    if (!useFull) {
+                        throw ex;
+                    }
+                    // No EDT editor has opened; old converted data and
+                    // the platform patch can be safely released here.
+                    cleanupQuietly(stagedExport.get(), stagedConversion.get());
+                    stagedExport.set(null);
+                    stagedConversion.set(null);
+                    try {
+                        phase.set("Полная выгрузка после отказа импортёра EDT");
+                        var fullSource = new SelectiveDumpRunner()
+                            .exportInitialFull(
+                                new InitialFullDumpRequest(executable, transport,
+                                    Duration.ofHours(2),
+                                    settings.infobaseUsername(),
+                                    settings.infobasePassword()),
+                                monitor::isCanceled);
+                        stagedExport.set(fullSource);
+                        var tempRoot = Files.createTempDirectory(
+                            "edt-storage-edt-global-");
+                        stagedConversion.set(tempRoot);
+                        Path fullTarget = Files.createDirectory(
+                            tempRoot.resolve("edt"));
+                        effectiveFull.set(true);
+                        var descriptor = EdtPublicServiceBridge.prepare(
+                            project, fullSource.xmlDirectory(), fullTarget,
+                            List.of(), true, monitor);
+                        monitor.worked(2);
+                        return descriptor;
+                    } catch (Exception failure) {
+                        cleanupQuietly(stagedExport.get(), stagedConversion.get());
+                        stagedExport.set(null);
+                        stagedConversion.set(null);
+                        throw failure;
+                    }
+                }
             });
+            // Persist ownership before any later work can fail. On a failed
+            // fallback, references are cleared; otherwise the final stage
+            // is retained until EDT's native merge reaches a terminal state.
+            export = stagedExport.get();
+            conversionRoot = stagedConversion.get();
+            final Set<String> actualSelected = effectiveFull.get()
+                ? Set.of() : selected;
             GitReceiveGuard.requireUnchanged(project, git);
 
             // Selection in this dialog means "show in comparison", NOT
@@ -721,7 +792,7 @@ public final class ReceiveChangesCoordinator {
             // Force a separate, explicit acknowledgement before opening it.
             if (!confirmOnUi(shell,
                     "Проверка перед объединением EDT",
-                    (fullNativeComparison
+                    (effectiveFull.get()
                         ? "ПОЛНАЯ СВЕРКА: сравниваются ВСЕ объекты и ресурсы "
                           + "обоих проектов штатным глобальным механизмом EDT. "
                           + "Вложенные формы, модули, подсистемы, изображения "
@@ -1059,7 +1130,7 @@ public final class ReceiveChangesCoordinator {
                                                 // resulting EDT files against
                                                 // the native imported source.
                                                 Set<String> fullyImportedOwners =
-                                                    fullNativeComparison
+                                                    effectiveFull.get()
                                                         ? EdtSelectiveReviewService
                                                             .primaryDescriptors(
                                                                 retainedConverted).keySet()
@@ -1070,7 +1141,7 @@ public final class ReceiveChangesCoordinator {
                                                         settings.address(),
                                                         branch,
                                                         intermediaryIdentity,
-                                                        selected,
+                                                        actualSelected,
                                                         selectedPendingNames,
                                                         absentFromRemote,
                                                         fullyImportedOwners,
