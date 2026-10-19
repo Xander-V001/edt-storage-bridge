@@ -1021,11 +1021,28 @@ public final class ReceiveChangesCoordinator {
                                                 }
                                             }
                                             if (allowReview) {
+                                                // A full native merge can remove
+                                                // main-side metadata. A deleted
+                                                // top-level object is considered
+                                                // reviewed only after its .mdo
+                                                // is actually absent in the
+                                                // active EDT project. No
+                                                // synthetic XML/token proof.
+                                                Set<String> mergeScope =
+                                                    new LinkedHashSet<>(selectedPendingNames);
+                                                if (fullNativeComparison
+                                                        && !absentFromRemote.isEmpty()) {
+                                                    mergeScope.addAll(
+                                                        EdtPublicServiceBridge
+                                                            .confirmedRemovedTopLevel(
+                                                                project,
+                                                                absentFromRemote));
+                                                }
                                                 var decision =
                                                     org.xander.edt.storagebridge.core
                                                         .EdtMergeAcceptance.evaluate(
                                                             pendingNow,
-                                                            selectedPendingNames,
+                                                            mergeScope,
                                                             true, true);
                                                 if (!inventoryOnly
                                                         && decision.allReviewed()) {

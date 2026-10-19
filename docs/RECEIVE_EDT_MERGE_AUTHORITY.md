@@ -208,3 +208,34 @@ merge, затем pending-записи этих корней оставалис�
 охватывают выборочную отсрочку, переключение на глобальное сравнение,
 реальные имена и недопустимость списания удалённого объекта. Сборка
 после правок не запускалась.
+
+
+## 2026-10-19 — native Designer owns incremental change detection
+
+The actual receive now treats Designer's `-getChanges` report as the ONLY
+source of NEW and MODIFIED object names. The previous Java comparison of
+`ConfigDumpInfo.xml` `id` and `configVersion` tokens was REMOVED. Those
+values are opaque platform internals, not a public delta API. Two genuine
+native ConfigDumpInfo name inventories are still compared ONLY for vanished
+names, because native New/Modified reports do not provide a verified deletion
+proof. Lost names require a FULL global EDT merge; accepted top-level
+deletions are marked reviewed only after checking the actual EDT project.
+Nested deletes without a verified outcome remain pending.
+
+The native `-update -getChanges -configDumpInfoForChanges` command's target
+folder must initially be EMPTY. Earlier code copied the baseline
+ConfigDumpInfo.xml into that folder, contradicting the documented platform
+contract. That copy is removed. A PRIVATE, byte-identical baseline copy is
+kept alongside, never inside, the target. The original native file is never
+modified; any unexpected change to the copy during Designer is an error.
+
+The native `-listFile` command is still used as a SEPARATE SECOND transport
+command to export entire affected metadata owners plus separately developed
+children for the detached EDT importer. This does NOT compute changed names:
+it only prepares a complete export from the names reported by 1C and from
+previously unresolved pending entries. Native `FullDump` and unknown
+non-versioned native names switch to global full review, never partial
+acceptance. Snapshot and merge checkpoints still require their separate
+existing safety proofs. No live-base or EDT execution has been done.
+
+Official basis: https://kb.1ci.com/1C_Enterprise_Platform/What___s_New/Functional_Highlights/Incremental_export_of_configurations_to_XML_files/ and the 1C Administrator Guide section `/DumpConfigToFiles`.
