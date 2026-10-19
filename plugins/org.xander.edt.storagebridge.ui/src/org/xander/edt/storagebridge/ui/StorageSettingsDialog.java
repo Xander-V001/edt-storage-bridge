@@ -157,6 +157,16 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         hintData.widthHint = 560;
         hint.setLayoutData(hintData);
 
+        Label security = new Label(platform, SWT.WRAP);
+        security.setText("Безопасность: пароли сохраняются в защищённом "
+            + "хранилище EDT. При запуске Конфигуратора 1С они передаются "
+            + "через параметры процесса и могут быть видны администраторам "
+            + "компьютера. Учитывайте это при настройке доступа.");
+        GridData securityData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        securityData.horizontalSpan = 3;
+        securityData.widthHint = 560;
+        security.setLayoutData(securityData);
+
         Group revisions = new Group(content, SWT.NONE);
         revisions.setText("Состояние синхронизации");
         revisions.setLayout(new GridLayout(2, false));
