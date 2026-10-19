@@ -27,6 +27,16 @@ public final class EdtMergeAcceptance {
         }
     }
 
+    /** Native EDT public status: completed means its merge operation finished. */
+    public static boolean nativeMergeFinished(String status) {
+        return "MERGE_PROCESS_FINISHED".equals(status);
+    }
+
+    /** Native EDT explicitly reports cancellation: user approval cannot override. */
+    public static boolean nativeMergeCancelled(String status) {
+        return "COMPARISON_MERGE_PROCESS_CANCELLED".equals(status);
+    }
+
     public static Decision evaluate(Set<String> pending,
             Set<String> presentedInNativeEditor,
             boolean developerConfirmed, boolean repositoryHeadConfirmed) {

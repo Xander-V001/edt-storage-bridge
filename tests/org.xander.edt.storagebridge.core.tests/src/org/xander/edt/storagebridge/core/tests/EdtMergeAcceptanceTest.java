@@ -23,6 +23,18 @@ public final class EdtMergeAcceptanceTest {
     }
 
     @Test
+    public void onlyNativeFinishedStatusIsPositiveAndNativeCancellationIsVeto() {
+        assertTrue(EdtMergeAcceptance.nativeMergeFinished(
+            "MERGE_PROCESS_FINISHED"));
+        assertFalse(EdtMergeAcceptance.nativeMergeFinished(
+            "MERGE_PROCESS_DISCARDED"));
+        assertFalse(EdtMergeAcceptance.nativeMergeFinished("UNKNOWN"));
+        assertTrue(EdtMergeAcceptance.nativeMergeCancelled(
+            "COMPARISON_MERGE_PROCESS_CANCELLED"));
+        assertFalse(EdtMergeAcceptance.nativeMergeCancelled("UNKNOWN"));
+    }
+
+    @Test
     public void editorCloseOrCancelledMergeNeverDiscardsPendingChanges() {
         var decision = EdtMergeAcceptance.evaluate(
             Set.of("Document.Payroll"), Set.of("Document.Payroll"),

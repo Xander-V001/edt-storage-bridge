@@ -724,7 +724,16 @@ public final class ReceiveChangesCoordinator {
                                             revisionForReview.get() > 0
                                                 ? Long.toString(revisionForReview.get())
                                                 : "не подтверждена";
-                                        boolean mergeConfirmed = confirmOnUi(shell,
+                                        boolean nativeFinished =
+                                            org.xander.edt.storagebridge.core
+                                                .EdtMergeAcceptance.nativeMergeFinished(
+                                                    nativeMergeStatus);
+                                        boolean nativeCancelled =
+                                            org.xander.edt.storagebridge.core
+                                                .EdtMergeAcceptance.nativeMergeCancelled(
+                                                    nativeMergeStatus);
+                                        boolean mergeConfirmed = nativeFinished
+                                            || (!nativeCancelled && confirmOnUi(shell,
                                             "Завершение объединения в EDT",
                                             "Штатный редактор EDT закрыт.\n\n"
                                             + "Кнопка «ОК» в окне «Настройка "
@@ -745,7 +754,7 @@ public final class ReceiveChangesCoordinator {
                                             + "Версия источника: " + revisionLabel
                                             + ".\n«Да» — завершено в EDT; "
                                             + "«Нет» — оставить изменения "
-                                            + "ожидающими.");
+                                            + "ожидающими."));
 
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
@@ -757,9 +766,12 @@ public final class ReceiveChangesCoordinator {
                                             intermediaryIdentity);
 
                                         if (!mergeConfirmed) {
-                                            reason = "Завершение объединения в EDT "
-                                                + "не подтверждено. Все ожидающие "
-                                                + "записи сохранены.";
+                                            reason = nativeCancelled
+                                                ? "EDT сообщил об отмене объединения. "
+                                                    + "Все ожидающие записи сохранены."
+                                                : "Завершение объединения в EDT "
+                                                    + "не подтверждено. Все ожидающие "
+                                                    + "записи сохранены.";
                                         } else if (revisionForReview.get() < 1) {
                                             // A user decision proves the merge
                                             // outcome, NOT the actual 1C HEAD.
@@ -849,9 +861,11 @@ public final class ReceiveChangesCoordinator {
                                             intermediaryIdentity).size();
                                         StringBuilder report = new StringBuilder(
                                             "Результат штатного объединения EDT: ")
-                                            .append(mergeConfirmed
-                                                ? "подтверждён разработчиком."
-                                                : "не подтверждён.")
+                                            .append(nativeFinished
+                                                ? "завершён штатным механизмом EDT."
+                                                : (mergeConfirmed
+                                                    ? "подтверждён разработчиком."
+                                                    : "не подтверждён."))
                                             .append("\nЗаписей ожидания закрыто: ")
                                             .append(acknowledgedCount)
                                             .append(".\nОсталось ожидающих записей: ")
