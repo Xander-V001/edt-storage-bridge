@@ -12,12 +12,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 /**
- * Read-only incremental detector using 1C Designer -getChanges against a
- * PREVIOUSLY VERIFIED ConfigDumpInfo.xml. No full configuration export.
+ * One native 1C Designer -update -getChanges invocation produces BOTH
+ * the changed-name report and the actual incremental XML patch. The plugin
+ * retains that patch for EDT instead of deleting and re-exporting it with
+ * a hand-built -listFile. The connected 1C infobase is read-only here.
  *
- * The caller must establish that the baseline belongs to the same classical
- * repository and revision as the EDT/Git common ancestor. This code never
- * fabricates that relationship or modifies the repository-bound infobase.
+ * The comparison ConfigDumpInfo.xml is a real, unchanged platform snapshot.
+ * No Git/EDT common ancestor or repository revision is inferred from its
+ * opaque version tokens.
  */
 public final class ChangedObjectsProbe {
     private static final long MAX_DIAGNOSTICS = 8L * 1024 * 1024;

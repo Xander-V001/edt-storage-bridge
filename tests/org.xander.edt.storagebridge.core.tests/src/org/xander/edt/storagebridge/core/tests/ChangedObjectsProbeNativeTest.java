@@ -61,6 +61,28 @@ public final class ChangedObjectsProbeNativeTest {
     }
 
     @Test
+    public void nativeIncrementalSourceRemainsOwnedUntilComparisonCloses()
+            throws Exception {
+        Path stageRoot = Files.createTempDirectory("1c-retained-increment-");
+        Path xmlRoot = Files.createDirectory(stageRoot.resolve("inspection"));
+        Path nativeXml = xmlRoot.resolve("Document.xml");
+        Files.writeString(nativeXml, "<Document/>");
+        var report = ChangedObjectsProbe.parseNativeText(
+            "Modified:Document.Order\n");
+        var retained = new ChangedObjectsProbe.NativeExport(
+            stageRoot, xmlRoot, report);
+        try {
+            assertTrue(Files.isRegularFile(nativeXml));
+            assertEquals(Set.of("Document.Order"), retained.changes().exactNames());
+            assertEquals(xmlRoot, retained.xmlDirectory());
+        } finally {
+            retained.close();
+        }
+        assertFalse(Files.exists(stageRoot));
+        assertFalse(Files.exists(nativeXml));
+    }
+
+    @Test
     public void prepareNativeUpdateKeepsItsDumpTargetEmptyAndBaselineUntouched()
             throws Exception {
         Path work = Files.createTempDirectory("native-update-stage-");

@@ -42,6 +42,10 @@ public final class ChangeDetectionCommandTest {
         assertEquals(baseline.toString(), args.get(dump + 6));
         assertFalse(args.contains("-force"));
         assertFalse(args.contains("-listFile"));
+        // The same invocation must produce native XML and the native
+        // change report. There is no separate handwritten transport list.
+        assertEquals(1L, args.stream()
+            .filter("/DumpConfigToFiles"::equals).count());
         assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
     }
 
