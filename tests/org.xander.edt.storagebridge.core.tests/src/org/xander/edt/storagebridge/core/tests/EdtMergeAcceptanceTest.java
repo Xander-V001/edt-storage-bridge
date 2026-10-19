@@ -45,7 +45,7 @@ public final class EdtMergeAcceptanceTest {
     }
 
     @Test
-    public void missingRepositoryHeadProofDoesNotClaimReviewedRevision() {
+    public void unverifiedSourceCannotAcknowledgePending() {
         var decision = EdtMergeAcceptance.evaluate(
             Set.of("Document.Payroll"), Set.of("Document.Payroll"),
             true, false);

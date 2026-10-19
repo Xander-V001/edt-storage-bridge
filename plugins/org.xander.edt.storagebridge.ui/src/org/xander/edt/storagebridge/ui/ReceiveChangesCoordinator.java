@@ -783,91 +783,111 @@ public final class ReceiveChangesCoordinator {
                                         if (!mergeConfirmed) {
                                             reason = nativeCancelled
                                                 ? "EDT сообщил об отмене объединения. "
-                                                    + "Все ожидающие записи сохранены."
-                                                : "Завершение объединения в EDT "
-                                                    + "не подтверждено. Все ожидающие "
-                                                    + "записи сохранены.";
-                                        } else if (revisionForReview.get() < 1) {
-                                            // A user decision proves the merge
-                                            // outcome, NOT the actual 1C HEAD.
-                                            // Never erase the pending inventory
-                                            // when there is no revision proof.
-                                            reason = revisionProofIssue.get() == null
-                                                ? "Номер версии хранилища "
-                                                    + "не подтверждён штатным 1С."
-                                                : revisionProofIssue.get();
+                                                    + "Ожидающие записи сохранены."
+                                                : "Не подтверждено выполнение объединения "
+                                                    + "в EDT. Записи ожидания сохранены.";
                                         } else {
-                                            var attestation = RepositoryHeadAttestation
-                                                .confirm(revisionForReview.get(),
-                                                    () -> readLatestRevisionOrUnknown(
-                                                        executable, transport, settings,
-                                                        Duration.ofSeconds(30),
-                                                        monitor::isCanceled),
-                                                    monitor::isCanceled, Thread::sleep);
-                                            if (attestation.observed() > 0) {
-                                                ReceiveRevisionStore.recordObserved(
-                                                    project, settings.address(),
-                                                    intermediaryIdentity,
-                                                    attestation.observed());
+                                            // Developer-reviewed EDT objects and
+                                            // the repository HEAD are independent
+                                            // checkpoints. A failed 1C history
+                                            // TXT report must not repeatedly
+                                            // present the SAME merged objects.
+                                            boolean allowReview = false;
+                                            boolean inventoryOnly = false;
+                                            if (revisionForReview.get() > 0) {
+                                                var proof = RepositoryHeadAttestation
+                                                    .confirm(revisionForReview.get(),
+                                                        () -> readLatestRevisionOrUnknown(
+                                                            executable, transport,
+                                                            settings,
+                                                            Duration.ofSeconds(30),
+                                                            monitor::isCanceled),
+                                                        monitor::isCanceled,
+                                                        Thread::sleep);
+                                                if (proof.observed() > 0) {
+                                                    ReceiveRevisionStore.recordObserved(
+                                                        project, settings.address(),
+                                                        intermediaryIdentity,
+                                                        proof.observed());
+                                                }
+                                                switch (proof.state()) {
+                                                    case CONFIRMED -> allowReview = true;
+                                                    case CHANGED -> reason =
+                                                        "Хранилище изменилось во время "
+                                                        + "сравнения: ожидалась версия "
+                                                        + revisionForReview.get()
+                                                        + ", текущая "
+                                                        + proof.observed()
+                                                        + ". Нужна повторная сверка.";
+                                                    case CANCELLED -> reason =
+                                                        "Проверка актуальной версии "
+                                                        + "хранилища отменена.";
+                                                    case UNAVAILABLE ->
+                                                        inventoryOnly = true;
+                                                }
+                                            } else {
+                                                inventoryOnly = true;
                                             }
-                                            switch (attestation.state()) {
-                                                case CONFIRMED -> {
-                                                    var decision = org.xander.edt.storagebridge
-                                                        .core.EdtMergeAcceptance.evaluate(
+                                            if (inventoryOnly) {
+                                                // ConfigDumpInfo is NOT a HEAD.
+                                                // It proves only that the exact
+                                                // source presented in native EDT
+                                                // stayed unchanged in the IB.
+                                                // Outgoing publish still requires
+                                                // independent numeric HEAD proof.
+                                                if (intermediaryInventoryUnchanged(
+                                                        journal, detect, monitor)) {
+                                                    allowReview = true;
+                                                    reason = "Объединение подтверждено "
+                                                        + "в EDT. Снимок базы-посредника "
+                                                        + "не изменился. Номер версии "
+                                                        + "хранилища НЕ подтверждён; "
+                                                        + "отправка заблокирована "
+                                                        + "до получения номера версии.";
+                                                } else {
+                                                    reason = "Снимок конфигурации "
+                                                        + "базы-посредника изменился "
+                                                        + "во время объединения. "
+                                                        + "Записи ожидания сохранены.";
+                                                }
+                                            }
+                                            if (allowReview) {
+                                                var decision =
+                                                    org.xander.edt.storagebridge.core
+                                                        .EdtMergeAcceptance.evaluate(
                                                             pendingNow,
                                                             selectedPendingNames,
                                                             true, true);
-                                                    // No byte comparison: native EDT
-                                                    // merge + explicit completion
-                                                    // determines reviewed scope.
-                                                    // Keep unshown/deferred objects
-                                                    // pending for another review.
-                                                    if (decision.allReviewed()) {
-                                                        // Durable ordering: record
-                                                        // the developer's completed
-                                                        // version BEFORE removing
-                                                        // the last pending identity.
-                                                        ReceiveRevisionStore.recordReviewed(
-                                                            project, settings.address(),
-                                                            intermediaryIdentity, branch,
-                                                            attestation.observed());
-                                                        confirmedRevision = attestation.observed();
-                                                    }
-                                                    if (!decision.acknowledged().isEmpty()) {
-                                                        ReceivePendingStore.acknowledgeReviewed(
-                                                            project, settings.address(),
-                                                            branch, intermediaryIdentity,
-                                                            decision.acknowledged());
-                                                    }
-                                                    acknowledgedCount = decision
-                                                        .acknowledged().size();
-                                                    if (!decision.allReviewed()) {
-                                                        reason = "Часть изменений "
-                                                            + "не входила в открытое "
-                                                            + "сравнение EDT и остаётся "
-                                                            + "в ожидании.";
-                                                    }
+                                                if (!inventoryOnly
+                                                        && decision.allReviewed()) {
+                                                    ReceiveRevisionStore.recordReviewed(
+                                                        project, settings.address(),
+                                                        intermediaryIdentity, branch,
+                                                        revisionForReview.get());
+                                                    confirmedRevision =
+                                                        revisionForReview.get();
                                                 }
-                                                case CHANGED -> reason =
-                                                    "Версия хранилища изменилась "
-                                                    + "во время объединения: "
-                                                    + "ожидалась "
-                                                    + revisionForReview.get()
-                                                    + ", теперь "
-                                                    + attestation.observed()
-                                                    + ". Изменения не списаны.";
-                                                case UNAVAILABLE -> reason =
-                                                    "Не удалось проверить версию "
-                                                    + "хранилища штатным отчётом 1С "
-                                                    + "после "
-                                                    + attestation.attempts()
-                                                    + " попыток. Результат EDT "
-                                                    + "подтверждён, но отметка "
-                                                    + "версии отложена.";
-                                                case CANCELLED -> reason =
-                                                    "Отменена проверка версии "
-                                                    + "хранилища. Записи ожидания "
-                                                    + "пока сохранены.";
+                                                if (!decision.acknowledged().isEmpty()) {
+                                                    ReceivePendingStore.acknowledgeReviewed(
+                                                        project, settings.address(),
+                                                        branch, intermediaryIdentity,
+                                                        decision.acknowledged());
+                                                }
+                                                acknowledgedCount =
+                                                    decision.acknowledged().size();
+                                                if (!decision.allReviewed()) {
+                                                    reason = "Часть изменений не "
+                                                        + "входила в показанное EDT "
+                                                        + "сравнение и оставлена "
+                                                        + "ожидающей.";
+                                                }
+                                                BridgeActivator.getDefault().getLog().info(
+                                                    "Native EDT review recorded; "
+                                                    + "acknowledged=" + acknowledgedCount
+                                                    + "; remaining="
+                                                    + decision.remaining().size()
+                                                    + "; headAttested="
+                                                    + !inventoryOnly);
                                             }
                                         }
 
@@ -1094,6 +1114,32 @@ public final class ReceiveChangesCoordinator {
             current = current.getCause();
         }
         BridgeActivator.getDefault().getLog().error(diagnostic.toString());
+    }
+
+    /**
+     * Read-only 1C ConfigDumpInfo snapshot equality to the exact source
+     * staged for native EDT merge. Does NOT certify remote HEAD and MUST
+     * NOT advance reviewed/applied numerical revisions.
+     */
+    private static boolean intermediaryInventoryUnchanged(
+            ReceiveBaselineJournal journal, ChangeDetectionRequest request,
+            IProgressMonitor monitor) throws IOException, InterruptedException {
+        if (monitor.isCanceled()) {
+            throw new InterruptedException("Receive inventory check cancelled");
+        }
+        Path staged = journal.lastScannedInfo();
+        if (staged == null) {
+            throw new IOException("Receive source inventory is unavailable");
+        }
+        var expected = ConfigDumpInfoIndex.readVersions(staged);
+        try (var current = new ConfigVersionSnapshotRunner().capture(
+                request, monitor::isCanceled)) {
+            if (monitor.isCanceled()) {
+                throw new InterruptedException("Receive inventory check cancelled");
+            }
+            return expected.equals(
+                ConfigDumpInfoIndex.readVersions(current.configDumpInfo()));
+        }
     }
 
     /**

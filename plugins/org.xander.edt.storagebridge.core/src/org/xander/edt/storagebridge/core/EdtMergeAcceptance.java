@@ -9,7 +9,7 @@ import java.util.Set;
  * a second byte-by-byte comparison of BSL, XML, pictures or form resources.
  *
  * An editor close alone is never acceptance. Even with user confirmation,
- * no identity can be cleared without a verified repository HEAD. Only
+ * no identity can be cleared without a verified reviewed-source snapshot. Only
  * identities actually in the native EDT review scope may be acknowledged;
  * omitted/deferred identities remain pending.
  */
@@ -39,7 +39,7 @@ public final class EdtMergeAcceptance {
 
     public static Decision evaluate(Set<String> pending,
             Set<String> presentedInNativeEditor,
-            boolean developerConfirmed, boolean repositoryHeadConfirmed) {
+            boolean developerConfirmed, boolean reviewedSourceConfirmed) {
         Objects.requireNonNull(pending);
         Objects.requireNonNull(presentedInNativeEditor);
         if (!developerConfirmed || !repositoryHeadConfirmed) {
