@@ -46,6 +46,39 @@ public final class RemoteReceiveScopePlanner {
     }
 
     /**
+     * Platform -getChanges is the PRIMARY list of altered metadata. Our two
+     * UNMODIFIED native ConfigDumpInfo copies are consulted only to detect
+     * removals/replacements and to prevent silent under-reporting. They are
+     * never reconstructed, edited, or passed to EDT as a fabricated dump.
+     *
+     * If Designer says FullDump, reports a name not present in the current
+     * versioned inventory, or disagrees with its own version tokens, require
+     * full native EDT comparison rather than inventing a selective scope.
+     */
+    public static Changes reconcileNative(Path previousInfo, Path currentInfo,
+            ChangedObjectsProbe.NativeChanges platform) throws IOException {
+        Objects.requireNonNull(platform);
+        Changes inventory = discover(previousInfo, currentInfo, false);
+        Set<String> platformNames = platform.exactNames();
+        Set<String> currentNames =
+            ConfigDumpInfoIndex.readVersions(currentInfo).keySet();
+        boolean unreliableSelective = platform.fullDump()
+            || !platformNames.containsAll(inventory.present())
+            || !currentNames.containsAll(platformNames);
+        var allPresent = new LinkedHashSet<String>(inventory.present());
+        if (!platform.fullDump()) {
+            for (String reported : platformNames) {
+                if (currentNames.contains(reported)) {
+                    allPresent.add(reported);
+                }
+            }
+        }
+        return new Changes(allPresent, inventory.removed(),
+            inventory.renamed(), inventory.replaced(),
+            unreliableSelective);
+    }
+
+    /**
      * Full = all current identities plus old identities absent from the new
      * source. Incremental = changed/new current identities plus removals.
      *
