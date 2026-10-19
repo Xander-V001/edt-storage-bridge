@@ -21,8 +21,8 @@ public final class EdtMergeAcceptance {
         public Decision {
             acknowledged = Set.copyOf(acknowledged);
             remaining = Set.copyOf(remaining);
-            if (!acknowledged.isEmpty() && !allReviewed && remaining.isEmpty()) {
-                throw new IllegalArgumentException("Inconsistent review state");
+            if (allReviewed && !remaining.isEmpty()) {
+                throw new IllegalArgumentException("Cannot review with pending changes");
             }
         }
     }

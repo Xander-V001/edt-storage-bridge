@@ -689,7 +689,7 @@ public final class ReceiveChangesCoordinator {
                             // of files. Never compare or recursively delete it
                             // on the SWT event thread when the editor closes.
                             Job finish = new Job(
-                                    "Проверка полученных объектов 1С — "
+                                    "Завершение штатного объединения EDT — "
                                     + project.getName()) {
                                 @Override
                                 protected IStatus run(IProgressMonitor monitor) {
@@ -858,21 +858,22 @@ public final class ReceiveChangesCoordinator {
                                         return Status.OK_STATUS;
                                     } catch (Exception ex) {
                                         BridgeActivator.getDefault().getLog().warn(
-                                            "Post-merge verification failed ("
+                                            "Native EDT merge acknowledgement failed ("
                                             + ex.getClass().getSimpleName()
                                             + "); unresolved objects remain pending.");
-                                        informationOnUi(shell, "Проверка объединения EDT",
-                                            "После закрытия редактора не удалось "
-                                            + "завершить проверку принятых объектов. "
-                                            + "Версия хранилища не повышена, "
-                                            + "неподтверждённые изменения остаются "
-                                            + "в журнале. Тип ошибки: "
+                                        informationOnUi(shell, "Завершение объединения EDT",
+                                            "Не удалось сохранить подтверждение "
+                                            + "результата штатного объединения EDT. "
+                                            + "Изменения, для которых не завершена "
+                                            + "фиксация, остаются в журнале. "
+                                            + "Номер хранилища не выдумывается. "
+                                            + "Тип ошибки: "
                                             + ex.getClass().getSimpleName()
                                             + ". Подробности в журнале ошибок EDT.");
                                         return new Status(IStatus.WARNING,
                                             "org.xander.edt.storagebridge.ui",
-                                            "Подтверждение объединения EDT не завершено; "
-                                            + "состояние хранилища не считается применённым.");
+                                            "Подтверждение результата EDT не завершено; "
+                                            + "сведения о получении требуют проверки.");
                                     } finally {
                                         cleanupQuietly(
                                             retainedExport, retainedConverted);
