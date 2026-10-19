@@ -1050,31 +1050,40 @@ public final class ReceiveChangesCoordinator {
                                                 }
                                             }
                                             if (allowReview) {
-                                                // A full native merge can remove
-                                                // main-side metadata. A deleted
-                                                // top-level object is considered
-                                                // reviewed only after its .mdo
-                                                // is actually absent in the
-                                                // active EDT project. No
-                                                // synthetic XML/token proof.
-                                                Set<String> mergeScope =
-                                                    new LinkedHashSet<>(selectedPendingNames);
-                                                if (fullNativeComparison
-                                                        && !absentFromRemote.isEmpty()) {
-                                                    mergeScope.addAll(
-                                                        EdtPublicServiceBridge
-                                                            .confirmedRemovedTopLevel(
-                                                                project,
-                                                                absentFromRemote));
-                                                }
-                                                var decision =
-                                                    org.xander.edt.storagebridge.core
-                                                        .EdtMergeAcceptance.evaluate(
-                                                            pendingNow,
-                                                            mergeScope,
-                                                            true, true);
+                                                // A finished native EDT MERGE is
+                                                // NOT proof that each checkbox
+                                                // was selected. Never erase a
+                                                // committed local change merely
+                                                // because its owner was in the
+                                                // comparison scope. Audit the
+                                                // resulting EDT files against
+                                                // the native imported source.
+                                                Set<String> fullyImportedOwners =
+                                                    fullNativeComparison
+                                                        ? EdtSelectiveReviewService
+                                                            .primaryDescriptors(
+                                                                retainedConverted).keySet()
+                                                        : Set.of();
+                                                var verified = VerifiedReceiveContent
+                                                    .verifyAndClear(
+                                                        project,
+                                                        settings.address(),
+                                                        branch,
+                                                        intermediaryIdentity,
+                                                        selected,
+                                                        selectedPendingNames,
+                                                        absentFromRemote,
+                                                        fullyImportedOwners,
+                                                        retainedConverted,
+                                                        retainedExport.xmlDirectory());
+                                                acknowledgedCount =
+                                                    verified.confirmedPending();
+                                                boolean allSourceVerified =
+                                                    verified.remainingPending() == 0
+                                                    && verified.identicalOwners()
+                                                        == verified.checkedOwners();
                                                 if (!inventoryOnly
-                                                        && decision.allReviewed()) {
+                                                        && allSourceVerified) {
                                                     ReceiveRevisionStore.recordReviewed(
                                                         project, settings.address(),
                                                         intermediaryIdentity, branch,
@@ -1082,26 +1091,27 @@ public final class ReceiveChangesCoordinator {
                                                     confirmedRevision =
                                                         revisionForReview.get();
                                                 }
-                                                if (!decision.acknowledged().isEmpty()) {
-                                                    ReceivePendingStore.acknowledgeReviewed(
-                                                        project, settings.address(),
-                                                        branch, intermediaryIdentity,
-                                                        decision.acknowledged());
-                                                }
-                                                acknowledgedCount =
-                                                    decision.acknowledged().size();
-                                                if (!decision.allReviewed()) {
-                                                    reason = "Плагин не включил "
-                                                        + "все изменения в текущее "
-                                                        + "сравнение EDT. "
-                                                        + "Ниже перечислено, "
-                                                        + "что именно не показано.";
+                                                if (!allSourceVerified) {
+                                                    reason = "EDT выполнила Merge, "
+                                                        + "но некоторые объекты "
+                                                        + "не совпадают с полученной "
+                                                        + "конфигурацией 1С. "
+                                                        + "Они не объявлены принятыми.";
+                                                    if (verified.diagnosticFile() != null) {
+                                                        reason += "\nПодробности в "
+                                                            + "локальном отчёте: "
+                                                            + verified.diagnosticFile();
+                                                    }
                                                 }
                                                 BridgeActivator.getDefault().getLog().info(
-                                                    "Native EDT review recorded; "
-                                                    + "acknowledged=" + acknowledgedCount
+                                                    "Native EDT merge audited; "
+                                                    + "contentVerified="
+                                                    + verified.confirmedPending()
                                                     + "; remaining="
-                                                    + decision.remaining().size()
+                                                    + verified.remainingPending()
+                                                    + "; fullyMatchingOwners="
+                                                    + verified.identicalOwners()
+                                                    + "/" + verified.checkedOwners()
                                                     + "; headAttested="
                                                     + !inventoryOnly);
                                             }
