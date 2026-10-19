@@ -742,7 +742,11 @@ public final class ReceiveChangesCoordinator {
                         + "не обновляется. Операция может занять долгое время.",
                         "Полная сверка");
                     if (!useFull) {
-                        throw ex;
+                        // User declined the expensive fallback. This is a
+                        // cancellation, not a corrupted project or a failed
+                        // repository update. Pending changes remain intact.
+                        throw new InterruptedException(
+                            "Полная сверка отклонена пользователем");
                     }
                     // No EDT editor has opened; old converted data and
                     // the platform patch can be safely released here.
