@@ -107,15 +107,20 @@ public final class ChangedObjectsProbe {
             // comparison baseline. Without this file Designer fails before
             // generating the change report on a fresh staging directory.
             // Only this TEMP copy is updated by Designer.
+            // Never pass the ORIGINAL reviewed version file to Designer:
+            // both -configDumpInfoForChanges and the update directory get
+            // independent byte-identical private copies. Only 1C is allowed
+            // to update its own temporary ConfigDumpInfo.xml.
+            Path privateBaseline = work.resolve("reviewed-ConfigDumpInfo.xml");
+            Files.copy(verifiedDumpInfo, privateBaseline);
             Files.copy(verifiedDumpInfo,
-                inspection.resolve("ConfigDumpInfo.xml"),
-                StandardCopyOption.COPY_ATTRIBUTES);
+                inspection.resolve("ConfigDumpInfo.xml"));
             Path changes = work.resolve("changes.txt");
             Path log = work.resolve("1c-log.txt");
             Path output = work.resolve("stdout.txt");
             Path errors = work.resolve("stderr.txt");
             var process = new ProcessBuilder(
-                    command(request, verifiedDumpInfo.toAbsolutePath(),
+                    command(request, privateBaseline,
                         inspection, changes, log))
                 .directory(work.toFile())
                 .redirectOutput(output.toFile())
@@ -139,20 +144,7 @@ public final class ChangedObjectsProbe {
                         || !Files.isRegularFile(changes)) {
                     throw new IOException("1C could not produce a verified changes list");
                 }
-                byte[] bytes = Files.readAllBytes(changes);
-                int offset = bytes.length >= 3
-                    && (bytes[0] & 0xff) == 0xef
-                    && (bytes[1] & 0xff) == 0xbb
-                    && (bytes[2] & 0xff) == 0xbf ? 3 : 0;
-                String text = new String(bytes, offset, bytes.length - offset,
-                    java.nio.charset.StandardCharsets.UTF_8);
-                if ("FullDump".equalsIgnoreCase(text.strip())) {
-                    return new NativeChanges(true,
-                        new ConfigurationChangesParser.ChangeSet(
-                            List.of(), List.of()));
-                }
-                return new NativeChanges(false,
-                    ConfigurationChangesParser.parse(text));
+                return parseNativeFile(changes);
             } finally {
                 if (process.isAlive()) {
                     process.descendants().forEach(ProcessHandle::destroy);
@@ -167,6 +159,38 @@ public final class ChangedObjectsProbe {
         } finally {
             deleteRecursively(work);
         }
+    }
+
+    /**
+     * Parse ONLY the platform-generated UTF-8 change report. The marker
+     * FullDump is not an error or "no changes"; it requires a complete
+     * EDT comparison. Unknown statuses still fail closed.
+     */
+    public static NativeChanges parseNativeFile(Path file)
+            throws IOException {
+        if (file == null || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(file) > MAX_DIAGNOSTICS) {
+            throw new IOException("1C change report missing or too large");
+        }
+        byte[] bytes = Files.readAllBytes(file);
+        int offset = bytes.length >= 3
+            && (bytes[0] & 0xff) == 0xef
+            && (bytes[1] & 0xff) == 0xbb
+            && (bytes[2] & 0xff) == 0xbf ? 3 : 0;
+        return parseNativeText(new String(bytes, offset,
+            bytes.length - offset, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public static NativeChanges parseNativeText(String text)
+            throws IOException {
+        Objects.requireNonNull(text);
+        if ("FullDump".equalsIgnoreCase(text.strip())) {
+            return new NativeChanges(true,
+                new ConfigurationChangesParser.ChangeSet(
+                    List.of(), List.of()));
+        }
+        return new NativeChanges(false,
+            ConfigurationChangesParser.parse(text));
     }
 
     /** Legacy entry point; never reinterpret a platform FullDump as empty. */
