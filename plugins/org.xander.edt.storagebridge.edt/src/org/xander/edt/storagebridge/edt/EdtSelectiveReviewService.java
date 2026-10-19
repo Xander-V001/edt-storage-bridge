@@ -610,6 +610,47 @@ public final class EdtSelectiveReviewService {
     }
 
     /**
+     * After a FINISHED native EDT full merge, confirm only actual removals of
+     * TOP-LEVEL 1C metadata objects. The active project is read-only here:
+     * no file is changed, and this is NOT BSL/XML byte equality.
+     *
+     * Child forms/modules, root Configuration and embedded languages cannot
+     * be proved removed by absence of a top-level .mdo, so they remain pending.
+     * Unknown types or ambiguous source layouts are NEVER auto-acknowledged.
+     */
+    public static Set<String> confirmedRemovedTopLevel(
+            Path activeProjectRoot, Set<String> removedFromRepository)
+            throws IOException {
+        Objects.requireNonNull(activeProjectRoot);
+        Objects.requireNonNull(removedFromRepository);
+        Map<String, Path> activeOwners =
+            primaryDescriptors(activeProjectRoot);
+        var confirmed = new LinkedHashSet<String>();
+        for (String name : removedFromRepository) {
+            if (name == null || name.isBlank()) {
+                throw new IOException("Invalid native deleted metadata identity");
+            }
+            String[] parts = name.split("\\.", -1);
+            if (parts.length != 2
+                    || "Configuration".equals(parts[0])
+                    || "Language".equals(parts[0])
+                    || "Язык".equals(parts[0])) {
+                continue;
+            }
+            try {
+                String owner = edtOwner(name);
+                if (!activeOwners.containsKey(owner)) {
+                    confirmed.add(name);
+                }
+            } catch (UnsupportedMetadataTypesException ex) {
+                // Unknown metadata types must stay pending; the plugin does
+                // not know how to map their native top-level descriptors.
+            }
+        }
+        return Set.copyOf(confirmed);
+    }
+
+    /**
      * Full verification compares the UNION of local and repository owners.
      * The right side contains every imported remote owner; the left side
      * contains the same owners plus local-only objects so EDT can offer

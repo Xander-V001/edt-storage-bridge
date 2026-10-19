@@ -87,6 +87,18 @@ public final class EdtPublicServiceBridge {
                 selectedObjects, initialFullReview, monitor);
     }
 
+    /** Prove that deleted top-level metadata actually disappeared after EDT Merge. */
+    public static java.util.Set<String> confirmedRemovedTopLevel(
+            IProject project, java.util.Set<String> missingFromRepository)
+            throws IOException {
+        if (project == null || !project.isAccessible()
+                || project.getLocation() == null) {
+            throw new IOException("EDT project unavailable for deletion verification");
+        }
+        return EdtSelectiveReviewService.confirmedRemovedTopLevel(
+            project.getLocation().toFile().toPath(), missingFromRepository);
+    }
+
     /** Read-only native comparison for outgoing review; merge disabled. */
     public static IEditorPart openOutgoingReadOnlyEditor(
             CompareMergeProcessDescriptor descriptor)
