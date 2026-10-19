@@ -41,15 +41,12 @@ import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
-import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
 import org.xander.edt.storagebridge.platform.InitialFullDumpRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
-import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
-import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
 import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
 
@@ -181,6 +178,11 @@ public final class ReceiveChangesCoordinator {
             String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
             AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
+        // Native 1C -getChanges also PRODUCES the incremental XML payload.
+        // Ownership transfers to export only when that patch reaches EDT;
+        // otherwise the temporary native source is closed in finally.
+        AtomicReference<ChangedObjectsProbe.NativeExport> nativePatch =
+            new AtomicReference<>();
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
         AtomicReference<String> phase = new AtomicReference<>("Проверка настроек");
@@ -194,9 +196,8 @@ public final class ReceiveChangesCoordinator {
         // repository revision. Preserve the exact missing proof reason for
         // the user instead of reporting that they failed to review objects.
         AtomicReference<String> revisionProofIssue = new AtomicReference<>();
-        // Semantic changes are inventoried BEFORE we create Designer's
-        // transport list. True removals/replacements cannot be treated as
-        // ordinary partial updates even if their names look exportable.
+        // Native 1C decides new/modified objects. The plugin only decides
+        // whether the same native XML patch can be compared safely by EDT.
         AtomicBoolean changeScopeRequiresFull = new AtomicBoolean(false);
         // Native -getChanges may mention independently developed properties
         // not in the versioned inventory. Keep these exact 1C names instead
@@ -287,10 +288,10 @@ public final class ReceiveChangesCoordinator {
             // check before using those names against the existing 1C base.
             // A pending-only retry and a fresh repository update are different
             // operations. Cancel means CANCEL, never an implicit update.
+            final boolean hadUnresolvedBefore = !ReceivePendingStore.get(
+                project, settings.address(), branch, intermediaryIdentity).isEmpty();
             boolean pendingAvailable = mode == ReceiveMode.INCREMENTAL
-                && !recovery && !firstInventory
-                && !ReceivePendingStore.get(project, settings.address(),
-                    branch, intermediaryIdentity).isEmpty();
+                && !recovery && !firstInventory && hadUnresolvedBefore;
             int pendingChoice = -1;
             if (pendingAvailable) {
                 pendingChoice = choiceOnUi(shell, "Как получить изменения?",
@@ -453,8 +454,26 @@ public final class ReceiveChangesCoordinator {
                     } else {
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");
-                        var nativeDelta = new ChangedObjectsProbe().detectNative(
+                        // ONE native command produces both the changed-file
+                        // XML PATCH and its changed-object report. Never throw
+                        // away this native payload just to reconstruct it with
+                        // -listFile in a second Designer run.
+                        var nativeDump = new ChangedObjectsProbe().exportNative(
                             detect, lastScanned, canceled);
+                        nativePatch.set(nativeDump);
+                        var nativeDelta = nativeDump.changes();
+                        // Two independent 1C snapshots must describe the
+                        // same intermediary configuration. Comparing native
+                        // manifests here is CONSISTENCY checking, not our own
+                        // change detection (which belongs to -getChanges).
+                        if (!ConfigDumpInfoIndex.readVersions(
+                                remote.configDumpInfo()).equals(
+                                ConfigDumpInfoIndex.readVersions(
+                                    nativeDump.xmlDirectory()
+                                        .resolve("ConfigDumpInfo.xml")))) {
+                            throw new IOException(
+                                "База-посредник изменилась во время выгрузки 1С");
+                        }
                         discovered = RemoteReceiveScopePlanner.reconcileNative(
                             lastScanned, remote.configDumpInfo(), nativeDelta);
                         BridgeActivator.getDefault().getLog().info(
@@ -579,51 +598,42 @@ public final class ReceiveChangesCoordinator {
                     "В хранилище нет новых изменений для сравнения в EDT.");
                 return;
             }
-            // The FULL native EDT comparison, not a shortened transport
-            // selection, is REQUIRED when partial XML cannot express the
-            // complete repository delta. Do not offer the old
-            // "compare the others" choice: that silently excluded real
-            // metadata and created false pending debts.
-            final var exportPlan = fullReview ? null
-                : SelectiveDumpPlanner.planIncludingRelated(
-                    reviewCandidates, currentInventory);
-            boolean needsFull = fullReview
-                || changeScopeRequiresFull.get()
-                || !absentFromRemote.isEmpty()
-                || (exportPlan != null && !exportPlan.deferred().isEmpty());
-            if (needsFull && !fullReview) {
-                int deferred = exportPlan == null ? 0
-                    : exportPlan.deferred().size();
+            // A platform patch may contain only separately developed
+            // resources, not an entire metadata owner. We pass it directly
+            // to EDT's native importer and NEVER manufacture a -listFile.
+            //
+            // A PREVIOUS pending review has no durable native XML patch.
+            // Reconstructing it by guessing objects loses data. Re-review
+            // requires one global native source instead. This occurs only
+            // for unfinished reviews, NOT for the normal fast path.
+            boolean requiresFull = fullReview
+                || retryPendingOnly || recovery || hadUnresolvedBefore
+                || changeScopeRequiresFull.get() || !absentFromRemote.isEmpty();
+            if (requiresFull && !fullReview) {
                 boolean accept = confirmOnUi(shell,
-                    "Нужна полная сверка изменений",
-                    "Выборочная выгрузка не охватывает все изменения "
-                    + "хранилища.\n\n"
-                    + "Изменений корня, языков и других специальных "
-                    + "ресурсов: " + deferred + ".\n"
-                    + "Записей об отсутствующих в источнике объектах: "
+                    "Требуется полное сравнение EDT",
+                    "Штатная инкрементальная выгрузка не покрывает "
+                    + "весь состав ожидающих изменений.\n"
+                    + "Осталось изменений от предыдущих получений: "
+                    + (hadUnresolvedBefore ? "да" : "нет") + ".\n"
+                    + "Удалённых или отсутствующих в источнике записей: "
                     + absentFromRemote.size() + ".\n\n"
-                    + "Чтобы ничего не пропустить, плагин подготовит "
-                    + "ПОЛНОЕ штатное сравнение EDT. "
-                    + "База-посредник уже обновлена; повторно обновлять "
-                    + "её не потребуется.\n"
-                    + "Это может занять больше времени.\n"
-                    + "Если отменить, все изменения останутся в журнале.",
+                    + "Полная выгрузка будет сделана только для "
+                    + "подготовки сравнения EDT. База-посредник второй "
+                    + "раз из хранилища не обновляется.\n"
+                    + "Отмена сохранит все изменения в журнале.",
                     "Полная сверка");
                 if (!accept) {
                     return;
                 }
             }
-            final boolean fullNativeComparison = needsFull;
-            // If a native global comparison was necessary it must use the
-            // complete source and the complete EDT scope. Exact current
-            // identities are eligible; removed objects require additional
-            // proof of native deletion and are not silently accepted.
+            final boolean fullNativeComparison = requiresFull;
             final Set<String> deferredDuringReview = Set.of();
             var sourceCovered = new LinkedHashSet<>(
                 ReceiveReviewScope.eligible(pending, currentInventory,
                     deferredDuringReview, fullNativeComparison));
-            // Global native EDT comparison also covers 1C-reported nested
-            // properties that are not individually versioned in XML.
+            // The exact names listed by native -getChanges can include
+            // embedded properties which do not have their own version token.
             if (fullNativeComparison) {
                 sourceCovered.addAll(unindexedNativeNames.get());
             }
@@ -633,42 +643,60 @@ public final class ReceiveChangesCoordinator {
             if (fullNativeComparison) {
                 selected = Set.of();
             } else {
-                selectedList.addAll(exportPlan.exportable());
-                if (selectedList.isEmpty()) {
-                    // A non-empty pending set with no exportable current
-                    // names MUST go through full review, never a fake
-                    // successful selective comparison.
+                var nativeStage = nativePatch.get();
+                if (nativeStage == null
+                        || nativeStage.changes().fullDump()) {
                     throw new IOException(
-                        "Nonempty pending changes have no selective XML scope");
+                        "Нет достоверной инкрементальной выгрузки 1С");
+                }
+                // Native change names are the EDT comparison SCOPE only.
+                // They are not a hand-built Designer transport list.
+                selectedList.addAll(nativeStage.changes().exactNames());
+                if (selectedList.isEmpty()) {
+                    // The version-only native export is not a merge source.
+                    informationOnUi(shell, "Новых изменений нет",
+                        "1С не обнаружила изменений относительно "
+                        + "сохранённого снимка.");
+                    return;
                 }
                 selected = topObjects(selectedList);
-                phase.set("Проверка типов выборочно выгружаемых объектов 1С");
-                EdtSelectiveReviewService.requireSupportedObjectTypes(selectedList);
+                EdtSelectiveReviewService.requireSupportedObjectTypes(
+                    selectedList);
             }
+
             phase.set("Проверка Git перед подготовкой сравнения");
             GitReceiveGuard.requireUnchanged(project, git);
             phase.set(fullNativeComparison
-                ? (mode == ReceiveMode.FULL_REVIEW
-                    ? "Повторная полная выгрузка XML по запросу"
-                    : "Полная выгрузка XML для разбора корневых изменений")
-                : "Выборочная выгрузка объектов 1С");
-            export = progress(jobProgress, 20, monitor -> {
-                monitor.beginTask(fullNativeComparison
-                    ? "Полная XML-выгрузка в отдельный каталог"
-                    : "Выгрузка только изменённых объектов", 1);
-                var runner = new SelectiveDumpRunner();
-                SelectiveDumpRunner.ExportResult result = fullNativeComparison
-                    ? runner.exportInitialFull(
+                ? "Полная XML-выгрузка для сравнения EDT"
+                : "Проверка штатной инкрементальной выгрузки 1С");
+            if (fullNativeComparison) {
+                // The incremental native patch, if any, is not relevant to a
+                // full review and must be closed before the heavy full dump.
+                var unused = nativePatch.getAndSet(null);
+                if (unused != null) {
+                    unused.close();
+                }
+                export = progress(jobProgress, 20, monitor -> {
+                    monitor.beginTask("Полная XML-выгрузка в отдельный каталог", 1);
+                    var result = new SelectiveDumpRunner().exportInitialFull(
                         new InitialFullDumpRequest(executable, transport,
                             Duration.ofHours(2), settings.infobaseUsername(),
-                            settings.infobasePassword()), monitor::isCanceled)
-                    : runner.export(
-                        new SelectiveDumpRequest(executable, transport,
-                            selectedList, TIMEOUT, settings.infobaseUsername(),
                             settings.infobasePassword()), monitor::isCanceled);
-                monitor.worked(1);
-                return result;
-            });
+                    monitor.worked(1);
+                    return result;
+                });
+            } else {
+                // Transfer ownership to the same cleanup path as full export.
+                // Native XML output is used AS-IS by EDT; no second Designer
+                // command and no invented metadata parents.
+                var ready = nativePatch.get();
+                if (ready == null) {
+                    throw new IOException("Native 1C incremental XML was lost");
+                }
+                export = new SelectiveDumpRunner.ExportResult(
+                    ready.workingRoot(), ready.xmlDirectory());
+                nativePatch.set(null);
+            }
             // Converted EDT files, like 1C XML, never go inside active Git.
             phase.set("Создание временных файлов сравнения EDT");
             conversionRoot = Files.createTempDirectory("edt-storage-edt-delta-");
@@ -1202,6 +1230,15 @@ public final class ReceiveChangesCoordinator {
         } finally {
             if (!editorOwnsStaging) {
                 cleanupQuietly(export, conversionRoot);
+                var leftoverPatch = nativePatch.getAndSet(null);
+                if (leftoverPatch != null) {
+                    try {
+                        leftoverPatch.close();
+                    } catch (IOException cleanupError) {
+                        BridgeActivator.getDefault().getLog().warn(
+                            "Failed to remove unused native 1C patch stage");
+                    }
+                }
                 ACTIVE.remove(operationKey);
                 ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
             }
