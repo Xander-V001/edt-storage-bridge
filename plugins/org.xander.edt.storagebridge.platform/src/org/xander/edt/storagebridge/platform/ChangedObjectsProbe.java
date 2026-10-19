@@ -4,9 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -57,6 +55,23 @@ public final class ChangedObjectsProbe {
         return List.copyOf(args);
     }
 
+    /** Offline-testable native -update staging: output starts EMPTY. */
+    public record Workspace(Path inspectionDirectory, Path baselineCopy) {}
+
+    public static Workspace prepareWorkspace(Path work, Path versionFile)
+            throws IOException {
+        Objects.requireNonNull(work);
+        Objects.requireNonNull(versionFile);
+        if (!Files.isDirectory(work)
+                || !Files.isRegularFile(versionFile, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Invalid native change detection workspace");
+        }
+        Path output = Files.createDirectory(work.resolve("inspection"));
+        Path privateBaseline = work.resolve("reviewed-ConfigDumpInfo.xml");
+        Files.copy(versionFile, privateBaseline);
+        return new Workspace(output, privateBaseline);
+    }
+
     /** Platform-native -getChanges result. FullDump is a required GLOBAL
      * merge decision, not an IO failure and not a partial object selection. */
     public record NativeChanges(boolean fullDump,
@@ -101,20 +116,12 @@ public final class ChangedObjectsProbe {
             } catch (UnsupportedOperationException ignored) {
                 // Windows NTFS has different ACL semantics.
             }
-            Path inspection = Files.createDirectory(work.resolve("inspection"));
-            // -update requires ConfigDumpInfo.xml in the dump directory
-            // even when -configDumpInfoForChanges points to an external
-            // comparison baseline. Without this file Designer fails before
-            // generating the change report on a fresh staging directory.
-            // Only this TEMP copy is updated by Designer.
-            // Never pass the ORIGINAL reviewed version file to Designer:
-            // both -configDumpInfoForChanges and the update directory get
-            // independent byte-identical private copies. Only 1C is allowed
-            // to update its own temporary ConfigDumpInfo.xml.
-            Path privateBaseline = work.resolve("reviewed-ConfigDumpInfo.xml");
-            Files.copy(verifiedDumpInfo, privateBaseline);
-            Files.copy(verifiedDumpInfo,
-                inspection.resolve("ConfigDumpInfo.xml"));
+            // -configDumpInfoForChanges REQUIRES an EMPTY target. A native
+            // baseline lives OUTSIDE the output directory. The old code
+            // incorrectly copied ConfigDumpInfo.xml into the output folder.
+            Workspace prepared = prepareWorkspace(work, verifiedDumpInfo);
+            Path inspection = prepared.inspectionDirectory();
+            Path privateBaseline = prepared.baselineCopy();
             Path changes = work.resolve("changes.txt");
             Path log = work.resolve("1c-log.txt");
             Path output = work.resolve("stdout.txt");
@@ -143,6 +150,9 @@ public final class ChangedObjectsProbe {
                 if (process.exitValue() != 0 || cancelled.getAsBoolean()
                         || !Files.isRegularFile(changes)) {
                     throw new IOException("1C could not produce a verified changes list");
+                }
+                if (Files.mismatch(verifiedDumpInfo, privateBaseline) != -1) {
+                    throw new IOException("1C modified the comparison baseline");
                 }
                 return parseNativeFile(changes);
             } finally {

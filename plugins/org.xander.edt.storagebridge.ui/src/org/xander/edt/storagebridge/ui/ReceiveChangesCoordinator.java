@@ -438,12 +438,12 @@ public final class ReceiveChangesCoordinator {
                     // (-configDumpInfoOnly) AND determines incremental
                     // changes (-getChanges -configDumpInfoForChanges).
                     // The plugin never edits either native version file.
-                    // Our inventory comparison is only a safety cross-check
-                    // and a deletion detector if the platform needs FullDump.
+                    // Compare native NAME SETS only to recognize removals.
+                    // Internal 1C configVersion/id values are not our diff API.
                     RemoteReceiveScopePlanner.Changes discovered;
                     if (selectAllRemote) {
-                        discovered = RemoteReceiveScopePlanner.discover(
-                            lastScanned, remote.configDumpInfo(), true);
+                        discovered = RemoteReceiveScopePlanner.fullInventory(
+                            remote.configDumpInfo());
                     } else {
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");
@@ -462,8 +462,8 @@ public final class ReceiveChangesCoordinator {
                     BridgeActivator.getDefault().getLog().info(
                         "Repository delta: changed=" + discovered.present().size()
                         + "; removed=" + discovered.removed().size()
-                        + "; renamed=" + discovered.renamed().size()
-                        + "; replaced=" + discovered.replaced().size()
+                        + "; unindexedNativeChanges="
+                        + discovered.unindexed().size()
                         + "; fullNeeded=" + changeScopeRequiresFull.get());
                     monitor.worked(1);
                     if (canceled.getAsBoolean()) {

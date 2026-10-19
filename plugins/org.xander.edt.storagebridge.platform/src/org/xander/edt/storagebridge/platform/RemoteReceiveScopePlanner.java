@@ -2,170 +2,79 @@ package org.xander.edt.storagebridge.platform;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 /**
- * Repository metadata CHANGE DETECTION, not a native Designer export planner.
+ * Route the exact changes reported by 1C Designer -getChanges.
  *
- * This class used to run changed metadata identities through
- * ConfigurationChangesParser.objectsToExport() BEFORE persisting them in
- * ReceivePendingStore. That produced fake "pending" entries for ancestors
- * (e.g. Document.X when only Document.X.ManagerModule changed).
- *
- * Inventory names are exact native 1C names. Expansion to parent objects
- * and related forms happens later, ONLY while creating Designer -listFile.
- * A deletion is a real change and must never make an incremental update fail
- * before native EDT can offer full comparison.
+ * No ConfigDumpInfo id/configVersion differences are calculated by Java:
+ * the values are opaque internal platform tokens. Separate native manifest
+ * name sets are only used to find objects that disappeared entirely.
  */
 public final class RemoteReceiveScopePlanner {
     private RemoteReceiveScopePlanner() {}
 
     public record Changes(Set<String> present, Set<String> removed,
-            Set<String> renamed, Set<String> replaced, boolean fullReview) {
+            Set<String> unindexed, boolean fullReview) {
         public Changes {
             present = Set.copyOf(present);
             removed = Set.copyOf(removed);
-            renamed = Set.copyOf(renamed);
-            replaced = Set.copyOf(replaced);
+            unindexed = Set.copyOf(unindexed);
         }
-        /** Changes to track in pending: only REAL ConfigDumpInfo identities. */
+
         public Set<String> pendingIdentities() {
-            var names = new LinkedHashSet<>(present);
-            names.addAll(removed);
-            return Set.copyOf(names);
+            var result = new LinkedHashSet<>(present);
+            result.addAll(removed);
+            return Set.copyOf(result);
         }
+
         public boolean requiresFullNativeComparison() {
-            return fullReview || !removed.isEmpty() || !renamed.isEmpty()
-                || !replaced.isEmpty()
+            return fullReview || !removed.isEmpty()
+                || !unindexed.isEmpty()
                 || present.stream().anyMatch(RemoteReceiveScopePlanner::isRootOrLanguage);
         }
     }
 
-    /**
-     * Platform -getChanges is the PRIMARY list of altered metadata. Our two
-     * UNMODIFIED native ConfigDumpInfo copies are consulted only to detect
-     * removals/replacements and to prevent silent under-reporting. They are
-     * never reconstructed, edited, or passed to EDT as a fabricated dump.
-     *
-     * If Designer says FullDump, reports a name not present in the current
-     * versioned inventory, or disagrees with its own version tokens, require
-     * full native EDT comparison rather than inventing a selective scope.
-     */
-    public static Changes reconcileNative(Path previousInfo, Path currentInfo,
-            ChangedObjectsProbe.NativeChanges platform) throws IOException {
-        Objects.requireNonNull(platform);
-        Changes inventory = discover(previousInfo, currentInfo, false);
-        Set<String> platformNames = platform.exactNames();
-        Set<String> currentNames =
-            ConfigDumpInfoIndex.readVersions(currentInfo).keySet();
-        boolean unreliableSelective = platform.fullDump()
-            || !platformNames.containsAll(inventory.present())
-            || !currentNames.containsAll(platformNames);
-        var allPresent = new LinkedHashSet<String>(inventory.present());
-        if (!platform.fullDump()) {
-            for (String reported : platformNames) {
-                if (currentNames.contains(reported)) {
-                    allPresent.add(reported);
-                }
-            }
-        }
-        return new Changes(allPresent, inventory.removed(),
-            inventory.renamed(), inventory.replaced(),
-            unreliableSelective);
+    /** Explicit initial/full review uses the CURRENT platform inventory. */
+    public static Changes fullInventory(Path currentInfo) throws IOException {
+        return new Changes(ConfigDumpInfoIndex.exportableNames(currentInfo),
+            Set.of(), Set.of(), true);
     }
 
     /**
-     * Full = all current identities plus old identities absent from the new
-     * source. Incremental = changed/new current identities plus removals.
-     *
-     * Renames/replacements need FULL native comparison: a same-name UUID
-     * replacement is not an ordinary edit. These cases stay explicit, never
-     * silently recast as an update of the original object.
+     * Native -getChanges decides all new/modified names. Compare only native
+     * NAME SETS for deletion (not version tokens); missing names force full
+     * merge. Native FullDump is authoritative and also forces full.
+     * An unknown native name stays pending, with full review required.
      */
-    public static Changes discover(Path previousInfo, Path currentInfo,
-            boolean fullReview) throws IOException {
-        Objects.requireNonNull(currentInfo);
-        Map<String, ConfigDumpInfoIndex.Version> current =
-            ConfigDumpInfoIndex.readVersions(currentInfo);
-        if (previousInfo == null) {
-            return new Changes(current.keySet(), Set.of(), Set.of(),
-                Set.of(), true);
+    public static Changes reconcileNative(Path oldInfo, Path currentInfo,
+            ChangedObjectsProbe.NativeChanges nativeResult) throws IOException {
+        Objects.requireNonNull(oldInfo, "oldInfo");
+        Objects.requireNonNull(currentInfo, "currentInfo");
+        Objects.requireNonNull(nativeResult, "nativeResult");
+        var oldNames = ConfigDumpInfoIndex.exportableNames(oldInfo);
+        var currentNames = ConfigDumpInfoIndex.exportableNames(currentInfo);
+        var deleted = new LinkedHashSet<>(oldNames);
+        deleted.removeAll(currentNames);
+        if (nativeResult.fullDump()) {
+            return new Changes(currentNames, deleted, Set.of(), true);
         }
-        Map<String, ConfigDumpInfoIndex.Version> before =
-            ConfigDumpInfoIndex.readVersions(previousInfo);
-        Map<String, String> priorNamesById = uniqueNamesById(before);
-        uniqueNamesById(current); // reject ambiguous identities on either side
-
-        var changed = new LinkedHashSet<String>();
-        var removed = new LinkedHashSet<String>();
-        var renamed = new LinkedHashSet<String>();
-        var replaced = new LinkedHashSet<String>();
-
-        for (var old : before.entrySet()) {
-            if (!current.containsKey(old.getKey())) {
-                removed.add(old.getKey());
-            }
-        }
-        for (var entry : current.entrySet()) {
-            String name = entry.getKey();
-            ConfigDumpInfoIndex.Version version = entry.getValue();
-            ConfigDumpInfoIndex.Version oldSameName = before.get(name);
-            String previousNameForId = priorNamesById.get(version.id());
-            if (previousNameForId != null && !previousNameForId.equals(name)) {
-                renamed.add(previousNameForId + " -> " + name);
-            }
-            if (oldSameName != null && !oldSameName.id().equals(version.id())) {
-                replaced.add(name);
-            }
-            if (fullReview || oldSameName == null
-                    || !oldSameName.equals(version)) {
-                changed.add(name);
-            }
-        }
-        return new Changes(changed, removed, renamed, replaced, fullReview);
+        var nativeNames = nativeResult.exactNames();
+        var unindexed = new LinkedHashSet<>(nativeNames);
+        unindexed.removeAll(currentNames);
+        return new Changes(nativeNames, deleted, unindexed, false);
     }
 
-    /**
-     * Deprecated old convenience entry point retained for existing callers:
-     * returns exact changes, NOT ancestor export paths. Deletions included.
-     */
-    public static Set<String> candidates(Path previousInfo, Path currentInfo,
-            boolean fullReview) throws IOException {
-        return discover(previousInfo, currentInfo, fullReview)
-            .pendingIdentities();
-    }
-
-    public static Set<String> removedSince(Path previousInfo, Path currentInfo)
-            throws IOException {
-        return discover(previousInfo, currentInfo, false).removed();
-    }
-
-    /** Only identities present in the current source can be XML-exported. */
+    /** Restrict transport to source-present entries; never delete pending. */
     public static Set<String> availableInFullReview(
             Set<String> pending, Set<String> currentInventory) {
         Objects.requireNonNull(pending);
         Objects.requireNonNull(currentInventory);
-        var current = new LinkedHashSet<>(pending);
-        current.retainAll(currentInventory);
-        return Set.copyOf(current);
-    }
-
-    private static Map<String, String> uniqueNamesById(
-            Map<String, ConfigDumpInfoIndex.Version> inventory)
-            throws IOException {
-        var byId = new LinkedHashMap<String, String>();
-        for (var entry : inventory.entrySet()) {
-            String earlier = byId.putIfAbsent(entry.getValue().id(),
-                entry.getKey());
-            if (earlier != null && !earlier.equals(entry.getKey())) {
-                throw new IOException("Ambiguous native metadata identity in ConfigDumpInfo");
-            }
-        }
-        return byId;
+        var available = new LinkedHashSet<>(pending);
+        available.retainAll(currentInventory);
+        return Set.copyOf(available);
     }
 
     private static boolean isRootOrLanguage(String name) {

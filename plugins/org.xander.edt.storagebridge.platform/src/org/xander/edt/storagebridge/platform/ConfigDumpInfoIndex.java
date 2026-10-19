@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import javax.xml.XMLConstants;
@@ -41,52 +40,6 @@ public final class ConfigDumpInfoIndex {
     public static Set<String> exportableNames(Path configDumpInfo)
             throws IOException {
         return Set.copyOf(readVersions(configDumpInfo).keySet());
-    }
-
-    /**
-     * Only NEW or MODIFIED versioned metadata is returned. Deletions, renames,
-     * ambiguous identities and corrupt snapshots are explicit safety failures.
-     * No absent remote object can be accidentally marked as already applied.
-     */
-    public static Set<String> changedSince(Path previous, Path current)
-            throws IOException {
-        Map<String, Version> before = readVersions(previous);
-        Map<String, Version> after = readVersions(current);
-        Map<String, String> oldNamesById = new LinkedHashMap<>();
-        for (var entry : before.entrySet()) {
-            String other = oldNamesById.putIfAbsent(entry.getValue().id(),
-                entry.getKey());
-            if (other != null && !other.equals(entry.getKey())) {
-                throw new IOException("Ambiguous 1C metadata ID in old snapshot");
-            }
-        }
-        Set<String> changed = new LinkedHashSet<>();
-        for (var entry : after.entrySet()) {
-            Version newVersion = entry.getValue();
-            String oldName = oldNamesById.get(newVersion.id());
-            if (oldName != null && !oldName.equals(entry.getKey())) {
-                throw new IOException("1C metadata rename requires explicit merge");
-            }
-            Version oldVersion = before.get(entry.getKey());
-            if (oldVersion != null
-                    && !oldVersion.id().equals(newVersion.id())) {
-                // Same human-readable name but DIFFERENT 1C UUID is a
-                // deletion + new object, not a simple content modification.
-                // MatchingStrategy.UUID_THEN_NAME could silently pair them by
-                // name and overwrite unrelated locally committed metadata.
-                throw new IOException(
-                    "1C metadata object replacement requires explicit merge");
-            }
-            if (oldVersion == null || !oldVersion.equals(newVersion)) {
-                changed.add(entry.getKey());
-            }
-        }
-        for (String oldName : before.keySet()) {
-            if (!after.containsKey(oldName)) {
-                throw new IOException("1C metadata deletion requires explicit merge");
-            }
-        }
-        return Set.copyOf(changed);
     }
 
     /** Full object names and their opaque native 1C identity/version pair. */
