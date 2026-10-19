@@ -244,20 +244,27 @@ public final class EdtSelectiveReviewService {
             comparisonScope = new ComparisonScope(requestedScope, requestedScope);
         }
         var handle = new ComparisonProcessHandle(main, delta, comparisonScope);
-        var settings = ComparisonProcessSettings.builder(
-            MatchingStrategy.UUID_THEN_NAME)
-            // Use EDT's native BSL syntax-aware merge rather than comparing
-            // an entire modified module as one replaceable text block.
-            // Two-way review still requires the developer's explicit choice.
-            .parseBslModuleStructure(true)
-            // Never disable a native EDT merge operation. In particular,
-            // local-only forms/modules under a compared owner must be
-            // removable via the standard editor's own merge checkboxes.
-            // Deletions are selected by the user, not automatically applied.
-            // The set of top-level compared owners is a separate scope issue.
+        return new CompareMergeProcessDescriptor(handle, incomingMergeSettings());
+    }
+
+
+    /**
+     * Keep EDT's native compare/merge editor fully writable (noMerge=false in
+     * EdtDeltaComparisonService). IMPORTANT: method-structure merge takes
+     * individual procedures and can leave differences outside those methods
+     * in the manager module even after "Take right" was selected.
+     * Compare/merge BSL as ONE text resource instead, so the standard EDT
+     * "Take right" applies to the complete selected module. This is the
+     * documented standard setting, not a custom BSL copying workaround.
+     *
+     * Deletion of main-side objects is enabled only as a user-selectable EDT
+     * merge action: it is NEVER an automatic delete.
+     */
+    public static ComparisonProcessSettings incomingMergeSettings() {
+        return ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
+            .parseBslModuleStructure(false)
             .mainSideObjectsDeletionAllowed(true)
             .build();
-        return new CompareMergeProcessDescriptor(handle, settings);
     }
 
     /**

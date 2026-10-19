@@ -123,6 +123,17 @@ public class EdtSelectiveReviewServiceTest {
     }
 
     @Test
+    public void incomingMergeDoesNotForceBslProcedureStructureOrBlockDeletions() {
+        // Regression: repeated identical "ВыполнитьРасчетПоСреднему"
+        // difference after "Take right" with structure-based BSL merging.
+        // The native EDT editor must compare the COMPLETE BSL module,
+        // including text outside a procedure.
+        var settings = EdtSelectiveReviewService.incomingMergeSettings();
+        org.junit.Assert.assertFalse(settings.isParseBslModuleStructure());
+        org.junit.Assert.assertTrue(settings.isMainSideObjectsDeletionAllowed());
+    }
+
+    @Test
     public void nativeMergeScopeUsesOnlyPrimaryMetadataDescriptors() {
         assertEquals("Documents/Документ1",
             EdtSelectiveReviewService.metadataOwnerForPath(Path.of(
