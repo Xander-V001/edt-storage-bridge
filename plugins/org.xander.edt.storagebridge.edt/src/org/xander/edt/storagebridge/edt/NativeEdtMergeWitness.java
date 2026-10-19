@@ -71,6 +71,19 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
         return evidence.snapshot();
     }
 
+    /**
+     * Wait in the background after SWT reports editor disposal. EDT's native
+     * merge is asynchronous, and we must not drop status events or delete
+     * its input stage before MERGE_PROCESS_FINISHED/DISCARDED/CANCELLED.
+     */
+    public NativeEdtMergeEvidence.Snapshot awaitAfterEditorClose(
+            long graceMilliseconds, long mergeTimeoutMilliseconds,
+            java.util.function.BooleanSupplier canceled)
+            throws InterruptedException {
+        return evidence.awaitAfterEditorClose(
+            graceMilliseconds, mergeTimeoutMilliseconds, canceled);
+    }
+
     @Override
     public synchronized void close() {
         if (!closed) {

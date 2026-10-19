@@ -698,21 +698,18 @@ public final class ReceiveChangesCoordinator {
                     public void partClosed(IWorkbenchPartReference part) {
                         if (part == editorReference) {
                             page.removePartListener(this);
-                            // EDT can discard its comparison session as
-                            // part of editor close. Retain the successful
-                            // MERGE_PROCESS_FINISHED event observed BEFORE
-                            // disposal; a later DISCARDED status must not
-                            // erase evidence of native merge.
-                            final var nativeEvidence = nativeMergeWitness.snapshot();
-                            nativeMergeWitness.close();
-                            final String nativeMergeStatus =
-                                nativeEvidence.lastStatus();
+                            // Native EDT Merge is ASYNCHRONOUS.
+                            // partClosed() is a SWT editor lifecycle event,
+                            // NOT proof that the native merge has finished.
+                            // Keep the source stage and listener until EDT
+                            // emits a terminal merge status in a worker Job.
+                            var atEditorClose = nativeMergeWitness.snapshot();
                             BridgeActivator.getDefault().getLog().info(
                                 "EDT comparison editor closed; native status="
-                                + nativeMergeStatus
-                                + "; mergeStarted=" + nativeEvidence.mergeStarted()
-                                + "; mergeFinished=" + nativeEvidence.finished()
-                                + "; cancelled=" + nativeEvidence.cancelled()
+                                + atEditorClose.lastStatus()
+                                + "; mergeStarted=" + atEditorClose.mergeStarted()
+                                + "; mergeFinished=" + atEditorClose.finished()
+                                + "; cancelled=" + atEditorClose.cancelled()
                                 + "; sourceRevisionProven="
                                 + (revisionForReview.get() > 0)
                                 + "; mode=" + mode);
@@ -724,7 +721,53 @@ public final class ReceiveChangesCoordinator {
                                     + project.getName()) {
                                 @Override
                                 protected IStatus run(IProgressMonitor monitor) {
+                                    // No delete/no new receive until the EDT
+                                    // native engine reports a terminal event.
+                                    // Otherwise a still-running merge could
+                                    // read files already deleted by our job.
+                                    boolean nativeTerminal = false;
                                     try {
+                                        var nativeEvidence =
+                                            nativeMergeWitness.awaitAfterEditorClose(
+                                                5_000L, 15L * 60_000L,
+                                                monitor::isCanceled);
+                                        final String nativeMergeStatus =
+                                            nativeEvidence.lastStatus();
+                                        nativeTerminal =
+                                            nativeEvidence.canReleaseStaging();
+                                        BridgeActivator.getDefault().getLog().info(
+                                            "EDT after close: status="
+                                            + nativeMergeStatus
+                                            + "; mergeStarted="
+                                            + nativeEvidence.mergeStarted()
+                                            + "; mergeFinished="
+                                            + nativeEvidence.finished()
+                                            + "; cancelled="
+                                            + nativeEvidence.cancelled()
+                                            + "; discarded="
+                                            + nativeEvidence.discarded()
+                                            + "; stagingSafeToRelease="
+                                            + nativeTerminal);
+                                        if (!nativeTerminal) {
+                                            // IMPORTANT: preserve staged
+                                            // XML/EDT resources AND active
+                                            // receive lock; a native async
+                                            // merge may still be running.
+                                            informationOnUi(shell,
+                                                "EDT не подтвердила завершение Merge",
+                                                "После закрытия редактора EDT "
+                                                + "не сообщила о завершении "
+                                                + "или отмене объединения. "
+                                                + "Временная выгрузка сохранена; "
+                                                + "повторное получение заблокировано "
+                                                + "до диагностики или перезапуска EDT. "
+                                                + "Код проекта не изменялся "
+                                                + "самим плагином.");
+                                            return new Status(IStatus.WARNING,
+                                                BridgeActivator.PLUGIN_ID,
+                                                "Native EDT merge completion unknown; "
+                                                + "staging deliberately retained");
+                                        }
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
                                         int worktreeAfter = -1;
@@ -1013,10 +1056,18 @@ public final class ReceiveChangesCoordinator {
                                             "Подтверждение результата EDT не завершено; "
                                             + "сведения о получении требуют проверки.");
                                     } finally {
-                                        cleanupQuietly(
-                                            retainedExport, retainedConverted);
-                                        ACTIVE.remove(operationKey);
-                                        ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
+                                        nativeMergeWitness.close();
+                                        if (nativeTerminal) {
+                                            cleanupQuietly(
+                                                retainedExport, retainedConverted);
+                                            ACTIVE.remove(operationKey);
+                                            ACTIVE_INTERMEDIARIES.remove(intermediaryKey);
+                                        } else {
+                                            BridgeActivator.getDefault().getLog().warn(
+                                                "Receive native merge state UNKNOWN; "
+                                                + "staging and operation guard retained "
+                                                + "until a controlled EDT restart.");
+                                        }
                                     }
                                 }
                             };
