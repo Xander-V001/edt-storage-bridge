@@ -56,8 +56,12 @@ public final class RemoteReceiveScopePlannerTest {
             <Metadata name="Document.Kept" id="kept" configVersion="2"/>
             """);
         try {
-            assertThrows(IOException.class,
-                () -> RemoteReceiveScopePlanner.candidates(old, next, false));
+            assertEquals(Set.of("Document.Deleted", "Document.Kept"),
+                RemoteReceiveScopePlanner.candidates(old, next, false));
+            var incremental = RemoteReceiveScopePlanner.discover(old, next, false);
+            assertEquals(Set.of("Document.Kept"), incremental.present());
+            assertEquals(Set.of("Document.Deleted"), incremental.removed());
+            assertTrue(incremental.requiresFullNativeComparison());
             assertEquals(Set.of("Document.Kept"),
                 RemoteReceiveScopePlanner.candidates(old, next, true));
             assertEquals(Set.of("Document.Deleted"),
@@ -75,4 +79,100 @@ public final class RemoteReceiveScopePlannerTest {
             Files.deleteIfExists(next);
         }
     }
+
+    @Test
+    public void moduleOnlyUpdateDoesNotInventAnExtraParentPendingIdentity()
+            throws Exception {
+        Path before = inventory("""
+            <Metadata name="Document.Заказ" id="owner" configVersion="v1"/>
+            <Metadata name="Document.Заказ.ManagerModule"
+                id="manager" configVersion="old"/>
+            <Metadata name="Document.Заказ.Form.Основная"
+                id="form" configVersion="same"/>
+            """);
+        Path after = inventory("""
+            <Metadata name="Document.Заказ" id="owner" configVersion="v1"/>
+            <Metadata name="Document.Заказ.ManagerModule"
+                id="manager" configVersion="new"/>
+            <Metadata name="Document.Заказ.Form.Основная"
+                id="form" configVersion="same"/>
+            """);
+        try {
+            var delta = RemoteReceiveScopePlanner.discover(before, after, false);
+            assertEquals(Set.of("Document.Заказ.ManagerModule"),
+                delta.pendingIdentities());
+            assertEquals(Set.of(), delta.removed());
+            assertTrue(!delta.requiresFullNativeComparison());
+        } finally {
+            Files.deleteIfExists(before);
+            Files.deleteIfExists(after);
+        }
+    }
+
+    @Test
+    public void configurationAndLanguagesTriggerFullWithoutBeingDropped()
+            throws Exception {
+        Path before = inventory("""
+            <Metadata name="Configuration" id="config" configVersion="a"/>
+            <Metadata name="Language.Русский" id="lang" configVersion="a"/>
+            <Metadata name="Document.Order" id="doc" configVersion="a"/>
+            """);
+        Path after = inventory("""
+            <Metadata name="Configuration" id="config" configVersion="b"/>
+            <Metadata name="Language.Русский" id="lang" configVersion="b"/>
+            <Metadata name="Document.Order" id="doc" configVersion="a"/>
+            """);
+        try {
+            var delta = RemoteReceiveScopePlanner.discover(before, after, false);
+            assertEquals(Set.of("Configuration", "Language.Русский"),
+                delta.pendingIdentities());
+            assertTrue(delta.requiresFullNativeComparison());
+        } finally {
+            Files.deleteIfExists(before);
+            Files.deleteIfExists(after);
+        }
+    }
+
+    @Test
+    public void renameIsAFullNativeComparisonNotAnOrdinaryModify()
+            throws Exception {
+        Path before = inventory("""
+            <Metadata name="Document.Old" id="same" configVersion="1"/>
+            """);
+        Path after = inventory("""
+            <Metadata name="Document.New" id="same" configVersion="2"/>
+            """);
+        try {
+            var delta = RemoteReceiveScopePlanner.discover(before, after, false);
+            assertEquals(Set.of("Document.Old", "Document.New"),
+                delta.pendingIdentities());
+            assertEquals(Set.of("Document.Old"), delta.removed());
+            assertEquals(Set.of("Document.Old -> Document.New"), delta.renamed());
+            assertTrue(delta.requiresFullNativeComparison());
+        } finally {
+            Files.deleteIfExists(before);
+            Files.deleteIfExists(after);
+        }
+    }
+
+    @Test
+    public void sameNameDifferentUuidRequiresFullMetadataComparison()
+            throws Exception {
+        Path before = inventory("""
+            <Metadata name="Document.Order" id="old-id" configVersion="1"/>
+            """);
+        Path after = inventory("""
+            <Metadata name="Document.Order" id="new-id" configVersion="1"/>
+            """);
+        try {
+            var delta = RemoteReceiveScopePlanner.discover(before, after, false);
+            assertEquals(Set.of("Document.Order"), delta.pendingIdentities());
+            assertEquals(Set.of("Document.Order"), delta.replaced());
+            assertTrue(delta.requiresFullNativeComparison());
+        } finally {
+            Files.deleteIfExists(before);
+            Files.deleteIfExists(after);
+        }
+    }
+
 }
