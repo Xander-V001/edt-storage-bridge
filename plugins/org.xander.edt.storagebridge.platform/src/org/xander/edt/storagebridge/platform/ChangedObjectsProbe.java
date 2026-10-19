@@ -91,9 +91,26 @@ public final class ChangedObjectsProbe {
         }
     }
 
-    /** Uses only native Designer output. The source ConfigDumpInfo file is
-     * never modified; 1C may update only a PRIVATE staging copy. */
-    public NativeChanges detectNative(ChangeDetectionRequest request,
+    /**
+     * Native patch and native change report are ONE command result. Retain the
+     * PLATFORM-generated XML files until EDT finishes comparing them.
+     * The owner controls their lifetime; no second -listFile export occurs.
+     */
+    public record NativeExport(Path workingRoot, Path xmlDirectory,
+            NativeChanges changes) implements AutoCloseable {
+        public NativeExport {
+            Objects.requireNonNull(workingRoot);
+            Objects.requireNonNull(xmlDirectory);
+            Objects.requireNonNull(changes);
+        }
+
+        @Override
+        public void close() throws IOException {
+            deleteRecursively(workingRoot);
+        }
+    }
+
+    public NativeExport exportNative(ChangeDetectionRequest request,
             Path verifiedDumpInfo, BooleanSupplier cancelled)
             throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
@@ -105,20 +122,18 @@ public final class ChangedObjectsProbe {
             throw new IOException("No trusted ConfigDumpInfo.xml baseline is available");
         }
         if (cancelled.getAsBoolean()) {
-            throw new IOException("Change detection cancelled");
+            throw new IOException("Native 1C incremental export cancelled");
         }
 
-        Path work = Files.createTempDirectory("edt-storage-getchanges-");
+        Path work = Files.createTempDirectory("edt-storage-native-increment-");
+        boolean ready = false;
         try {
             try {
                 Files.setPosixFilePermissions(work,
                     PosixFilePermissions.fromString("rwx------"));
             } catch (UnsupportedOperationException ignored) {
-                // Windows NTFS has different ACL semantics.
+                // NTFS permissions are handled differently.
             }
-            // -configDumpInfoForChanges REQUIRES an EMPTY target. A native
-            // baseline lives OUTSIDE the output directory. The old code
-            // incorrectly copied ConfigDumpInfo.xml into the output folder.
             Workspace prepared = prepareWorkspace(work, verifiedDumpInfo);
             Path inspection = prepared.inspectionDirectory();
             Path privateBaseline = prepared.baselineCopy();
@@ -126,9 +141,9 @@ public final class ChangedObjectsProbe {
             Path log = work.resolve("1c-log.txt");
             Path output = work.resolve("stdout.txt");
             Path errors = work.resolve("stderr.txt");
-            var process = new ProcessBuilder(
-                    command(request, privateBaseline,
-                        inspection, changes, log))
+
+            Process process = new ProcessBuilder(
+                    command(request, privateBaseline, inspection, changes, log))
                 .directory(work.toFile())
                 .redirectOutput(output.toFile())
                 .redirectError(errors.toFile())
@@ -137,24 +152,44 @@ public final class ChangedObjectsProbe {
                 long start = System.nanoTime();
                 while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
                     if (cancelled.getAsBoolean()) {
-                        throw new IOException("Change detection cancelled");
+                        throw new IOException("Native 1C incremental export cancelled");
                     }
                     if (System.nanoTime() - start > request.timeout().toNanos()) {
-                        throw new IOException("Change detection timed out");
+                        throw new IOException("Native 1C incremental export timed out");
                     }
                     if (tooLarge(output) || tooLarge(errors)
                             || tooLarge(log) || tooLarge(changes)) {
-                        throw new IOException("1C change output exceeded size limit");
+                        throw new IOException("1C incremental diagnostics exceeded limit");
                     }
                 }
                 if (process.exitValue() != 0 || cancelled.getAsBoolean()
-                        || !Files.isRegularFile(changes)) {
-                    throw new IOException("1C could not produce a verified changes list");
+                        || !Files.isRegularFile(changes, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("1C did not complete native incremental export");
                 }
                 if (Files.mismatch(verifiedDumpInfo, privateBaseline) != -1) {
-                    throw new IOException("1C modified the comparison baseline");
+                    throw new IOException("1C changed the comparison baseline");
                 }
-                return parseNativeFile(changes);
+
+                NativeChanges result = parseNativeFile(changes);
+                Path producedVersions = inspection.resolve("ConfigDumpInfo.xml");
+                if (!Files.isRegularFile(producedVersions, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("Native increment has no ConfigDumpInfo.xml");
+                }
+                // Only 1C is authorized to produce this file. Validate it but
+                // never synthesize, edit, or filter its contents.
+                ConfigDumpInfoIndex.exportableNames(producedVersions);
+                if (!result.fullDump() && !result.exactNames().isEmpty()) {
+                    try (var exported = Files.walk(inspection)) {
+                        if (exported.noneMatch(file -> Files.isRegularFile(file,
+                                LinkOption.NOFOLLOW_LINKS)
+                                && !file.equals(producedVersions))) {
+                            throw new IOException(
+                                "1C reported changes but did not export metadata files");
+                        }
+                    }
+                }
+                ready = true;
+                return new NativeExport(work, inspection, result);
             } finally {
                 if (process.isAlive()) {
                     process.descendants().forEach(ProcessHandle::destroy);
@@ -167,7 +202,19 @@ public final class ChangedObjectsProbe {
                 }
             }
         } finally {
-            deleteRecursively(work);
+            if (!ready) {
+                deleteRecursively(work);
+            }
+        }
+    }
+
+    /** Legacy list-only operation: immediately release its native patch. */
+    public NativeChanges detectNative(ChangeDetectionRequest request,
+            Path verifiedDumpInfo, BooleanSupplier cancelled)
+            throws IOException, InterruptedException {
+        try (NativeExport export = exportNative(
+                request, verifiedDumpInfo, cancelled)) {
+            return export.changes();
         }
     }
 
