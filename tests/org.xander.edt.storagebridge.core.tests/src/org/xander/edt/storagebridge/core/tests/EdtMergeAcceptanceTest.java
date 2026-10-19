@@ -54,6 +54,22 @@ public final class EdtMergeAcceptanceTest {
     }
 
     @Test
+    public void confirmedEdtWithAttestedIntermediaryCanCloseShownScopeOnly() {
+        // A repository HEAD number is not part of the EDT-merge proof.
+        // The caller attests the unchanged staged ConfigDumpInfo and MUST
+        // leave numerical reviewedRevision unknown until native 1C proof.
+        var receipt = EdtMergeAcceptance.evaluate(
+            Set.of("Document.Payroll", "Document.Payroll.ManagerModule",
+                "Catalog.People"),
+            Set.of("Document.Payroll", "Document.Payroll.ManagerModule"),
+            true, true);
+        assertEquals(Set.of("Document.Payroll",
+            "Document.Payroll.ManagerModule"), receipt.acknowledged());
+        assertEquals(Set.of("Catalog.People"), receipt.remaining());
+        assertFalse(receipt.allReviewed());
+    }
+
+    @Test
     public void omittedRemoteObjectsStayPendingAfterPartialReview() {
         var decision = EdtMergeAcceptance.evaluate(
             Set.of("Document.Payroll", "Catalog.People",
