@@ -462,18 +462,19 @@ public final class ReceiveChangesCoordinator {
                             detect, lastScanned, canceled);
                         nativePatch.set(nativeDump);
                         var nativeDelta = nativeDump.changes();
-                        // Two independent 1C snapshots must describe the
-                        // same intermediary configuration. Comparing native
-                        // manifests here is CONSISTENCY checking, not our own
-                        // change detection (which belongs to -getChanges).
-                        if (!nativeDelta.fullDump()
-                                && !ConfigDumpInfoIndex.readVersions(
-                                    remote.configDumpInfo()).equals(
-                                    ConfigDumpInfoIndex.readVersions(
-                                        nativeDump.xmlDirectory()
-                                            .resolve("ConfigDumpInfo.xml")))) {
-                            throw new IOException(
-                                "База-посредник изменилась во время выгрузки 1С");
+                        // The ConfigDumpInfo.xml IN A PATCH may list
+                        // ONLY the patch's exported objects. It must NEVER
+                        // be treated as a full configuration snapshot.
+                        // Compare two complete, platform-created
+                        // -configDumpInfoOnly outputs instead. This reads
+                        // metadata only, not the full XML configuration.
+                        try (var afterPatch = new ConfigVersionSnapshotRunner()
+                                .capture(detect, canceled)) {
+                            if (Files.mismatch(remote.configDumpInfo(),
+                                    afterPatch.configDumpInfo()) != -1) {
+                                throw new IOException(
+                                    "База-посредник изменилась во время выгрузки 1С");
+                            }
                         }
                         discovered = RemoteReceiveScopePlanner.reconcileNative(
                             lastScanned, remote.configDumpInfo(), nativeDelta);
