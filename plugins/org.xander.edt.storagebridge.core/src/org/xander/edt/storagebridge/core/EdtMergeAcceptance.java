@@ -42,7 +42,7 @@ public final class EdtMergeAcceptance {
             boolean developerConfirmed, boolean reviewedSourceConfirmed) {
         Objects.requireNonNull(pending);
         Objects.requireNonNull(presentedInNativeEditor);
-        if (!developerConfirmed || !repositoryHeadConfirmed) {
+        if (!developerConfirmed || !reviewedSourceConfirmed) {
             return new Decision(Set.of(), pending, false);
         }
         var acknowledged = new LinkedHashSet<>(pending);
