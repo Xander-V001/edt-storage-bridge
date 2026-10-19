@@ -47,11 +47,13 @@ public final class ChangedObjectsProbe {
         // -configDumpInfoForChanges is supported only together with -update
         // and -getChanges (1C batch Designer contract). The previous command
         // omitted -update, causing the change probe to fail at runtime.
+        // Keep the argument order of 1C's published native patch example:
+        // -update -configDumpInfoForChanges <base> -getChanges <report>.
         args.add("-update");
-        args.add("-getChanges");
-        args.add(changeFile.toString());
         args.add("-configDumpInfoForChanges");
         args.add(info.toString());
+        args.add("-getChanges");
+        args.add(changeFile.toString());
         args.add("/Out");
         args.add(serviceLog.toString());
         return List.copyOf(args);

@@ -36,10 +36,10 @@ public final class ChangeDetectionCommandTest {
         assertTrue(dump > 4);
         assertEquals(root.toString(), args.get(dump + 1));
         assertEquals("-update", args.get(dump + 2));
-        assertEquals("-getChanges", args.get(dump + 3));
-        assertEquals(changes.toString(), args.get(dump + 4));
-        assertEquals("-configDumpInfoForChanges", args.get(dump + 5));
-        assertEquals(baseline.toString(), args.get(dump + 6));
+        assertEquals("-configDumpInfoForChanges", args.get(dump + 3));
+        assertEquals(baseline.toString(), args.get(dump + 4));
+        assertEquals("-getChanges", args.get(dump + 5));
+        assertEquals(changes.toString(), args.get(dump + 6));
         assertFalse(args.contains("-force"));
         assertFalse(args.contains("-listFile"));
         // The same invocation must produce native XML and the native
