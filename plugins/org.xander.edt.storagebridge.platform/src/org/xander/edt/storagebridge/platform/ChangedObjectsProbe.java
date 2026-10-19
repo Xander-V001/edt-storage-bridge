@@ -57,9 +57,30 @@ public final class ChangedObjectsProbe {
         return List.copyOf(args);
     }
 
-    public ConfigurationChangesParser.ChangeSet detect(
-            ChangeDetectionRequest request, Path verifiedDumpInfo,
-            BooleanSupplier cancelled) throws IOException, InterruptedException {
+    /** Platform-native -getChanges result. FullDump is a required GLOBAL
+     * merge decision, not an IO failure and not a partial object selection. */
+    public record NativeChanges(boolean fullDump,
+            ConfigurationChangesParser.ChangeSet changes) {
+        public NativeChanges {
+            Objects.requireNonNull(changes);
+            if (fullDump && (!changes.newObjects().isEmpty()
+                    || !changes.modifiedObjects().isEmpty())) {
+                throw new IllegalArgumentException("FullDump has no partial object list");
+            }
+        }
+
+        public java.util.Set<String> exactNames() {
+            var names = new java.util.LinkedHashSet<String>(changes.newObjects());
+            names.addAll(changes.modifiedObjects());
+            return java.util.Set.copyOf(names);
+        }
+    }
+
+    /** Uses only native Designer output. The source ConfigDumpInfo file is
+     * never modified; 1C may update only a PRIVATE staging copy. */
+    public NativeChanges detectNative(ChangeDetectionRequest request,
+            Path verifiedDumpInfo, BooleanSupplier cancelled)
+            throws IOException, InterruptedException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(cancelled, "cancelled");
         if (!Files.isRegularFile(request.executable(), LinkOption.NOFOLLOW_LINKS)
@@ -118,7 +139,20 @@ public final class ChangedObjectsProbe {
                         || !Files.isRegularFile(changes)) {
                     throw new IOException("1C could not produce a verified changes list");
                 }
-                return ConfigurationChangesParser.read(changes);
+                byte[] bytes = Files.readAllBytes(changes);
+                int offset = bytes.length >= 3
+                    && (bytes[0] & 0xff) == 0xef
+                    && (bytes[1] & 0xff) == 0xbb
+                    && (bytes[2] & 0xff) == 0xbf ? 3 : 0;
+                String text = new String(bytes, offset, bytes.length - offset,
+                    java.nio.charset.StandardCharsets.UTF_8);
+                if ("FullDump".equalsIgnoreCase(text.strip())) {
+                    return new NativeChanges(true,
+                        new ConfigurationChangesParser.ChangeSet(
+                            List.of(), List.of()));
+                }
+                return new NativeChanges(false,
+                    ConfigurationChangesParser.parse(text));
             } finally {
                 if (process.isAlive()) {
                     process.descendants().forEach(ProcessHandle::destroy);
@@ -133,6 +167,18 @@ public final class ChangedObjectsProbe {
         } finally {
             deleteRecursively(work);
         }
+    }
+
+    /** Legacy entry point; never reinterpret a platform FullDump as empty. */
+    public ConfigurationChangesParser.ChangeSet detect(
+            ChangeDetectionRequest request, Path verifiedDumpInfo,
+            BooleanSupplier cancelled) throws IOException, InterruptedException {
+        NativeChanges nativeResult = detectNative(
+            request, verifiedDumpInfo, cancelled);
+        if (nativeResult.fullDump()) {
+            throw new IOException("1C requires a complete configuration dump");
+        }
+        return nativeResult.changes();
     }
 
     private static boolean tooLarge(Path path) throws IOException {
