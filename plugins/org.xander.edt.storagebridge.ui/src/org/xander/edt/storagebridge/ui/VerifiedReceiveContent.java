@@ -178,8 +178,9 @@ public final class VerifiedReceiveContent {
                 project, repositoryAddress, branch, intermediaryIdentity,
                 verifiedNames);
         }
-        int remaining = ReceivePendingStore.get(
-            project, repositoryAddress, branch, intermediaryIdentity).size();
+        Set<String> remainingNames = ReceivePendingStore.get(
+            project, repositoryAddress, branch, intermediaryIdentity);
+        int remaining = remainingNames.size();
         Path report = null;
         if (unresolvedOwners > 0 || remaining > 0) {
             // Private, ephemeral report. Metadata names and file paths can
@@ -200,6 +201,18 @@ public final class VerifiedReceiveContent {
                     .append('\n')
                     .append("Still pending identities: ").append(remaining)
                     .append("\n\nFirst difference for up to 500 owners:\n");
+                detail.append("\nStill pending classical metadata identities "
+                    + "(up to 500):\n");
+                int listed = 0;
+                for (String name : new java.util.TreeSet<>(remainingNames)) {
+                    if (listed++ >= 500) break;
+                    detail.append("  ").append(name).append('\n');
+                }
+                if (remaining > 500) {
+                    detail.append("... omitted ").append(remaining - 500)
+                        .append(" remaining identities\n");
+                }
+                detail.append("\nDetailed owner/resource differences:\n");
                 for (String item : differences) {
                     detail.append(item).append('\n');
                 }
