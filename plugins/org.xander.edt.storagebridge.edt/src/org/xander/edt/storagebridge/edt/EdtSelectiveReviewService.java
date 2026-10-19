@@ -203,22 +203,12 @@ public final class EdtSelectiveReviewService {
             requireSupportedObjectTypes(explicitlySelectedObjects);
         }
         IStatus status;
-        // In a selective object dump, the top-level Ext directory belongs
-        // to Configuration, NOT to the requested Catalogs/Documents/etc.
-        // EDT 2026.2 attempts to import these special root resources and
-        // fails resolving their path for the detached target folder.
-        // Park them OUTSIDE the importer input only while converting other
-        // objects. The original XML is restored on every exit path.
-        if (initialFullReview) {
-            // Full Designer XML contains the configuration root/Ext context;
-            // do not suppress its resources or claim root comparison succeeded.
-            status = importer.work(project, xml, target, monitor);
-        } else {
-            try (var ignored = EdtRootXmlGuard.hideUnselectedRootExt(
-                    xml, explicitlySelectedObjects)) {
-                status = importer.work(project, xml, target, monitor);
-            }
-        }
+        // Native XML belongs to the 1C platform. Do NOT hide or move
+        // Configuration/Ext files just to make a selective importer succeed:
+        // that silently changes the contents of the platform patch.
+        // If the native EDT importer rejects the unaltered patch, the caller
+        // offers a separate user-approved global full comparison instead.
+        status = importer.work(project, xml, target, monitor);
         if (monitor.isCanceled()) {
             throw new java.io.InterruptedIOException("EDT XML import cancelled");
         }
