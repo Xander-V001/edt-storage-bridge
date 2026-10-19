@@ -727,6 +727,25 @@ public final class ReceiveChangesCoordinator {
                                     try {
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
+                                        int worktreeAfter = GitReceiveGuard
+                                            .workingTreeChangeCount(project);
+                                        BridgeActivator.getDefault().getLog().info(
+                                            "Native EDT merge evidence: "
+                                            + "status=" + nativeMergeStatus
+                                            + "; finished=" + nativeEvidence.finished()
+                                            + "; cancelled=" + nativeEvidence.cancelled()
+                                            + "; changedGitPaths=" + worktreeAfter
+                                            + "; sourceHeadProof="
+                                            + revisionForReview.get());
+                                        if (nativeEvidence.finished()
+                                                && worktreeAfter == 0) {
+                                            BridgeActivator.getDefault().getLog().warn(
+                                                "EDT reported a finished native merge "
+                                                + "but no Git working-tree files changed. "
+                                                + "Check whether the selected differences "
+                                                + "were applied or local variants retained; "
+                                                + "do not infer success from byte equality.");
+                                        }
                                         // The developer has already used EDT's
                                         // NATIVE compare/merge editor. Bytewise
                                         // equality against imported XML is not

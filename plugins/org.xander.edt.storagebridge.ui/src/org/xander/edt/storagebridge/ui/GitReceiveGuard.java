@@ -74,6 +74,24 @@ public final class GitReceiveGuard {
         }
     }
 
+    /**
+     * Diagnostic only: count Git-tracked/untracked changes left by EDT merge
+     * since the clean preflight. No filenames or source code are logged.
+     * A successful native merge with zero changes is not proof of failure
+     * (e.g. merge chose local values), but it explains why a text difference
+     * could remain at the next comparison.
+     */
+    public static int workingTreeChangeCount(IProject project)
+            throws IOException, InterruptedException {
+        if (project == null || project.getLocation() == null) {
+            throw new IOException("EDT worktree unavailable");
+        }
+        String porcelain = call(Path.of(project.getLocation().toOSString()),
+            "status", "--porcelain=v1", "--untracked-files=normal");
+        if (porcelain.isBlank()) return 0;
+        return (int) porcelain.lines().filter(x -> !x.isBlank()).count();
+    }
+
     public static void requireUnchanged(IProject project, Baseline before)
             throws IOException, InterruptedException {
         Baseline after = requireCleanBranch(project);
