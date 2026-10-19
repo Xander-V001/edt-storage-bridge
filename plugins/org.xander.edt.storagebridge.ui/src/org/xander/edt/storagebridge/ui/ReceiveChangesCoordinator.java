@@ -727,8 +727,20 @@ public final class ReceiveChangesCoordinator {
                                     try {
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
-                                        int worktreeAfter = GitReceiveGuard
-                                            .workingTreeChangeCount(project);
+                                        int worktreeAfter = -1;
+                                        try {
+                                            worktreeAfter = GitReceiveGuard
+                                                .workingTreeChangeCount(project);
+                                        } catch (IOException | InterruptedException ex) {
+                                            // Optional diagnostics must never
+                                            // veto a confirmed native merge.
+                                            BridgeActivator.getDefault().getLog()
+                                                .warn("Git working-tree count unavailable: "
+                                                    + ex.getClass().getSimpleName());
+                                            if (ex instanceof InterruptedException) {
+                                                Thread.currentThread().interrupt();
+                                            }
+                                        }
                                         BridgeActivator.getDefault().getLog().info(
                                             "Native EDT merge evidence: "
                                             + "status=" + nativeMergeStatus

@@ -76,7 +76,13 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
         if (!closed) {
             closed = true;
             if (manager != null && listener != null) {
-                manager.removeStatusListener(listener);
+                try {
+                    manager.removeStatusListener(listener);
+                } catch (RuntimeException ignored) {
+                    // EDT may have already disposed the comparison service.
+                    // Losing a status subscription during cleanup must not
+                    // prevent finishing and journalling a native merge.
+                }
             }
         }
     }
