@@ -113,6 +113,32 @@ public final class ReceivePendingStore {
     }
 
     /**
+     * The user confirmed that all presented changes in native EDT's finished
+     * selective merge were reviewed. The EDT comparison API does NOT return
+     * per-checkbox acceptance outcomes here, so do NOT label all remaining
+     * identities KEPT_LOCAL based on file bytes. Keep any prior, separately
+     * confirmed KEPT_LOCAL decisions untouched.
+     */
+    public static void acknowledgeNativeReviewedScope(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> presentedNames) throws BackingStoreException {
+        Objects.requireNonNull(presentedNames);
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        for (String name : presentedNames) {
+            requireObject(name);
+            if (!name.equals(node.get(ITEM + digest(name), ""))) {
+                throw new IllegalStateException(
+                    "Native EDT review scope is not in current pending journal");
+            }
+        }
+        for (String name : presentedNames) {
+            node.remove(ITEM + digest(name));
+        }
+        node.flush();
+    }
+
+    /**
      * Actual locally-retained differences, separately persisted from PENDING.
      * No further full review is forced just because a developer explicitly
      * kept committed local changes on a previously reviewed remote revision.
