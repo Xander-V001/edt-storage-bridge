@@ -30,6 +30,33 @@ public final class ReceiveCompletionPolicyTest {
     }
 
     @Test
+    public void recoveredNoDeltaReusesReviewedNativeInventoryWithoutAnotherUpdate() {
+        org.junit.Assert.assertTrue(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29437, true, true, true));
+        // Repository can receive a comment-only revision; no metadata
+        // changes means no EDT import and no repeated Designer update.
+        org.junit.Assert.assertTrue(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29438, true, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29438, false, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29438, true, false, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29438, true, true, false));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29436, 29438, true, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                29437, 29437, 29436, true, true, true));
+    }
+
+    @Test
     public void exactFullMergeMarksAppliedEvenWithNoObjectDelta() {
         assertEquals(Next.FULLY_APPLIED, ReceiveCompletionPolicy.decide(
             true, true, true, true, true, 1, Set.of(), Set.of()));
