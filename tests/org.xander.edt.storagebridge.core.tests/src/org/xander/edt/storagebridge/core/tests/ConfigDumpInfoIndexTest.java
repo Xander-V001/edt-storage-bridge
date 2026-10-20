@@ -53,6 +53,12 @@ public final class ConfigDumpInfoIndexTest {
         assertTrue(inventory.contains("Document.Акт"));
         assertTrue(inventory.contains("Document.Заказ.Form.Основная"));
         assertFalse(inventory.contains("Document.Заказ.Attribute.Номер"));
+        // Native unversioned Metadata is excluded from incremental tokens,
+        // but mandatory for a FULL source completeness check.
+        var all = ConfigDumpInfoIndex.allMetadataNames(info);
+        assertEquals(7, all.size());
+        assertTrue(all.contains("Document.Заказ.Attribute.Номер"));
+        assertTrue(all.containsAll(inventory));
 
         var exports = new ConfigurationChangesParser.ChangeSet(
             List.copyOf(inventory), List.of()).objectsToExport();
@@ -123,6 +129,7 @@ public final class ConfigDumpInfoIndexTest {
             </ConfigDumpInfo>
             """);
         assertThrows(IOException.class, () -> ConfigDumpInfoIndex.exportableNames(duplicate));
+        assertThrows(IOException.class, () -> ConfigDumpInfoIndex.allMetadataNames(duplicate));
     }
 
     @Test
