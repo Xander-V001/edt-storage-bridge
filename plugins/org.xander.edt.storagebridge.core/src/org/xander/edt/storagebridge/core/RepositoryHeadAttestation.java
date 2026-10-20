@@ -35,6 +35,21 @@ public final class RepositoryHeadAttestation {
 
     private RepositoryHeadAttestation() {}
 
+    /**
+     * A later repository commit does not invalidate an ALREADY attested and
+     * unchanged intermediary snapshot. It does invalidate any claim that the
+     * current HEAD is fully processed. Callers may acknowledge only the
+     * EARLIER staged revision, only after native EDT merge + content review.
+     */
+    public static boolean mayReviewOlderStagedSnapshot(long stagedRevision,
+            long scannedInventoryRevision, long latestHead,
+            boolean intermediaryUnchanged) {
+        return stagedRevision > 0
+            && scannedInventoryRevision == stagedRevision
+            && latestHead > stagedRevision
+            && intermediaryUnchanged;
+    }
+
     public static Result confirm(long expectedRevision, LongSupplier nativeProbe,
             BooleanSupplier cancelled, Pause pause) throws InterruptedException {
         if (expectedRevision < 1) {
