@@ -19,7 +19,8 @@ import org.xander.edt.storagebridge.platform.OutgoingStorageObjectsXml;
  *
  * Not tied to a list of metadata TYPES: source owner identity is resolved
  * by the EDT model; the platform export's actual files are independently
- * validated. Includes all native subordinate resources in Designer listFile.
+ * validated. Only root owner XML goes in Designer listFile; subordinate
+ * resources stay in the export tree for the platform to load.
  *
  * New / removed / root Configuration objects remain unsupported for WRITE;
  * they are ALWAYS present in the read-only object plan and diagnostic report.
