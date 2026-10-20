@@ -78,13 +78,18 @@ public final class ReceiveCompletionRecorder {
      * from EDT's serialized .mdo/.distr bytes.
      *
      * A reviewed native revision can advance even if some remote changes
-     * were intentionally left local. This NEVER writes APPLIED or fabricates
-     * a KEPT_LOCAL decision for an unidentified object.
+     * were intentionally left local. The explicit set of locally retained
+     * identities is persisted in KEPT_LOCAL and never inferred from bytes.
+     * This NEVER writes APPLIED.
      */
     public static int reviewedNativeSelective(IProject project,
             String repository, String intermediary, String branch,
-            long revision, Set<String> presentedPending)
-            throws BackingStoreException {
+            long revision, Set<String> presentedPending,
+            Set<String> explicitlyKeptLocal) throws BackingStoreException {
+        if (!presentedPending.containsAll(explicitlyKeptLocal)) {
+            throw new IllegalArgumentException(
+                "Unpresented native identity cannot be marked kept locally");
+        }
         requireCheckpointVersion(project, repository, intermediary, branch, revision);
         var current = ReceivePendingStore.get(
             project, repository, branch, intermediary);
@@ -102,7 +107,8 @@ public final class ReceiveCompletionRecorder {
             project, repository, intermediary, branch, revision);
         if (!current.isEmpty()) {
             ReceivePendingStore.acknowledgeNativeReviewedScope(
-                project, repository, branch, intermediary, current);
+                project, repository, branch, intermediary, current,
+                explicitlyKeptLocal);
         }
         return current.size();
     }
