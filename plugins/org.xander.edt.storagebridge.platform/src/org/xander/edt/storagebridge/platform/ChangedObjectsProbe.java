@@ -175,30 +175,7 @@ public final class ChangedObjectsProbe {
                 }
 
                 NativeChanges result = parseNativeFile(changes);
-                Path producedVersions = inspection.resolve("ConfigDumpInfo.xml");
-                if (!result.fullDump()) {
-                    if (!Files.isRegularFile(producedVersions,
-                            LinkOption.NOFOLLOW_LINKS)) {
-                        throw new IOException(
-                            "Native increment has no ConfigDumpInfo.xml");
-                    }
-                    // Only 1C generates the new version manifest.
-                    ConfigDumpInfoIndex.exportableNames(producedVersions);
-                }
-                // FullDump is a PLATFORM instruction to run a global
-                // comparison; its incomplete XML stage is not imported.
-                // A missing delta manifest in that case must not prevent
-                // the explicitly confirmed full export.
-                if (!result.fullDump() && !result.exactNames().isEmpty()) {
-                    try (var exported = Files.walk(inspection)) {
-                        if (exported.noneMatch(file -> Files.isRegularFile(file,
-                                LinkOption.NOFOLLOW_LINKS)
-                                && !file.equals(producedVersions))) {
-                            throw new IOException(
-                                "1C reported changes but did not export metadata files");
-                        }
-                    }
-                }
+                validateNativeStage(result, inspection);
                 ready = true;
                 return new NativeExport(work, inspection, result);
             } finally {
@@ -217,6 +194,76 @@ public final class ChangedObjectsProbe {
                 deleteRecursively(work);
             }
         }
+    }
+
+    /**
+     * Validate a PLATFORM-generated incremental XML stage against its separate
+     * -getChanges report. An EMPTY changes report needs no EDT XML import and
+     * is allowed to have no ConfigDumpInfo.xml. It will be checked against
+     * separately captured COMPLETE ConfigDumpInfo manifests by the receiver.
+     *
+     * A NON-EMPTY report, in contrast, must have a native, usable XML patch.
+     * Never fabricate a metadata index, invent XML or silently treat missing
+     * files as a successful selective import.
+     */
+    public static void validateNativeStage(NativeChanges changes,
+            Path inspection) throws IOException {
+        Objects.requireNonNull(changes);
+        Objects.requireNonNull(inspection);
+        if (!Files.isDirectory(inspection, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(inspection)) {
+            throw new IOException("Native incremental export directory missing");
+        }
+        if (changes.fullDump()) {
+            // A native FullDump requests a separately approved global export.
+            // An incomplete incremental XML stage is not used for EDT import.
+            return;
+        }
+        Path manifest = inspection.resolve("ConfigDumpInfo.xml");
+        boolean hasManifest = Files.isRegularFile(manifest, LinkOption.NOFOLLOW_LINKS)
+            && !Files.isSymbolicLink(manifest);
+        boolean hasMetadata;
+        try (var files = Files.walk(inspection)) {
+            hasMetadata = files.anyMatch(file ->
+                Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isSymbolicLink(file) && !file.equals(manifest));
+        }
+        if (changes.exactNames().isEmpty()) {
+            if (hasMetadata) {
+                throw new NativeStageIncomplete(
+                    "1C returned an empty changes report but emitted metadata files",
+                    0, hasManifest);
+            }
+            // The report is the native no-delta proof. The receiver also
+            // requires a previously REVIEWED baseline, unchanged full native
+            // manifest and stable storage HEAD before advancing REVIEWED.
+            // ConfigDumpInfo.xml is optional because there is no XML to import.
+            return;
+        }
+        if (!hasManifest || !hasMetadata) {
+            throw new NativeStageIncomplete(
+                "1C reported changed objects without an importable XML patch",
+                changes.exactNames().size(), hasManifest);
+        }
+        // Only the 1C platform creates the manifest; never synthesize one.
+        ConfigDumpInfoIndex.exportableNames(manifest);
+    }
+
+    /** User-safe diagnostic without source paths, object names or passwords. */
+    public static final class NativeStageIncomplete extends IOException {
+        private static final long serialVersionUID = 1L;
+        private final int reportedChanges;
+        private final boolean manifestPresent;
+
+        public NativeStageIncomplete(String reason, int reportedChanges,
+                boolean manifestPresent) {
+            super(reason);
+            this.reportedChanges = reportedChanges;
+            this.manifestPresent = manifestPresent;
+        }
+
+        public int reportedChanges() { return reportedChanges; }
+        public boolean manifestPresent() { return manifestPresent; }
     }
 
     /** Legacy list-only operation: immediately release its native patch. */
