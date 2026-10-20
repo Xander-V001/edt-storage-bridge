@@ -88,8 +88,7 @@ public final class OutgoingDesignerCommands {
                 cmd.add("Hierarchical");
                 cmd.add("-listFile");
                 cmd.add(selectedFilesList.toString());
-                cmd.add("-partial");
-            }
+                }
             case COMMIT -> {
                 cmd.add("/ConfigurationRepositoryCommit");
                 cmd.add("-Objects");
