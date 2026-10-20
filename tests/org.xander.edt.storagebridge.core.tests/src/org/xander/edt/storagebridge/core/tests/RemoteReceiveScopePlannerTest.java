@@ -87,6 +87,32 @@ public final class RemoteReceiveScopePlannerTest {
     }
 
     @Test
+    public void removedUnversionedFormIsDetectedEvenWithEmptyNativeChanges()
+            throws Exception {
+        // Real ConfigDumpInfo may carry child Metadata with no
+        // independent configVersion. A deleted form is still a deletion.
+        Path old = inventory("""
+            <Metadata name="Document.Order" id="o" configVersion="1"/>
+            <Metadata name="Document.Order.Form.Main" id="f"/>
+            <Metadata name="Document.Order.Form.Main.Form" id="ff"/>""");
+        Path now = inventory("""
+            <Metadata name="Document.Order" id="o" configVersion="2"/>""");
+        try {
+            var delta = RemoteReceiveScopePlanner.reconcileNative(
+                old, now, ChangedObjectsProbe.parseNativeText(""));
+            assertEquals(Set.of("Document.Order.Form.Main",
+                "Document.Order.Form.Main.Form"), delta.removed());
+            assertTrue(delta.requiresFullNativeComparison());
+            var full = RemoteReceiveScopePlanner.fullInventory(old, now);
+            assertEquals(delta.removed(), full.removed());
+            assertTrue(full.requiresFullNativeComparison());
+        } finally {
+            Files.deleteIfExists(old);
+            Files.deleteIfExists(now);
+        }
+    }
+
+    @Test
     public void nativeDeletedFormIsNotClassifiedAsUnindexedPresentResource()
             throws Exception {
         Path old = inventory("""
