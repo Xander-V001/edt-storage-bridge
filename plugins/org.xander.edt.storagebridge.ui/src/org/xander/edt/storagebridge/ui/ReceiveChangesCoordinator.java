@@ -1268,6 +1268,16 @@ public final class ReceiveChangesCoordinator {
                                                         fullyImportedOwners,
                                                         retainedConvertedEdt,
                                                         retainedExport.xmlDirectory());
+                                                // No owner was inspected: 0 out of 0
+                                                // is NOT evidence of an applied 1C source.
+                                                // Fail conservatively after native merge,
+                                                // without changing pending or revision data.
+                                                if (verified.checkedOwners() == 0) {
+                                                    throw new IOException(
+                                                        "EDT comparison produced no metadata "
+                                                        + "owners to verify; revision is not "
+                                                        + "eligible for acknowledgement");
+                                                }
                                                 // This is only a candidate count; inspect
                                                 // must not clear any pending objects yet.
                                                 boolean allSourceVerified =
