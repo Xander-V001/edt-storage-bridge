@@ -1400,6 +1400,92 @@ public final class ReceiveChangesCoordinator {
                                                                 + "и APPLIED не изменялся.";
                                                         }
                                                     }
+                                                } else if (!effectiveFull.get()
+                                                        && !inventoryOnly) {
+                                                    // EDT's finished native MERGE is the
+                                                    // merge evidence, not Files.mismatch
+                                                    // on separately serialized .mdo/.distr.
+                                                    // Confirm the user's review of the
+                                                    // complete SELECTIVE scope explicitly.
+                                                    var notPresented =
+                                                        new java.util.LinkedHashSet<>(pendingNow);
+                                                    notPresented.removeAll(
+                                                        selectedPendingNames);
+                                                    if (!notPresented.isEmpty()) {
+                                                        reason = "Часть ожидающих изменений "
+                                                            + "не вошла в открытое выборочное "
+                                                            + "сравнение EDT ("
+                                                            + notPresented.size()
+                                                            + "). Версия не отмечена. "
+                                                            + "Для остальных объектов можно "
+                                                            + "выполнить отдельное выборочное "
+                                                            + "сравнение.";
+                                                    } else {
+                                                        boolean accepted = confirmOnUi(shell,
+                                                            "Завершить выборочное получение 1С",
+                                                            "EDT подтвердила завершение "
+                                                            + "штатного Merge. Были показаны "
+                                                            + pendingNow.size()
+                                                            + " ожидающих изменений 1С.\n\n"
+                                                            + "Подтвердите, что вы рассмотрели "
+                                                            + "ВСЕ предъявленные изменения. "
+                                                            + "Оставлять свои локальные варианты "
+                                                            + "можно: версия будет отмечена "
+                                                            + "РАССМОТРЕННОЙ, не полностью "
+                                                            + "применённой.\n\n"
+                                                            + "Плагин не определяет выбор "
+                                                            + "отдельных галочек по различию "
+                                                            + "байтов и не будет выдумывать "
+                                                            + "список KEPT_LOCAL.");
+                                                        if (accepted) {
+                                                            finishStage.set(
+                                                                "последняя проверка HEAD 1С");
+                                                            long finalHead =
+                                                                readLatestRevisionOrUnknown(
+                                                                    executable, transport,
+                                                                    settings,
+                                                                    Duration.ofSeconds(30),
+                                                                    monitor::isCanceled);
+                                                            if (finalHead !=
+                                                                    revisionForReview.get()) {
+                                                                if (finalHead > 0) {
+                                                                    ReceiveRevisionStore.recordObserved(
+                                                                        project,
+                                                                        settings.address(),
+                                                                        intermediaryIdentity,
+                                                                        finalHead);
+                                                                }
+                                                                reason = "Версия хранилища "
+                                                                    + "изменилась или недоступна "
+                                                                    + "после Merge. REVIEWED "
+                                                                    + "не изменена.";
+                                                            } else {
+                                                                finishStage.set(
+                                                                    "фиксация рассмотренной версии");
+                                                                GitReceiveGuard
+                                                                    .requireSameBranchAndHead(
+                                                                        project, postMergeGit);
+                                                                acknowledgedCount =
+                                                                    ReceiveCompletionRecorder
+                                                                        .reviewedNativeSelective(
+                                                                            project,
+                                                                            settings.address(),
+                                                                            intermediaryIdentity,
+                                                                            branch, finalHead,
+                                                                            pendingNow);
+                                                                confirmedRevision = finalHead;
+                                                                reason = "Выборочное "
+                                                                    + "объединение завершено; "
+                                                                    + "REVIEWED = " + finalHead
+                                                                    + ". Ожидающих изменений: 0. "
+                                                                    + "APPLIED не менялся.";
+                                                            }
+                                                        } else {
+                                                            reason = "Подтверждение выборочного "
+                                                                + "объединения отменено; "
+                                                                + "PENDING сохранён.";
+                                                        }
+                                                    }
                                                 } else {
                                                 // A finished native EDT MERGE is
                                                 // NOT proof that each checkbox
