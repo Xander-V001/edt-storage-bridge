@@ -94,50 +94,6 @@ public final class ReceiveRevisionStore {
     }
 
     /**
-     * A later native HEAD may exist while a developer completes the merge of
-     * an earlier, independently attested snapshot. The coordinator MUST prove
-     * its last-scanned ConfigDumpInfo hash/revision and unchanged intermediary,
-     * a completed native merge, and explicit acceptance of local differences.
-     * This records ONLY that earlier source revision, never the newer HEAD.
-     */
-    public static void recordReviewedOlderSnapshot(IProject project,
-            String repository, String intermediary, String branch,
-            long stagedRevision, long latestObserved) throws BackingStoreException {
-        requireRevision(stagedRevision);
-        requireRevision(latestObserved);
-        if (latestObserved <= stagedRevision
-                || observed(project, repository, intermediary) != latestObserved) {
-            throw new IllegalStateException(
-                "Older review requires a separately proven newer repository HEAD");
-        }
-        var preferences = branchScope(project, repository, intermediary, branch);
-        long previous = preferences.getLong(REVIEWED, UNKNOWN);
-        if (previous > stagedRevision) {
-            throw new IllegalStateException("Repository review revision regressed");
-        }
-        preferences.putLong(REVIEWED, stagedRevision);
-        preferences.flush();
-    }
-
-    /**
-     * Persist only the provenance-proven staged source revision. The newer
-     * HEAD can remain pending independently; never upgrade to that HEAD.
-     */
-    public static void recordReviewedForSource(IProject project,
-            String repository, String intermediary, String branch,
-            long sourceRevision, long latestObserved) throws BackingStoreException {
-        if (latestObserved == sourceRevision) {
-            recordReviewed(project, repository, intermediary, branch, sourceRevision);
-        } else if (latestObserved > sourceRevision) {
-            recordReviewedOlderSnapshot(project, repository, intermediary, branch,
-                sourceRevision, latestObserved);
-        } else {
-            throw new IllegalStateException(
-                "Cannot review a future or unverified repository source revision");
-        }
-    }
-
-    /**
      * Caller MUST already have proved every remote object accepted and no
      * later remote revision was observed during the staged comparison.
      */
