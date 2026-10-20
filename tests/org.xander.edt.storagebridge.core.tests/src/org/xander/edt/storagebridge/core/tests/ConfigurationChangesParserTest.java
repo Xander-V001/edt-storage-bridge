@@ -34,6 +34,7 @@ public class ConfigurationChangesParserTest {
         assertEquals(List.of(
             "Document.Doc1",
             "Document.Doc1.Form.MainForm",
+            "Document.Doc1.Form.MainForm.Module",
             "Document.Doc1.Template.Print",
             "Document.Doc2"), changes.objectsToExport());
     }
