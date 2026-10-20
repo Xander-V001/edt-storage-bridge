@@ -216,6 +216,10 @@ Source-level corrective behavior (NOT YET built/tested in EDT):
 - The `REVIEWED` checkpoint may therefore lag behind `OBSERVED`; this
   does not update `APPLIED` or claim that new revisions were received.
   Version 29433/29434 must be discovered on the next native incremental run.
+- A pending-only retry first verifies that the intermediary has the
+  exact saved native inventory. It reuses the **previously attested** snapshot
+  revision even when the newly observed HEAD is greater; it must not
+  reinterpret the old XML as the new HEAD or re-run the repository update.
 - Missing/mismatched inventory proof, repository reset or user rejection
   still leaves remote objects pending. Nothing is forcibly cleared.
 - Large full-review inventories are now described as *journal identities*
