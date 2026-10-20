@@ -888,6 +888,12 @@ public final class ReceiveChangesCoordinator {
                                     // Otherwise a still-running merge could
                                     // read files already deleted by our job.
                                     boolean nativeTerminal = false;
+                                    // The EDT merge and the POST-merge
+                                    // attestation are separate operations.
+                                    // Preserve the failing phase without
+                                    // logging external paths or credentials.
+                                    AtomicReference<String> finishStage =
+                                        new AtomicReference<>("ожидание завершения EDT");
                                     try {
                                         var nativeEvidence =
                                             nativeMergeWitness.awaitAfterEditorClose(
@@ -930,6 +936,7 @@ public final class ReceiveChangesCoordinator {
                                                 "Native EDT merge completion unknown; "
                                                 + "staging deliberately retained");
                                         }
+                                        finishStage.set("проверка Git после Merge");
                                         GitReceiveGuard.requireSameBranchAndHead(
                                             project, git);
                                         int worktreeAfter = -1;
@@ -1007,6 +1014,7 @@ public final class ReceiveChangesCoordinator {
                                         String reason = null;
                                         long confirmedRevision = ReceiveRevisionStore.UNKNOWN;
                                         int acknowledgedCount = 0;
+                                        finishStage.set("чтение журнала ожидающих изменений");
                                         Set<String> pendingNow = ReceivePendingStore.get(
                                             project, settings.address(), branch,
                                             intermediaryIdentity);
@@ -1038,6 +1046,8 @@ public final class ReceiveChangesCoordinator {
                                             boolean allowReview = false;
                                             boolean inventoryOnly = false;
                                             if (revisionForReview.get() > 0) {
+                                                finishStage.set(
+                                                    "проверка версии хранилища после Merge");
                                                 var proof = RepositoryHeadAttestation
                                                     .confirm(revisionForReview.get(),
                                                         () -> readLatestRevisionOrUnknown(
@@ -1110,6 +1120,8 @@ public final class ReceiveChangesCoordinator {
                                                 // stayed unchanged in the IB.
                                                 // Outgoing publish still requires
                                                 // independent numeric HEAD proof.
+                                                finishStage.set(
+                                                    "повторный снимок базы-посредника после Merge");
                                                 if (intermediaryInventoryUnchanged(
                                                         journal, detect, monitor)) {
                                                     allowReview = true;
@@ -1135,6 +1147,8 @@ public final class ReceiveChangesCoordinator {
                                                 // comparison scope. Audit the
                                                 // resulting EDT files against
                                                 // the native imported source.
+                                                finishStage.set(
+                                                    "проверка файлов после Merge EDT");
                                                 Set<String> fullyImportedOwners =
                                                     effectiveFull.get()
                                                         ? EdtSelectiveReviewService
@@ -1161,6 +1175,8 @@ public final class ReceiveChangesCoordinator {
                                                         == verified.checkedOwners();
                                                 if (!inventoryOnly
                                                         && allSourceVerified) {
+                                                    finishStage.set(
+                                                        "сохранение обработанной версии хранилища");
                                                     ReceiveRevisionStore.recordReviewed(
                                                         project, settings.address(),
                                                         intermediaryIdentity, branch,
@@ -1194,6 +1210,7 @@ public final class ReceiveChangesCoordinator {
                                             }
                                         }
 
+                                        finishStage.set("чтение оставшихся изменений");
                                         Set<String> remainingPending =
                                             ReceivePendingStore.get(
                                                 project, settings.address(),
@@ -1236,19 +1253,29 @@ public final class ReceiveChangesCoordinator {
                                             report.toString());
                                         return Status.OK_STATUS;
                                     } catch (Exception ex) {
-                                        BridgeActivator.getDefault().getLog().warn(
-                                            "Native EDT merge acknowledgement failed ("
-                                            + ex.getClass().getSimpleName()
-                                            + "); unresolved objects remain pending.");
+                                        // The previous implementation logged
+                                        // ONLY 'IOException', so the same vague
+                                        // error appeared for a locked 1C base,
+                                        // an absent EDT resource and a journal
+                                        // persistence failure. Log sanitized
+                                        // own stack frames + the exact stage.
+                                        logFailure("Завершение EDT: "
+                                            + finishStage.get(), ex);
+                                        String cause = ex instanceof
+                                                ConfigVersionSnapshotRunner.SnapshotFailure
+                                            ? safeReason(ex)
+                                            : "Тип: " + ex.getClass().getSimpleName()
+                                                + "; место: " + ownFailureSite(ex);
                                         informationOnUi(shell, "Завершение объединения EDT",
-                                            "Не удалось сохранить подтверждение "
-                                            + "результата штатного объединения EDT. "
-                                            + "Изменения, для которых не завершена "
-                                            + "фиксация, остаются в журнале. "
-                                            + "Номер хранилища не выдумывается. "
-                                            + "Тип ошибки: "
-                                            + ex.getClass().getSimpleName()
-                                            + ". Подробности в журнале ошибок EDT.");
+                                            "EDT завершила операцию, но не удалось "
+                                            + "закончить проверку её результата.\n"
+                                            + "Этап: " + finishStage.get() + ".\n"
+                                            + cause + ".\n"
+                                            + "Уже применённые изменения EDT "
+                                            + "не откатываются. Неподтверждённые "
+                                            + "изменения не считаются принятыми.\n"
+                                            + "Подробности: вид «Журнал ошибок» EDT, "
+                                            + "запись Storage receive failure.");
                                         return new Status(IStatus.WARNING,
                                             "org.xander.edt.storagebridge.ui",
                                             "Подтверждение результата EDT не завершено; "
@@ -1421,6 +1448,28 @@ public final class ReceiveChangesCoordinator {
                 }
             }
         });
+    }
+
+    /**
+     * Location only, never the arbitrary exception message: native 1C/EDT
+     * messages may contain private filesystem paths or credentials.
+     */
+    private static String ownFailureSite(Throwable failure) {
+        for (Throwable current = failure; current != null;
+                current = current.getCause()) {
+            for (StackTraceElement frame : current.getStackTrace()) {
+                if (frame.getClassName().startsWith(
+                        "org.xander.edt.storagebridge.")
+                        && frame.getLineNumber() > 0) {
+                    String className = frame.getClassName();
+                    int separator = className.lastIndexOf('.');
+                    return className.substring(separator + 1) + "."
+                        + frame.getMethodName() + ":"
+                        + frame.getLineNumber();
+                }
+            }
+        }
+        return "код EDT/1С, подробности в журнале";
     }
 
     /**
