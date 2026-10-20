@@ -2394,6 +2394,17 @@ public final class ReceiveChangesCoordinator {
                       + "Перед передачей проверьте их на конфиденциальные данные. ")
                 + "Полную выгрузку плагин автоматически не запускает.";
         }
+        if (failure instanceof RepositoryUpdateRunner.UpdateFailure update) {
+            return "Команда обновления конфигурации базы-посредника 1С "
+                + "завершилась ошибкой. Состояние ИБ может быть изменено: "
+                + "повторный запуск без восстановления состояния запрещён. "
+                + (update.diagnosticsDirectory() == null
+                    ? "Локальную диагностику сохранить не удалось."
+                    : "Отчёты Конфигуратора сохранены локально: "
+                      + update.diagnosticsDirectory()
+                      + " (designer.log, stdout.txt, stderr.txt). "
+                      + "Проверьте их на конфиденциальные данные перед передачей.");
+        }
         if (failure instanceof SelectiveDumpRunner.DumpFailure dump) {
             return "Конфигуратор 1С не выполнил XML-выгрузку. "
                 + "Код завершения: " + dump.exitCode()
