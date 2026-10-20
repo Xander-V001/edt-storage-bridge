@@ -697,7 +697,7 @@ public final class ReceiveChangesCoordinator {
                         executable, transport, settings,
                         Duration.ofSeconds(30), jobProgress::isCanceled);
                     if (finalHead == observedRevision) {
-                        ReceiveRevisionStore.recordReviewed(
+                        ReceiveCompletionRecorder.reviewedNoChanges(
                             project, settings.address(), intermediaryIdentity,
                             branch, observedRevision);
                         BridgeActivator.getDefault().getLog().info(
