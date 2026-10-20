@@ -17,6 +17,8 @@ public final class ReceiveCompletionPolicy {
         FULLY_APPLIED,
         /** All incoming changes exactly matched, but global equality was NOT proven. */
         REVIEWED_EXACT_SCOPE,
+        /** The native EDT result contained no owners to inspect. */
+        AUDIT_INCOMPLETE,
         /** All remaining pending objects were presented; explicit review needed. */
         REQUIRE_USER_CONFIRMATION,
         /** At least one remote change was not covered by this comparison. */
@@ -33,6 +35,7 @@ public final class ReceiveCompletionPolicy {
             boolean nativeSourceRevisionProven,
             boolean fullProjectCoverageVerified,
             boolean allComparedOwnersIdentical,
+            int auditedOwners,
             Set<String> pendingAfterReadOnlyAudit,
             Set<String> presentedIdentities) {
         Objects.requireNonNull(pendingAfterReadOnlyAudit);
@@ -42,6 +45,10 @@ public final class ReceiveCompletionPolicy {
         }
         if (!nativeSourceRevisionProven) {
             return Next.UNPROVEN_SOURCE;
+        }
+        if (auditedOwners <= 0) {
+            // Never turn 0 of 0 matching resources into an accepted revision.
+            return Next.AUDIT_INCOMPLETE;
         }
         if (pendingAfterReadOnlyAudit.isEmpty() && allComparedOwnersIdentical) {
             // A selective patch verifies just its covered owners. In no case
