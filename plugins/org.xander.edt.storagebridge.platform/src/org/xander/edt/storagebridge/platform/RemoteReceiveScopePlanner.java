@@ -38,21 +38,22 @@ public final class RemoteReceiveScopePlanner {
     }
 
     /**
-     * Explicit initial/full review compares the current native inventory.
-     * A missing former identity is still an unresolved deletion. Never
-     * discard deletions merely because the user requested FULL comparison.
-     * Both inputs are platform-created files, not fabricated version tokens.
+     * A global comparison is a comparison SCOPE, not a list of 20k changed
+     * metadata objects. It is a fresh-baseline review, and the developer must
+     * explicitly confirm completion before a reviewed revision is saved.
+     * Only names that disappeared from the previous inventory can be
+     * recognized here; NEW/MODIFIED names come from native -getChanges.
      */
     public static Changes fullInventory(Path previousInfo, Path currentInfo)
             throws IOException {
         var current = ConfigDumpInfoIndex.exportableNames(currentInfo);
         if (previousInfo == null) {
-            return new Changes(current, Set.of(), Set.of(), true);
+            return new Changes(Set.of(), Set.of(), Set.of(), true);
         }
         var removed = new LinkedHashSet<>(
             ConfigDumpInfoIndex.exportableNames(previousInfo));
         removed.removeAll(current);
-        return new Changes(current, removed, Set.of(), true);
+        return new Changes(Set.of(), removed, Set.of(), true);
     }
 
     /**
@@ -71,7 +72,9 @@ public final class RemoteReceiveScopePlanner {
         var deleted = new LinkedHashSet<>(oldNames);
         deleted.removeAll(currentNames);
         if (nativeResult.fullDump()) {
-            return new Changes(currentNames, deleted, Set.of(), true);
+            // Designer did not provide a trustworthy item delta. Request a
+            // complete EDT review instead of fabricating 20k pending changes.
+            return new Changes(Set.of(), deleted, Set.of(), true);
         }
         var nativeNames = nativeResult.exactNames();
         var unindexed = new LinkedHashSet<>(nativeNames);
