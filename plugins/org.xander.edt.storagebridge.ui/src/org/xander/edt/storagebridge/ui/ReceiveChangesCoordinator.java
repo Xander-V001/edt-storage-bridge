@@ -829,15 +829,7 @@ public final class ReceiveChangesCoordinator {
                     + "«Полную сверку с хранилищем».");
                 return;
             }
-            // A platform patch may contain only separately developed
-            // resources, not an entire metadata owner. We pass it directly
-            // to EDT's native importer and NEVER manufacture a -listFile.
-            //
-            // An earlier PENDING review can be replayed with the native
-            // -listFile transport over EXACT known 1C names. It does not
-            // require a 23k-object full XML dump. Deletions, unknown types
-            // and truly unproven recovery still require a separately
-            // approved full review.
+            // Native 1C decides changes; full review is an explicit mode.
             boolean requiresFull = fullReview
                 || recovery || changeScopeRequiresFull.get()
                 || !absentFromRemote.isEmpty();
@@ -929,66 +921,71 @@ public final class ReceiveChangesCoordinator {
                     return result;
                 });
             } else {
-                // The native -update patch can contain ONLY a changed form
-                // payload, without the owning descriptor and its unchanged
-                // independently developed siblings. Importing such a partial
-                // owner into EDT used to fail (or offer false deletions).
-                //
-                // Use native -getChanges ONLY to discover the exact scope;
-                // export each affected COMPLETE OWNER through documented
-                // -listFile. This is still selective: other metadata owners
-                // are not exported, converted or compared.
-                phase.set("Выборочная выгрузка полных изменённых объектов 1С");
-                var listPlan = SelectiveDumpPlanner.planIncludingRelated(
+                // Follow 1C-Company/GitConverter: preserve the XML produced
+                // by native -update; complete it IN PLACE using -listFile for
+                // separately developed dependencies not already in the delta.
+                var plan = SelectiveDumpPlanner.planIncludingRelated(
                     selectedList, allCurrentMetadata);
-                if (!listPlan.deferred().isEmpty()
-                        || listPlan.exportable().isEmpty()) {
+                if (!plan.deferred().isEmpty() || plan.exportable().isEmpty()) {
                     throw new IOException(
-                        "Штатная выборочная выгрузка не покрывает "
-                        + "некоторые корневые или неподдерживаемые объекты 1С. "
-                        + "Для них требуется полная сверка.");
+                        "Корневые изменения нельзя обработать выборочно. "
+                        + "Используйте отдельную команду полной сверки.");
                 }
-                var nativeStage = nativePatch.getAndSet(null);
-                if (nativeStage != null) {
-                    nativeStage.close();
+                var list = new java.util.LinkedHashSet<>(
+                    SelectiveDumpPlanner.withImportContext(
+                        plan, allCurrentMetadata));
+                var original = nativeChangeReport.get();
+                boolean canReuseNativePatch = nativePatch.get() != null
+                    && nativePatchFailure.get() == null
+                    && !retryPendingOnly && !hadUnresolvedBefore;
+                if (canReuseNativePatch) {
+                    // The unchanged siblings, parent descriptors and import
+                    // context are supplemental; changed items are already
+                    // written by the native -update.
+                    list.removeAll(original.exactNames());
+                    var patch = nativePatch.get();
+                    phase.set("Довыгрузка зависимых объектов для импорта EDT");
+                    if (!list.isEmpty()) {
+                        new SelectiveDumpRunner().supplement(
+                            new SelectiveDumpRequest(executable, transport,
+                                List.copyOf(list), Duration.ofMinutes(30),
+                                settings.infobaseUsername(),
+                                settings.infobasePassword()),
+                            patch.xmlDirectory(), jobProgress::isCanceled);
+                    }
+                    // Transfer ownership of the COMPLETE staged native XML;
+                    // no second whole-owner export discards the patch.
+                    export = new SelectiveDumpRunner.ExportResult(
+                        patch.workingRoot(), patch.xmlDirectory());
+                    nativePatch.set(null);
+                } else {
+                    // A previous unresolved batch cannot be reconstructed
+                    // solely from today's native patch. Export those exact
+                    // pending owners once with all current dependencies.
+                    var patch = nativePatch.getAndSet(null);
+                    if (patch != null) {
+                        patch.close();
+                    }
+                    phase.set("Выборочная выгрузка накопленных изменений 1С");
+                    export = new SelectiveDumpRunner().export(
+                        new SelectiveDumpRequest(executable, transport,
+                            List.copyOf(list), Duration.ofMinutes(30),
+                            settings.infobaseUsername(),
+                            settings.infobasePassword()),
+                        jobProgress::isCanceled);
                 }
-                // Root/languages are required ONLY to make the native EDT
-                // importer understand the partial XML. They are NOT selected
-                // incoming changes in the comparison editor.
-                var importNames = SelectiveDumpPlanner.withImportContext(
-                    listPlan, allCurrentMetadata);
-                var selective = new SelectiveDumpRequest(
-                    executable, transport, importNames,
-                    Duration.ofMinutes(30),
-                    settings.infobaseUsername(), settings.infobasePassword());
-                export = progress(jobProgress, 20, monitor -> {
-                    var result = new SelectiveDumpRunner().export(
-                        selective, monitor::isCanceled);
-                    boolean stable;
-                    try {
-                        stable = intermediaryInventoryUnchanged(
-                            journal, detect, monitor);
-                    } catch (IOException | InterruptedException failure) {
-                        result.close();
-                        throw failure;
-                    }
-                    if (!stable) {
-                        result.close();
-                        throw new IOException(
-                            "База-посредник изменилась во время "
-                            + "выборочной XML-выгрузки 1С");
-                    }
-                    return result;
-                });
+                if (!intermediaryInventoryUnchanged(journal, detect, jobProgress)) {
+                    export.close();
+                    export = null;
+                    throw new IOException(
+                        "База-посредник изменилась во время выборочной выгрузки 1С");
+                }
             }
             // Converted EDT files, like native 1C XML, stay OUTSIDE Git.
             phase.set("Создание временных файлов сравнения EDT");
             conversionRoot = Files.createTempDirectory("edt-storage-edt-delta-");
             Path converted = Files.createDirectory(conversionRoot.resolve("edt"));
-            // The native patch may contain an external property without
-            // its owner descriptor. Let EDT's OWN importer decide if the
-            // patch is usable. Only if EDT refuses it, offer a separately
-            // confirmed full source. Never re-run -listFile or invent XML.
+            // EDT imports the native XML source without custom conversion.
             final AtomicReference<SelectiveDumpRunner.ExportResult> stagedExport =
                 new AtomicReference<>(export);
             final AtomicReference<Path> stagedConversion =
@@ -1002,7 +999,6 @@ public final class ReceiveChangesCoordinator {
             // must never be retried indefinitely.
             // Incoming source already used the complete-owner -listFile
             // transport. Retrying identical XML would not repair it.
-            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(true);
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
@@ -1016,130 +1012,16 @@ public final class ReceiveChangesCoordinator {
                     return descriptor;
                 } catch (EdtSelectiveReviewService.NativeEdtImportFailure
                         | EdtSelectiveReviewService.MissingConvertedOwnersException
-                        | EdtSelectiveReviewService.MissingEmbeddedLanguagesException ex) {
-                    if (effectiveFull.get()) {
-                        throw ex;
-                    }
-                    if (!selectiveTransportRetried.getAndSet(true)) {
-                        // -getChanges reports exact identities. The native
-                        // XML PATCH may still omit a parent .mdo needed
-                        // by EDT's four-argument importer. One documented
-                        // -listFile call requests only the affected owners
-                        // and separately developed native resources.
-                        var plan = SelectiveDumpPlanner.planIncludingRelated(
-                            selectedList, allCurrentMetadata);
-                        if (plan.deferred().isEmpty() && !plan.exportable().isEmpty()) {
-                            phase.set("Повторная штатная выборочная XML-выгрузка");
-                            if (!intermediaryInventoryUnchanged(
-                                    journal, detect, monitor)) {
-                                throw new IOException(
-                                    "База-посредник изменилась после получения "
-                                    + "выборочной дельты. Повторная выгрузка запрещена.");
-                            }
-                            GitReceiveGuard.requireUnchanged(project, git);
-                            cleanupQuietly(stagedExport.get(), stagedConversion.get());
-                            stagedExport.set(null);
-                            stagedConversion.set(null);
-                            var retrySource = new SelectiveDumpRunner().export(
-                                new SelectiveDumpRequest(executable, transport,
-                                    plan.exportable(), Duration.ofMinutes(30),
-                                    settings.infobaseUsername(),
-                                    settings.infobasePassword()),
-                                monitor::isCanceled);
-                            stagedExport.set(retrySource);
-                            try {
-                            // A failed first EDT import does not give the
-                            // second native export permission to work with a
-                            // different intermediary configuration.
-                            if (!intermediaryInventoryUnchanged(
-                                    journal, detect, monitor)) {
-                                throw new IOException(
-                                    "База-посредник изменилась при повторной "
-                                    + "выборочной XML-выгрузке 1С");
-                            }
-                            var retryRoot = Files.createTempDirectory(
-                                "edt-storage-edt-selective-retry-");
-                            stagedConversion.set(retryRoot);
-                            Path retryTarget = Files.createDirectory(
-                                retryRoot.resolve("edt"));
-                            try {
-                                var retried = EdtPublicServiceBridge.prepare(
-                                    project, retrySource.xmlDirectory(),
-                                    retryTarget, selectedList, false, monitor);
-                                monitor.worked(2);
-                                return retried;
-                            } catch (EdtSelectiveReviewService.NativeEdtImportFailure
-                                    | EdtSelectiveReviewService.MissingConvertedOwnersException
-                                    | EdtSelectiveReviewService.MissingEmbeddedLanguagesException
-                                    secondFailure) {
-                                BridgeActivator.getDefault().getLog().warn(
-                                    "EDT rejected both native incremental PATCH "
-                                    + "and one native selective -listFile source");
-                                // An actual binary/importer limitation: only
-                                // an explicitly approved full review remains.
-                            }
-                            } catch (Exception retryFailure) {
-                                cleanupQuietly(stagedExport.get(),
-                                    stagedConversion.get());
-                                stagedExport.set(null);
-                                stagedConversion.set(null);
-                                throw retryFailure;
-                            }
-                        }
-                    }
-                    boolean useFull = confirmOnUi(shell,
-                        "EDT не смогла открыть выборочную выгрузку 1С",
-                        "EDT не смогла преобразовать штатные выборочные "
-                        + "XML-данные в модель сравнения. Плагин ограничивает "
-                        + "повторную выгрузку одним вызовом -listFile по "
-                        + "подтверждённому списку объектов.\n\n"
-                        + "Можно отдельно разрешить ПОЛНУЮ XML-выгрузку "
-                        + "только для подготовки сравнения EDT. "
-                        + "База-посредник из хранилища повторно "
-                        + "не обновляется. Операция может занять долгое время.",
-                        "Полная сверка");
-                    if (!useFull) {
-                        // A declined full fallback must release BOTH the
-                        // original patch and any failed selective retry.
-                        // No editor has opened and PENDING remains intact.
-                        cleanupQuietly(stagedExport.get(), stagedConversion.get());
-                        stagedExport.set(null);
-                        stagedConversion.set(null);
-                        throw new InterruptedException(
-                            "Полная сверка отклонена пользователем");
-                    }
-                    // No EDT editor has opened; old converted data and
-                    // the platform patch can be safely released here.
-                    cleanupQuietly(stagedExport.get(), stagedConversion.get());
-                    stagedExport.set(null);
-                    stagedConversion.set(null);
-                    try {
-                        phase.set("Полная выгрузка после отказа импортёра EDT");
-                        var fullSource = new SelectiveDumpRunner()
-                            .exportInitialFull(
-                                new InitialFullDumpRequest(executable, transport,
-                                    Duration.ofHours(2),
-                                    settings.infobaseUsername(),
-                                    settings.infobasePassword()),
-                                monitor::isCanceled);
-                        stagedExport.set(fullSource);
-                        var tempRoot = Files.createTempDirectory(
-                            "edt-storage-edt-global-");
-                        stagedConversion.set(tempRoot);
-                        Path fullTarget = Files.createDirectory(
-                            tempRoot.resolve("edt"));
-                        effectiveFull.set(true);
-                        var descriptor = EdtPublicServiceBridge.prepare(
-                            project, fullSource.xmlDirectory(), fullTarget,
-                            List.of(), true, monitor);
-                        monitor.worked(2);
-                        return descriptor;
-                    } catch (Exception failure) {
-                        cleanupQuietly(stagedExport.get(), stagedConversion.get());
-                        stagedExport.set(null);
-                        stagedConversion.set(null);
-                        throw failure;
-                    }
+                        | EdtSelectiveReviewService.MissingEmbeddedLanguagesException failure) {
+                    // A failed selective EDT import is a diagnosis, not an
+                    // invitation to secretly run a FULL dump or repeat the
+                    // same source export. Keep PENDING and let the developer
+                    // explicitly launch Full Review when appropriate.
+                    throw new IOException(
+                        "EDT не смогла импортировать штатную выборочную XML-выгрузку. "
+                        + "Ожидающие изменения сохранены. "
+                        + "Исправьте причину импорта либо отдельно запустите "
+                        + "«Полную сверку с хранилищем».", failure);
                 }
             });
             // Persist ownership before any later work can fail. On a failed
