@@ -28,8 +28,8 @@ public record RepositoryHistoryRequest(
             throw new IllegalArgumentException("1C executable path must be absolute");
         }
         String name = Objects.requireNonNull(executable.getFileName()).toString();
-        if (!name.equalsIgnoreCase("1cv8.exe") && !name.equalsIgnoreCase("1cv8c.exe")
-                && !name.equals("1cv8") && !name.equals("1cv8c")) {
+        if (!name.equalsIgnoreCase("1cv8.exe")
+                && !name.equals("1cv8")) {
             throw new IllegalArgumentException("Expected 1C platform executable (1cv8)");
         }
         if (beginVersion != -1 && beginVersion < 1) {
