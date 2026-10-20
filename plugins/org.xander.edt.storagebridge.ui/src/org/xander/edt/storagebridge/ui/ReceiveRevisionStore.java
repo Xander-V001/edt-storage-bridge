@@ -94,6 +94,32 @@ public final class ReceiveRevisionStore {
     }
 
     /**
+     * A later native HEAD may exist while a developer completes the merge of
+     * an earlier, independently attested snapshot. The coordinator MUST prove
+     * its last-scanned ConfigDumpInfo hash/revision and unchanged intermediary,
+     * a completed native merge, and explicit acceptance of local differences.
+     * This records ONLY that earlier source revision, never the newer HEAD.
+     */
+    public static void recordReviewedOlderSnapshot(IProject project,
+            String repository, String intermediary, String branch,
+            long stagedRevision, long latestObserved) throws BackingStoreException {
+        requireRevision(stagedRevision);
+        requireRevision(latestObserved);
+        if (latestObserved <= stagedRevision
+                || observed(project, repository, intermediary) != latestObserved) {
+            throw new IllegalStateException(
+                "Older review requires a separately proven newer repository HEAD");
+        }
+        var preferences = branchScope(project, repository, intermediary, branch);
+        long previous = preferences.getLong(REVIEWED, UNKNOWN);
+        if (previous > stagedRevision) {
+            throw new IllegalStateException("Repository review revision regressed");
+        }
+        preferences.putLong(REVIEWED, stagedRevision);
+        preferences.flush();
+    }
+
+    /**
      * Caller MUST already have proved every remote object accepted and no
      * later remote revision was observed during the staged comparison.
      */
