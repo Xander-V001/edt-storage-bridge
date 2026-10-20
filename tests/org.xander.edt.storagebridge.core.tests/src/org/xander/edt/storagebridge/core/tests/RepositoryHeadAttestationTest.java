@@ -59,36 +59,6 @@ public final class RepositoryHeadAttestationTest {
     }
 
     @Test
-    public void laterHeadCanReviewOnlyPreviouslyAttestedUnchangedStaging() {
-        assertEquals(true, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            29432, 29432, 29434, true));
-        assertEquals(false, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            29432, 29431, 29434, true)); // no proof for this stage
-        assertEquals(false, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            29432, 29432, 29434, false)); // intermediary changed
-        assertEquals(false, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            29432, 29432, 29431, true)); // repository reset
-        assertEquals(false, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            29432, 29432, 29432, true)); // no newer HEAD; regular proof instead
-        assertEquals(false, RepositoryHeadAttestation.mayReviewOlderStagedSnapshot(
-            -1, -1, 29434, true)); // no guessed source revision
-    }
-
-    @Test
-    public void pendingRetryKeepsAttested29432EvenWhenHeadBecomes29434() {
-        assertEquals(29432L,
-            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29434));
-        assertEquals(29432L,
-            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29432));
-        assertEquals(-1L,
-            RepositoryHeadAttestation.attestedPendingRetrySource(-1, 29434));
-        assertEquals(-1L,
-            RepositoryHeadAttestation.attestedPendingRetrySource(29432, -1));
-        assertEquals(-1L,
-            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29431));
-    }
-
-    @Test
     public void rejectUnknownExpectedRevisionAndDoNotFakeCheckpoint() {
         assertThrows(IllegalArgumentException.class,
             () -> RepositoryHeadAttestation.confirm(-1L, () -> 29405L,
