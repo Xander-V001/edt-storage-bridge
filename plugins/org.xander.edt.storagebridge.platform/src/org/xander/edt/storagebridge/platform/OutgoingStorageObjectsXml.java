@@ -48,9 +48,9 @@ public final class OutgoingStorageObjectsXml {
         var objects = new LinkedHashSet<String>();
         for (String name : explicitClassicNames) {
             if (name == null || name.length() > 1024
-                    || !name.matches(
+                    || (!"Configuration".equals(name) && !name.matches(
                         "[\\p{L}_][\\p{L}\\p{N}_]*"
-                        + "(\\.[\\p{L}_][\\p{L}\\p{N}_]*)+")) {
+                        + "(\\.[\\p{L}_][\\p{L}\\p{N}_]*)+"))) {
                 throw new IllegalArgumentException("Invalid classic metadata FQN");
             }
             if (name.equals("Configuration")) {
