@@ -934,9 +934,29 @@ public final class ReceiveChangesCoordinator {
                         executable, transport, transportNames,
                         Duration.ofMinutes(30),
                         settings.infobaseUsername(), settings.infobasePassword());
-                    export = progress(jobProgress, 20, monitor ->
-                        new SelectiveDumpRunner().export(
-                            selective, monitor::isCanceled));
+                    export = progress(jobProgress, 20, monitor -> {
+                        var result = new SelectiveDumpRunner().export(
+                            selective, monitor::isCanceled);
+                        // A separate Designer -listFile command does not
+                        // prove the intermediary remained unchanged during
+                        // export. Compare two COMPLETE 1C-created snapshots,
+                        // never the patch manifest or opaque version tokens.
+                        boolean stable;
+                        try {
+                            stable = intermediaryInventoryUnchanged(
+                                journal, detect, monitor);
+                        } catch (IOException | InterruptedException failure) {
+                            result.close();
+                            throw failure;
+                        }
+                        if (!stable) {
+                            result.close();
+                            throw new IOException(
+                                "База-посредник изменилась во время "
+                                + "выборочной XML-выгрузки 1С");
+                        }
+                        return result;
+                    });
                 } else {
                     throw new IOException("Native 1C incremental XML was lost");
                 }
@@ -1007,6 +1027,17 @@ public final class ReceiveChangesCoordinator {
                                     settings.infobasePassword()),
                                 monitor::isCanceled);
                             stagedExport.set(retrySource);
+                            // A failed first EDT import does not give the
+                            // second native export permission to work with a
+                            // different intermediary configuration.
+                            if (!intermediaryInventoryUnchanged(
+                                    journal, detect, monitor)) {
+                                retrySource.close();
+                                stagedExport.set(null);
+                                throw new IOException(
+                                    "База-посредник изменилась при повторной "
+                                    + "выборочной XML-выгрузке 1С");
+                            }
                             var retryRoot = Files.createTempDirectory(
                                 "edt-storage-edt-selective-retry-");
                             stagedConversion.set(retryRoot);
