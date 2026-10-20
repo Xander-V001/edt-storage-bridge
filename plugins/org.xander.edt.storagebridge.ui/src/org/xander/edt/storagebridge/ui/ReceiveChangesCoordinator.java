@@ -485,10 +485,18 @@ public final class ReceiveChangesCoordinator {
                     // Compare native NAME SETS only to recognize removals.
                     // Internal 1C configVersion/id values are not our diff API.
                     RemoteReceiveScopePlanner.Changes discovered;
-                    if (selectAllRemote) {
+                    if (lastScanned == null) {
+                        // No proved baseline: compare the entire configuration,
+                        // but do not put EVERY metadata identity into pending.
+                        // Reviewed HEAD requires the finished EDT merge and
+                        // explicit developer confirmation, not a fake delta.
                         discovered = RemoteReceiveScopePlanner.fullInventory(
-                            lastScanned, remote.configDumpInfo());
+                            null, remote.configDumpInfo());
                     } else {
+                        // Even when the user requested a FULL comparison,
+                        // discover actual changed identities using native 1C.
+                        // Full review widens only the EDT comparison scope,
+                        // never the persisted pending identity list.
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");
                         // ONE native command produces both the changed-file
@@ -1307,6 +1315,17 @@ public final class ReceiveChangesCoordinator {
                                                             + "Версия пока не подтверждена.";
                                                     }
                                                 }
+                                                // Initial full review is complete only
+                                                // AFTER a proven HEAD, successful native
+                                                // merge and explicit developer acceptance.
+                                                // Merely opening the editor is never enough.
+                                                if (initialFullReview
+                                                        && confirmedRevision > 0
+                                                        && ReceivePendingStore.get(
+                                                            project, settings.address(),
+                                                            branch, intermediaryIdentity).isEmpty()) {
+                                                    journal.markInitialReviewPrepared();
+                                                }
                                                 if (!allSourceVerified) {
                                                     if (reason == null) {
                                                         reason = "EDT выполнила Merge, "
@@ -1439,11 +1458,6 @@ public final class ReceiveChangesCoordinator {
                 return null;
             });
             editorOwnsStaging = true;
-            if (initialFullReview) {
-                // Mark only once the native review editor is actually open,
-                // not after a successful dump, conversion or user cancellation.
-                journal.markInitialReviewPrepared();
-            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logFailure(phase.get(), ex);
