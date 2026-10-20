@@ -139,6 +139,9 @@ public final class SelectiveDumpFailureTest {
                 done
                 [ -f "$names" ] || exit 32
                 [ -f "$destination/OriginalChanged.xml" ] || exit 33
+                # Published GitConverter sequence: the previous index is
+                # stored outside XML while native -listFile is running.
+                [ ! -e "$destination/ConfigDumpInfo.xml" ] || exit 34
                 echo '<NativeSupplement/>' > "$destination/AdditionalForm.xml"
                 echo '<OverwrittenManifest/>' > "$destination/ConfigDumpInfo.xml"
                 exit 0
