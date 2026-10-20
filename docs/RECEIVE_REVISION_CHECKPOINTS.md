@@ -194,3 +194,37 @@ faked 'Версия' lines without accompanying metadata and duplicate headers.
 **Not built or tested in installed EDT 2026.2.** The CI workflow remains
 manual-only, requiring explicit approval. Do not raise the fully-applied
 EDT checkpoint merely because a latest version number was read.
+
+## 2026-10-20: full-inventory count and repository HEAD advancing during EDT merge
+
+Runtime observed in EDT 2026.2 after a global comparison of native snapshot
+**29432**: the repository HEAD had advanced to **29434** during the long EDT
+merge. The result window reported **23,408 pending identities** and zero
+cleared items. This is **not** 23,408 freshly changed objects: the first
+or explicit full review stores the entire native `ConfigDumpInfo.xml` name
+inventory as pending until actual EDT acceptance is verified.
+
+Source-level corrective behavior (NOT YET built/tested in EDT):
+
+- Never infer that a finished EDT merge means that the later HEAD 29434 was
+  merged. The staged XML/EDT source belongs only to previously attested 29432.
+- When a later positive HEAD appears, verify that the saved native 29432
+  attestation still matches the **same** last-scanned ConfigDumpInfo digest,
+  and recapture the existing intermediary's read-only inventory to prove it
+  unchanged. Only then may the normal post-merge audit and explicit review
+  proceed against **29432**, never against 29434.
+- The `REVIEWED` checkpoint may therefore lag behind `OBSERVED`; this
+  does not update `APPLIED` or claim that new revisions were received.
+  Version 29433/29434 must be discovered on the next native incremental run.
+- Missing/mismatched inventory proof, repository reset or user rejection
+  still leaves remote objects pending. Nothing is forcibly cleared.
+- Large full-review inventories are now described as *journal identities*
+  rather than new changes. The dialog shows at most five example names.
+  Verification groups pending identities by EDT owner once to avoid
+  quadratic repeated name-to-owner conversion.
+
+Known limitation: a previous already-closed EDT comparison does not retain
+its full native staging source, so an unfinished review cannot be certified
+retroactively from the modal result alone. A new controlled comparison may
+be required. There is still no proof from an installed EDT of the newly
+changed code. CI builds must be requested explicitly.
