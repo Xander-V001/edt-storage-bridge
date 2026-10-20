@@ -242,18 +242,24 @@ public final class ChangedObjectsProbe {
             if (hasMetadata) {
                 throw new NativeStageIncomplete(
                     "1C returned an empty changes report but emitted metadata files",
-                    0, hasManifest);
+                    changes, hasManifest);
             }
-            // The report is the native no-delta proof. The receiver also
-            // requires a previously REVIEWED baseline, unchanged full native
-            // manifest and stable storage HEAD before advancing REVIEWED.
-            // ConfigDumpInfo.xml is optional because there is no XML to import.
+            // 1C documents generation of a NEW ConfigDumpInfo.xml for
+            // -update -configDumpInfoForChanges, even when the changed-object
+            // report is empty. Do not silently waive the native output
+            // contract based on an unverified hypothesis.
+            if (!hasManifest) {
+                throw new NativeStageIncomplete(
+                    "1C emitted an empty change report but no new version manifest",
+                    changes, false);
+            }
+            ConfigDumpInfoIndex.exportableNames(manifest);
             return;
         }
         if (!hasManifest || !hasMetadata) {
             throw new NativeStageIncomplete(
                 "1C reported changed objects without an importable XML patch",
-                changes.exactNames().size(), hasManifest);
+                changes, hasManifest);
         }
         // Only the 1C platform creates the manifest; never synthesize one.
         ConfigDumpInfoIndex.exportableNames(manifest);
@@ -262,18 +268,20 @@ public final class ChangedObjectsProbe {
     /** User-safe diagnostic without source paths, object names or passwords. */
     public static final class NativeStageIncomplete extends IOException {
         private static final long serialVersionUID = 1L;
-        private final int reportedChanges;
+        private final NativeChanges nativeChanges;
         private final boolean manifestPresent;
         private Path diagnosticsDirectory;
 
-        public NativeStageIncomplete(String reason, int reportedChanges,
+        public NativeStageIncomplete(String reason, NativeChanges nativeChanges,
                 boolean manifestPresent) {
             super(reason);
-            this.reportedChanges = reportedChanges;
+            this.nativeChanges = Objects.requireNonNull(nativeChanges);
             this.manifestPresent = manifestPresent;
         }
 
-        public int reportedChanges() { return reportedChanges; }
+        /** The actual, parsed 1C change list; never inferred from the inventory. */
+        public NativeChanges nativeChanges() { return nativeChanges; }
+        public int reportedChanges() { return nativeChanges.exactNames().size(); }
         public boolean manifestPresent() { return manifestPresent; }
         public Path diagnosticsDirectory() { return diagnosticsDirectory; }
 
