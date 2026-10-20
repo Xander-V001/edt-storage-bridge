@@ -118,6 +118,68 @@ public final class SelectiveDumpFailureTest {
         }
     }
 
+    @Test
+    public void supplementalNativeListFileKeepsPreviousIncrementalXml() throws Exception {
+        Assume.assumeTrue(System.getProperty("os.name")
+            .toLowerCase(Locale.ROOT).contains("linux"));
+        Path bin = Files.createTempDirectory("fake-1c-completion-");
+        Path nativePatch = Files.createTempDirectory("native-incremental-");
+        try {
+            Path executable = bin.resolve("1cv8");
+            Files.writeString(executable, """
+                #!/bin/sh
+                destination=""
+                names=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    /DumpConfigToFiles) shift; destination="$1" ;;
+                    -listFile) shift; names="$1" ;;
+                  esac
+                  shift
+                done
+                [ -f "$names" ] || exit 32
+                [ -f "$destination/OriginalChanged.xml" ] || exit 33
+                echo '<NativeSupplement/>' > "$destination/AdditionalForm.xml"
+                exit 0
+                """, StandardCharsets.UTF_8);
+            assertTrue(executable.toFile().setExecutable(true));
+            Files.writeString(nativePatch.resolve("ConfigDumpInfo.xml"),
+                "<ConfigDumpInfo/>");
+            Files.writeString(nativePatch.resolve("OriginalChanged.xml"),
+                "<NativeChangedModule/>");
+            var request = new SelectiveDumpRequest(executable,
+                new InfobaseLocation(InfobaseLocation.Kind.FILE,
+                    "/no-real-infobase"),
+                List.of("Document.Order.Form.Main", "Configuration",
+                    "Language.Русский"), Duration.ofSeconds(10));
+            new SelectiveDumpRunner().supplement(
+                request, nativePatch, () -> false);
+            assertEquals("<NativeChangedModule/>",
+                Files.readString(nativePatch.resolve("OriginalChanged.xml")));
+            assertTrue(Files.isRegularFile(
+                nativePatch.resolve("AdditionalForm.xml")));
+            assertEquals("<ConfigDumpInfo/>",
+                Files.readString(nativePatch.resolve("ConfigDumpInfo.xml")));
+        } finally {
+            deleteTree(nativePatch);
+            deleteTree(bin);
+        }
+    }
+
+    @Test
+    public void onlyValidNativeImportRootCanBeIncludedInSelectiveList() {
+        var location = new InfobaseLocation(
+            InfobaseLocation.Kind.FILE, "/no-real-infobase");
+        var executable = Path.of("/opt/1cv8");
+        var allowed = new SelectiveDumpRequest(executable, location,
+            List.of("Document.Order", "Configuration", "Language.Русский"),
+            Duration.ofSeconds(10));
+        assertTrue(allowed.objectNames().contains("Configuration"));
+        assertThrows(IllegalArgumentException.class, () ->
+            new SelectiveDumpRequest(executable, location,
+                List.of("Language"), Duration.ofSeconds(10)));
+    }
+
     private static void deleteTree(Path directory) throws Exception {
         try (Stream<Path> paths = Files.walk(directory)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
