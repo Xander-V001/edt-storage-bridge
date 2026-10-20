@@ -629,6 +629,30 @@ public final class ReceiveChangesCoordinator {
                     + "; changes remain pending until verified review.");
             }
 
+            // If the native repository HEAD moved while Designer was
+            // updating the intermediary, this staged source cannot honestly
+            // claim the new HEAD. Never spend another long EDT merge on it.
+            // The intermediary scan and exact pending delta have already
+            // been safely journaled; a fresh receive is the next action.
+            if (!retryPendingOnly && !recovery
+                    && revisionBeforeUpdate > 0 && observedRevision > 0
+                    && revisionBeforeUpdate != observedRevision) {
+                BridgeActivator.getDefault().getLog().warn(
+                    "Receive stopped before EDT compare: repository HEAD moved"
+                    + "; before=" + revisionBeforeUpdate
+                    + "; after=" + observedRevision
+                    + "; native staged inventory remains journaled.");
+                informationOnUi(shell, "Версия хранилища изменилась",
+                    "Пока 1С обновляла базу-посредник, хранилище перешло "
+                    + "с версии " + revisionBeforeUpdate + " на "
+                    + observedRevision + ".\n\n"
+                    + "Сравнение EDT НЕ запущено: нельзя выдавать "
+                    + "устаревший снимок за актуальное обновление.\n\n"
+                    + "Для получения текущей версии запустите "
+                    + "«Получить изменения» → «Обновить и сравнить». "
+                    + "Ни один объект EDT в этой попытке не применялся.");
+                return;
+            }
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
