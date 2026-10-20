@@ -2,6 +2,11 @@ package org.xander.edt.storagebridge.platform;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Node;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -113,6 +118,142 @@ public final class SelectiveDumpRunner {
             }
             // On failure diagnostics remain for diagnosis; caller releases
             // the native XML patch, never an incomplete EDT import.
+        }
+    }
+
+    /**
+     * Complete the 1C XML root in the SAME manner as GitConverter's
+     * ВыгрузитьПоместитьКореньВОсновнойКаталог:
+     * 1) If Configuration.xml is already present, do nothing.
+     * 2) Export Configuration into its own temporary directory.
+     * 3) Copy Configuration.xml and its Ext subtree into the native delta.
+     * 4) Read Language names from the actual Configuration.xml ChildObjects;
+     *    export them separately, then copy the Languages subtree.
+     *
+     * Never copy the separate exports' ConfigDumpInfo.xml over the native
+     * incremental manifest and never manufacture configuration XML.
+     */
+    public void completeNativeRoot(SelectiveDumpRequest source,
+            Path nativeXml, BooleanSupplier cancelled)
+            throws IOException, InterruptedException {
+        if (Files.isRegularFile(nativeXml.resolve("Configuration.xml"),
+                LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        if (!Files.isDirectory(nativeXml, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(nativeXml)) {
+            throw new IOException("Native incremental XML directory missing");
+        }
+
+        var rootRequest = new SelectiveDumpRequest(
+            source.executable(), source.infobase(), List.of("Configuration"),
+            source.timeout(), source.infobaseUsername(),
+            source.infobasePassword());
+        try (var root = export(rootRequest, cancelled)) {
+            Path rootXml = root.xmlDirectory().resolve("Configuration.xml");
+            if (!Files.isRegularFile(rootXml, LinkOption.NOFOLLOW_LINKS)
+                    || Files.isSymbolicLink(rootXml)) {
+                throw new IOException("1C did not export Configuration.xml");
+            }
+            List<String> languages = languagesFromConfiguration(rootXml);
+            Files.copy(rootXml, nativeXml.resolve("Configuration.xml"),
+                StandardCopyOption.REPLACE_EXISTING);
+            copyNativeDirectory(root.xmlDirectory().resolve("Ext"),
+                nativeXml.resolve("Ext"));
+
+            if (!languages.isEmpty()) {
+                var languageRequest = new SelectiveDumpRequest(
+                    source.executable(), source.infobase(), languages,
+                    source.timeout(), source.infobaseUsername(),
+                    source.infobasePassword());
+                try (var languageDump = export(languageRequest, cancelled)) {
+                    Path languagesSource = languageDump.xmlDirectory()
+                        .resolve("Languages");
+                    if (!Files.isDirectory(languagesSource,
+                            LinkOption.NOFOLLOW_LINKS)) {
+                        throw new IOException("1C did not export Languages");
+                    }
+                    copyNativeDirectory(languagesSource,
+                        nativeXml.resolve("Languages"));
+                }
+            }
+        }
+    }
+
+    /**
+     * Read the actual 1C Configuration.xml ChildObjects/Language list, as
+     * GitConverter does; never infer language names from token inventories.
+     */
+    public static List<String> languagesFromConfiguration(Path rootXml)
+            throws IOException {
+        try {
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature(
+                "http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature(
+                "http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature(
+                "http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            var document = factory.newDocumentBuilder().parse(
+                rootXml.toFile());
+            var languages = new java.util.LinkedHashSet<String>();
+            var childObjects = document.getElementsByTagNameNS(
+                "*", "ChildObjects");
+            for (int i = 0; i < childObjects.getLength(); i++) {
+                Node parent = childObjects.item(i);
+                for (Node child = parent.getFirstChild();
+                        child != null; child = child.getNextSibling()) {
+                    String name = child.getLocalName() != null
+                        ? child.getLocalName() : child.getNodeName();
+                    if (child.getNodeType() == Node.ELEMENT_NODE
+                            && "Language".equals(name)) {
+                        String language = child.getTextContent().trim();
+                        if (!language.matches("[\\p{L}\\p{N}_]+")) {
+                            throw new IOException(
+                                "Invalid Language name in Configuration.xml");
+                        }
+                        languages.add("Language." + language);
+                    }
+                }
+            }
+            return List.copyOf(languages);
+        } catch (IOException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IOException(
+                "Cannot read native Configuration.xml languages", ex);
+        }
+    }
+
+    /** Copy only the official 1C subtree; no ConfigDumpInfo or unrelated XML. */
+    private static void copyNativeDirectory(Path source, Path target)
+            throws IOException {
+        if (!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        if (!Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(source)) {
+            throw new IOException("Invalid native 1C XML subtree");
+        }
+        try (Stream<Path> files = Files.walk(source)) {
+            for (Path file : files.toList()) {
+                if (Files.isSymbolicLink(file)) {
+                    throw new IOException("Symbolic link in native 1C XML");
+                }
+                Path destination = target.resolve(source.relativize(file));
+                if (Files.isDirectory(file, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.createDirectories(destination);
+                } else if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.copy(file, destination,
+                        StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
         }
     }
 
