@@ -160,7 +160,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     plan.verifyFiles(exportRoot);
                     plan.writeScopes(ownersXml, loadList);
                     journal.selectedScope(plan.classicOwners().size(),
-                        plan.loadFiles().size(), reviewedGit.head());
+                        plan.loadFiles().size(), sha256(plan.nativeNames().toString()));
 
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     requireHead(connection, reviewedRevision, monitor);
@@ -287,6 +287,16 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     snapshot.configDumpInfo()))) {
                 throw new IOException("Intermediary differs from reviewed repository");
             }
+        }
+    }
+
+    private static String sha256(String data) {
+        try {
+            return java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(
+                    data.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
         }
     }
 
