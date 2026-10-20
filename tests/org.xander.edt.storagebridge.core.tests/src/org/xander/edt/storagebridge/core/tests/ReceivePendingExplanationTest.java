@@ -27,6 +27,19 @@ public final class ReceivePendingExplanationTest {
     }
 
     @Test
+    public void fullInventoryDoesNotFloodResultDialogWithThousandsOfLines() {
+        Set<String> pending = java.util.stream.IntStream.range(0, 100)
+            .mapToObj(i -> "Document.Документ" + i)
+            .collect(java.util.stream.Collectors.toSet());
+        String description = ReceivePendingExplanation.format(
+            pending, Set.of(), Set.of());
+        assertTrue(description.contains("Не обработано плагином: 100"));
+        assertTrue(description.contains("и ещё 95"));
+        assertEquals(5L, description.lines()
+            .filter(line -> line.startsWith("  • ")).count());
+    }
+
+    @Test
     public void noNoiseWhenEverythingReviewed() {
         assertEquals("", ReceivePendingExplanation.format(
             Set.of(), Set.of(), Set.of()));
