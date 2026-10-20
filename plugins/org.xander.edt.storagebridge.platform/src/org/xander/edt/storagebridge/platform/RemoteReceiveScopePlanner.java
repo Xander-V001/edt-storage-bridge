@@ -49,12 +49,15 @@ public final class RemoteReceiveScopePlanner {
      */
     public static Changes fullInventory(Path previousInfo, Path currentInfo)
             throws IOException {
-        var current = ConfigDumpInfoIndex.exportableNames(currentInfo);
+        // Native Metadata entries without their own configVersion can
+        // represent deleted forms/subordinate objects too. Compare full NAME
+        // inventories only; never compare the platform's opaque version tokens.
+        var current = ConfigDumpInfoIndex.allMetadataNames(currentInfo);
         if (previousInfo == null) {
             return new Changes(Set.of(), Set.of(), Set.of(), true);
         }
         var removed = new LinkedHashSet<>(
-            ConfigDumpInfoIndex.exportableNames(previousInfo));
+            ConfigDumpInfoIndex.allMetadataNames(previousInfo));
         removed.removeAll(current);
         return new Changes(Set.of(), removed, Set.of(), true);
     }
@@ -70,15 +73,14 @@ public final class RemoteReceiveScopePlanner {
         Objects.requireNonNull(oldInfo, "oldInfo");
         Objects.requireNonNull(currentInfo, "currentInfo");
         Objects.requireNonNull(nativeResult, "nativeResult");
-        var oldNames = ConfigDumpInfoIndex.exportableNames(oldInfo);
-        var currentNames = ConfigDumpInfoIndex.exportableNames(currentInfo);
-        var deleted = new LinkedHashSet<>(oldNames);
-        deleted.removeAll(currentNames);
-        // Some forms/attributes have no independent version token. Distinguish
-        // their deletion using the complete platform-owned metadata inventory
-        // instead of labeling them "unindexed, presumably present".
+        // Native change-file reports additions/modifications; the only
+        // reliable signal for deletion is an identity disappearing from
+        // the complete platform-generated Metadata name list. Include
+        // unversioned subordinate forms and payload names.
         var oldAll = ConfigDumpInfoIndex.allMetadataNames(oldInfo);
         var currentAll = ConfigDumpInfoIndex.allMetadataNames(currentInfo);
+        var deleted = new LinkedHashSet<>(oldAll);
+        deleted.removeAll(currentAll);
         if (nativeResult.fullDump()) {
             return new Changes(Set.of(), deleted, Set.of(), true);
         }
