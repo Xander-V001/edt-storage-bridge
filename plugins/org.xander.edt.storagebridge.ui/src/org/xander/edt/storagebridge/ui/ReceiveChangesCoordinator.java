@@ -611,10 +611,7 @@ public final class ReceiveChangesCoordinator {
                         // Use native history as a conservative superset (reverts
                         // may remain), and transport using official -listFile.
                         var historyDelta = RepositoryRevisionHistoryDelta
-                            .forCurrentInventory(nativeHistoryCandidates.get(),
-                                ConfigDumpInfoIndex.allMetadataNames(lastScanned),
-                                ConfigDumpInfoIndex.allMetadataNames(
-                                    remote.configDumpInfo()));
+                            .asNativeChangedNames(nativeHistoryCandidates.get());
                         nativeChangeReport.set(historyDelta);
                         discovered = RemoteReceiveScopePlanner.reconcileNative(
                             lastScanned, remote.configDumpInfo(), historyDelta);
