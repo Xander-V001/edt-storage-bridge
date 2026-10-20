@@ -175,6 +175,22 @@ public final class ConfigVersionSnapshotRunner {
                 ".local", "share");
         Path diagnostics = base.resolve("EDTStorageBridge")
             .resolve("diagnostics");
+        return saveFailureDiagnostics(stagingRoot, exitCode, diagnostics);
+    }
+
+    /**
+     * Explicit destination is only for deterministic offline tests.
+     * Production always uses LOCALAPPDATA/EDTStorageBridge/diagnostics,
+     * not a transient Java %TEMP% location.
+     */
+    public static Path saveFailureDiagnostics(
+            Path stagingRoot, int exitCode, Path diagnostics)
+            throws IOException {
+        Objects.requireNonNull(stagingRoot);
+        Objects.requireNonNull(diagnostics);
+        if (!Files.isDirectory(stagingRoot, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("No native snapshot staging directory");
+        }
         Files.createDirectories(diagnostics);
         Path saved = Files.createDirectory(
             diagnostics.resolve("snapshot-" + UUID.randomUUID()));
