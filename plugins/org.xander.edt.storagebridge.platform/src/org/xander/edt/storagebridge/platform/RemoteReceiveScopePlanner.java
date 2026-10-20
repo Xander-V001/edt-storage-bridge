@@ -31,8 +31,11 @@ public final class RemoteReceiveScopePlanner {
         }
 
         public boolean requiresFullNativeComparison() {
+            // An unversioned attribute/form can still be exported using the
+            // native changed name and its 1C owner. Missing configVersion
+            // is NOT a reason to dump the whole configuration. Actual
+            // removals, native FullDump and Configuration/Language roots are.
             return fullReview || !removed.isEmpty()
-                || !unindexed.isEmpty()
                 || present.stream().anyMatch(RemoteReceiveScopePlanner::isRootOrLanguage);
         }
     }
