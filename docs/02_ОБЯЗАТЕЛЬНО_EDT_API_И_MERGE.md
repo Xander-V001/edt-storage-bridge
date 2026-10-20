@@ -193,6 +193,8 @@ ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
 
 **[ЗАПРЕТ]** НЕ создавать `KEPT_LOCAL` из одного `Files.mismatch` двух разных EDT-каталогов. Нужен явный выбор пользователя/достоверные записи Merge. Не заявлять, что после native FINISHED все объекты стали побайтно равны.
 
+**[КОД 2026-10-20]** После native selective `MERGE_PROCESS_FINISHED` используется штатный `org.eclipse.ui.dialogs.ListSelectionDialog` с полным списком предъявленных native `PENDING`-идентичностей. Человек отмечает изменённые объекты, которые сознательно оставил локальными полностью/частично; они сохраняются как `KEPT_LOCAL` (`ReceivePendingStore.acknowledgeNativeReviewedScope`), остальные считаются принятыми после явного ОК. Отмена не подтверждает `REVIEWED`. Настройки BSL/галочек не реконструируются по файловым байтам. API чтения `IComparisonSession.getSerializableNodeMergeSettings` документирован для 2025.2, но надёжное чтение всех таких решений до удаления сессии в EDT 2026.2 пока **[?]** и не используется для фиксации.
+
 ## 13. Дополнительные EDT API подготовки публикации (НЕ ПРИМЕНЯТЬ В RECEIVE)
 
 - `IBmModelManager`: доступ к BM-модели проекта — не XML выгрузка платформы.
