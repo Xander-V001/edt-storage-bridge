@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -76,6 +78,14 @@ public final class VerifiedReceiveContent {
         List<String> differences = new ArrayList<>();
         int matched = 0;
         int unresolvedOwners = 0;
+        // Full baseline can contain tens of thousands of independently
+        // versioned names. Map them to EDT owners ONCE, not once per owner.
+        Map<String, Set<String>> identitiesByOwner = new HashMap<>();
+        for (String pendingName : selectedPendingNames) {
+            String owner = EdtSelectiveReviewService.edtOwner(pendingName);
+            identitiesByOwner.computeIfAbsent(owner, ignored -> new LinkedHashSet<>())
+                .add(pendingName);
+        }
         // Full mode verifies ALL imported owners, not only versioned names
         // in ConfigDumpInfo.xml. Selective mode stays limited to its actual
         // selected owners; imported dependencies cannot widen acceptance.
@@ -95,12 +105,7 @@ public final class VerifiedReceiveContent {
             if (EdtOwnerContentVerifier.isExactlyApplied(
                     projectRoot, stage, owner)) {
                 matched++;
-                for (String pendingName : selectedPendingNames) {
-                    if (EdtSelectiveReviewService.edtOwner(pendingName)
-                            .equals(owner)) {
-                        verifiedNames.add(pendingName);
-                    }
-                }
+                verifiedNames.addAll(identitiesByOwner.getOrDefault(owner, Set.of()));
             } else {
                 unresolvedOwners++;
                 if (fullImportedOwners.isEmpty()) {
@@ -111,11 +116,8 @@ public final class VerifiedReceiveContent {
                     //
                     // Full receive keeps strict owner-wide equality: this
                     // branch MUST NOT invent a partially applied global HEAD.
-                    for (String pendingName : selectedPendingNames) {
-                        if (!EdtSelectiveReviewService.edtOwner(pendingName)
-                                .equals(owner)) {
-                            continue;
-                        }
+                    for (String pendingName : identitiesByOwner
+                            .getOrDefault(owner, Set.of())) {
                         if (EdtSelectedResourceVerifier.isIndependentlyApplied(
                                 projectRoot, stage, owner, pendingName)) {
                             verifiedNames.add(pendingName);
