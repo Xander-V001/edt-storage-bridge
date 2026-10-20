@@ -149,7 +149,7 @@ public final class RemoteReceiveScopePlannerTest {
     }
 
     @Test
-    public void nativeUnversionedPropertyMustNotBeSilentlyDiscarded()
+    public void nativeUnversionedPropertyCanBeReviewedSelectivelyWithoutLosingPendingIdentity()
             throws Exception {
         Path old = inventory(
             "<Metadata name=\"Document.Payroll\" id=\"p\" configVersion=\"1\"/>");
@@ -162,7 +162,7 @@ public final class RemoteReceiveScopePlannerTest {
             assertEquals(Set.of("Document.Payroll.Attribute.NewField"),
                 delta.unindexed());
             assertEquals(delta.unindexed(), delta.pendingIdentities());
-            assertTrue(delta.requiresFullNativeComparison());
+            assertFalse(delta.requiresFullNativeComparison());
         } finally {
             Files.deleteIfExists(old);
             Files.deleteIfExists(now);
