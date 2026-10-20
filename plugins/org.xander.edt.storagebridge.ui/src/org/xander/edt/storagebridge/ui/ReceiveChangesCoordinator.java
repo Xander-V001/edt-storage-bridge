@@ -931,9 +931,6 @@ public final class ReceiveChangesCoordinator {
                         "Корневые изменения нельзя обработать выборочно. "
                         + "Используйте отдельную команду полной сверки.");
                 }
-                var list = new java.util.LinkedHashSet<>(
-                    SelectiveDumpPlanner.withImportContext(
-                        plan, allCurrentMetadata));
                 var original = nativeChangeReport.get();
                 boolean canReuseNativePatch = nativePatch.get() != null
                     && nativePatchFailure.get() == null
@@ -942,13 +939,15 @@ public final class ReceiveChangesCoordinator {
                     // The unchanged siblings, parent descriptors and import
                     // context are supplemental; changed items are already
                     // written by the native -update.
-                    list.removeAll(original.exactNames());
+                    var supplement = SelectiveDumpPlanner
+                        .supplementsForNativePatch(plan, allCurrentMetadata,
+                            original.exactNames());
                     var patch = nativePatch.get();
                     phase.set("Довыгрузка зависимых объектов для импорта EDT");
-                    if (!list.isEmpty()) {
+                    if (!supplement.isEmpty()) {
                         new SelectiveDumpRunner().supplement(
                             new SelectiveDumpRequest(executable, transport,
-                                List.copyOf(list), Duration.ofMinutes(30),
+                                supplement, Duration.ofMinutes(30),
                                 settings.infobaseUsername(),
                                 settings.infobasePassword()),
                             patch.xmlDirectory(), jobProgress::isCanceled);
@@ -969,7 +968,8 @@ public final class ReceiveChangesCoordinator {
                     phase.set("Выборочная выгрузка накопленных изменений 1С");
                     export = new SelectiveDumpRunner().export(
                         new SelectiveDumpRequest(executable, transport,
-                            List.copyOf(list), Duration.ofMinutes(30),
+                            SelectiveDumpPlanner.withImportContext(
+                                plan, allCurrentMetadata), Duration.ofMinutes(30),
                             settings.infobaseUsername(),
                             settings.infobasePassword()),
                         jobProgress::isCanceled);
