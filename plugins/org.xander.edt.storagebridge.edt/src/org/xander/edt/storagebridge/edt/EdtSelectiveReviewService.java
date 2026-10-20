@@ -206,8 +206,8 @@ public final class EdtSelectiveReviewService {
         // Native XML belongs to the 1C platform. Do NOT hide or move
         // Configuration/Ext files just to make a selective importer succeed:
         // that silently changes the contents of the platform patch.
-        // If the native EDT importer rejects the unaltered patch, the caller
-        // offers a separate user-approved global full comparison instead.
+        // If EDT rejects the native selective source, stop with diagnostics.
+        // Full comparison is a separate explicit command, not a hidden retry.
         status = importer.work(project, xml, target, monitor);
         if (monitor.isCanceled()) {
             throw new java.io.InterruptedIOException("EDT XML import cancelled");
