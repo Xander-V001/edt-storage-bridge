@@ -70,7 +70,9 @@ public class RepositoryRevisionHistoryDeltaTest {
         assertTrue(nativeChanges.exactNames().contains("Документ.Заказ"));
         assertTrue(nativeChanges.exactNames()
             .contains("Обработка.Импорт.Форма.Главная"));
-        assertFalse(nativeChanges.exactNames().contains("Справочник.Старый"));
+        // Preserve a deleted native identity so the receiver selects a
+        // full EDT comparison instead of discarding the deletion.
+        assertTrue(nativeChanges.exactNames().contains("Справочник.Старый"));
     }
 
     @Test
