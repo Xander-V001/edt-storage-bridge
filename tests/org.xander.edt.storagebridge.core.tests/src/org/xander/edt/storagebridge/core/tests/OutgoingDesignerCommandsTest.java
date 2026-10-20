@@ -36,7 +36,7 @@ public final class OutgoingDesignerCommandsTest {
             assertFalse(args.contains("-NoCheck"));
             assertFalse(args.contains("-revised"));
             if (stage == OutgoingDesignerCommands.Stage.LOAD) {
-                assertTrue(args.contains("-partial"));
+                assertFalse(args.contains("-partial"));
                 assertTrue(args.contains("-listFile"));
                 assertFalse(args.contains("-Objects"));
                 assertTrue(args.contains("Hierarchical"));
