@@ -184,9 +184,8 @@ public final class ReceiveChangesCoordinator {
             String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
             AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
-        // Native 1C -getChanges also PRODUCES the incremental XML payload.
-        // Ownership transfers to export only when that patch reaches EDT;
-        // otherwise the temporary native source is closed in finally.
+        // Native -update produces XML; a separate -getChanges names changes.
+        // Supplement XML in place for EDT, then transfer cleanup ownership.
         AtomicReference<ChangedObjectsProbe.NativeExport> nativePatch =
             new AtomicReference<>();
         // A real -getChanges report can survive a failed platform XML patch.
@@ -549,10 +548,9 @@ public final class ReceiveChangesCoordinator {
                         // never the persisted pending identity list.
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");
-                        // Prefer the platform's one-pass XML patch. If 1C
-                        // produced an authoritative nonempty changes.txt but
-                        // the patch itself is unusable, retain those names and
-                        // use the separately documented -listFile transport.
+                        // Keep the native -update XML patch. A separate
+                        // -getChanges supplies exact changed identities;
+                        // -listFile supplements unchanged EDT dependencies.
                         // This NEVER repeats RepositoryUpdateCfg.
                         ChangedObjectsProbe.NativeChanges nativeDelta;
                         try {
@@ -1028,9 +1026,8 @@ public final class ReceiveChangesCoordinator {
                         + "«Полную сверку с хранилищем».", failure);
                 }
             });
-            // Persist ownership before any later work can fail. On a failed
-            // fallback, references are cleared; otherwise the final stage
-            // is retained until EDT's native merge reaches a terminal state.
+            // Keep staged native XML until EDT's merge reaches a terminal
+            // state; failures before opening the editor release it promptly.
             export = stagedExport.get();
             conversionRoot = stagedConversion.get();
             final Set<String> actualSelected = effectiveFull
