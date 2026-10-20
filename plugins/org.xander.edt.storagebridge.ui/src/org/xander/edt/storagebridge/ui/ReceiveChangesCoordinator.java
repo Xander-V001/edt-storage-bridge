@@ -293,18 +293,55 @@ public final class ReceiveChangesCoordinator {
             boolean pendingAvailable = mode == ReceiveMode.INCREMENTAL
                 && !recovery && !firstInventory && hadUnresolvedBefore;
             int pendingChoice = -1;
+            long stagedPendingRevision = ReceiveRevisionStore.UNKNOWN;
+            long latestPendingRevision = ReceiveRevisionStore.UNKNOWN;
             if (pendingAvailable) {
+                stagedPendingRevision = journal.scannedRevision();
+                latestPendingRevision = readLatestRevisionOrUnknown(
+                    executable, transport, settings, Duration.ofSeconds(30),
+                    jobProgress::isCanceled);
+                String pendingDescription = ReceiveConfirmationTexts.pendingChoices(
+                    settings.address(), settings.infobaseAddress(), fullReview);
+                if (stagedPendingRevision > 0 && latestPendingRevision > stagedPendingRevision) {
+                    pendingDescription += "\n\nВНИМАНИЕ: хранилище уже на версии "
+                        + latestPendingRevision + ", а сохранённый снимок — "
+                        + stagedPendingRevision + ". Для получения НОВОЙ версии "
+                        + "выбирайте «Обновить и сравнить». "
+                        + "Повторное сравнение НИЧЕГО не получает из хранилища.";
+                } else if (latestPendingRevision < 1) {
+                    pendingDescription += "\n\nТекущую версию хранилища пока "
+                        + "не удалось проверить. «Повторно сравнить» "
+                        + "не получает новых изменений.";
+                }
+                // An update to latest is the primary action; reopening an
+                // old pending stage must never be mistaken for that update.
                 pendingChoice = choiceOnUi(shell, "Как получить изменения?",
-                    ReceiveConfirmationTexts.pendingChoices(
-                        settings.address(), settings.infobaseAddress(), fullReview),
-                    "Повторно сравнить", "Обновить и сравнить", "Отмена");
+                    pendingDescription,
+                    "Обновить и сравнить", "Повторно сравнить старое", "Отмена");
                 if (pendingChoice != 0 && pendingChoice != 1) {
+                    return;
+                }
+                if (pendingChoice == 1
+                        && latestPendingRevision > stagedPendingRevision
+                        && stagedPendingRevision > 0
+                        && !confirmOnUi(shell, "Сравнение старой версии",
+                            "Будет повторно открыт только сохранённый снимок "
+                            + stagedPendingRevision + ". Новая версия "
+                            + latestPendingRevision + " НЕ будет получена в EDT. "
+                            + "Продолжить именно старое сравнение?",
+                            "Сравнить старое")) {
                     return;
                 }
             }
 
-            boolean canRetryPendingOnly = pendingChoice == 0;
-            boolean freshUpdateApproved = pendingChoice == 1;
+            boolean canRetryPendingOnly = pendingChoice == 1;
+            boolean freshUpdateApproved = pendingChoice == 0;
+            BridgeActivator.getDefault().getLog().info(
+                "Receive route: mode=" + mode
+                + "; retryPendingOnly=" + canRetryPendingOnly
+                + "; fullReview=" + fullReview
+                + "; pendingStageVersion=" + stagedPendingRevision
+                + "; pendingLatestVersion=" + latestPendingRevision);
             if (canRetryPendingOnly) {
                 boolean sameInventory = progress(jobProgress, 5, monitor -> {
                     phase.set("Чтение снимка базы перед повторной выгрузкой");
@@ -528,23 +565,21 @@ public final class ReceiveChangesCoordinator {
                     // repository update may establish a NEW snapshot proof.
                     journal.recordScannedRevision(observedRevision);
                     revisionForReview.set(observedRevision);
-                } else if (retryPendingOnly && !recovery) {
-                    // The read-only pending retry ALREADY checked that the
-                    // intermediary still has the saved exact ConfigDumpInfo.
-                    // HEAD may have advanced since staging: preserve the
-                    // proven OLDER source revision, not the new HEAD.
-                    long stagedRevision = RepositoryHeadAttestation
-                        .attestedPendingRetrySource(
-                            journal.scannedRevision(), observedRevision);
-                    if (stagedRevision > 0) {
-                        revisionForReview.set(stagedRevision);
-                        BridgeActivator.getDefault().getLog().info(
-                            "Pending-only retry uses attested staged source; "
-                            + "staged=" + stagedRevision
-                            + "; latest=" + observedRevision);
-                    }
+                } else if (retryPendingOnly && !recovery
+                        && journal.scannedRevision() == observedRevision) {
+                    // An earlier fresh update already tied this exact
+                    // ConfigDumpInfo inventory to the native revision.
+                    // Pending-only retry has independently verified that
+                    // the intermediary content did not change.
+                    revisionForReview.set(observedRevision);
                 }
             }
+            BridgeActivator.getDefault().getLog().info(
+                "Receive source attestation: before=" + revisionBeforeUpdate
+                + "; after=" + observedRevision
+                + "; stagedForReview=" + revisionForReview.get()
+                + "; pendingRetry=" + retryPendingOnly
+                + "; fullReview=" + fullReview);
             if (revisionForReview.get() < 1) {
                 // Never infer a reviewed version from a ConfigDumpInfo token.
                 // A report failure, a concurrent repository Commit or an
@@ -1056,8 +1091,6 @@ public final class ReceiveChangesCoordinator {
                                             // present the SAME merged objects.
                                             boolean allowReview = false;
                                             boolean inventoryOnly = false;
-                                            long newerHeadAfterSnapshot =
-                                                ReceiveRevisionStore.UNKNOWN;
                                             if (revisionForReview.get() > 0) {
                                                 finishStage.set(
                                                     "проверка версии хранилища после Merge");
@@ -1078,43 +1111,13 @@ public final class ReceiveChangesCoordinator {
                                                 }
                                                 switch (proof.state()) {
                                                     case CONFIRMED -> allowReview = true;
-                                                    case CHANGED -> {
-                                                        // Later commits do not invalidate
-                                                        // the earlier attested source,
-                                                        // but the newer HEAD remains pending.
-                                                        long staged = revisionForReview.get();
-                                                        long scanned = journal.scannedRevision();
-                                                        boolean unchanged = false;
-                                                        if (proof.observed() > staged
-                                                                && scanned == staged) {
-                                                            finishStage.set(
-                                                                "проверка снимка после смены HEAD");
-                                                            unchanged =
-                                                                intermediaryInventoryUnchanged(
-                                                                    journal, detect, monitor);
-                                                        }
-                                                        if (RepositoryHeadAttestation
-                                                                .mayReviewOlderStagedSnapshot(
-                                                                    staged, scanned,
-                                                                    proof.observed(), unchanged)) {
-                                                            allowReview = true;
-                                                            newerHeadAfterSnapshot =
-                                                                proof.observed();
-                                                            reason = "Хранилище обновилось до "
-                                                                + proof.observed()
-                                                                + " во время Merge. "
-                                                                + "Это сравнение содержит только "
-                                                                + "проверенный снимок " + staged
-                                                                + ". Новые версии не разобраны.";
-                                                        } else {
-                                                            reason = "Хранилище изменилось: "
-                                                                + "подготовлена версия " + staged
-                                                                + ", текущая " + proof.observed()
-                                                                + ". Не удалось подтвердить "
-                                                                + "неизменность снимка базы. "
-                                                                + "Записи ожидания сохранены.";
-                                                        }
-                                                    }
+                                                    case CHANGED -> reason =
+                                                        "Хранилище изменилось во время "
+                                                        + "сравнения: ожидалась версия "
+                                                        + revisionForReview.get()
+                                                        + ", текущая "
+                                                        + proof.observed()
+                                                        + ". Нужна повторная сверка.";
                                                     case CANCELLED -> reason =
                                                         "Проверка актуальной версии "
                                                         + "хранилища отменена.";
@@ -1244,13 +1247,10 @@ public final class ReceiveChangesCoordinator {
                                                     if (allSourceVerified) {
                                                         finishStage.set(
                                                             "сохранение обработанной версии хранилища");
-                                                        ReceiveRevisionStore.recordReviewedForSource(
+                                                        ReceiveRevisionStore.recordReviewed(
                                                             project, settings.address(),
                                                             intermediaryIdentity, branch,
-                                                            revisionForReview.get(),
-                                                            newerHeadAfterSnapshot > 0
-                                                                ? newerHeadAfterSnapshot
-                                                                : revisionForReview.get());
+                                                            revisionForReview.get());
                                                         confirmedRevision =
                                                             revisionForReview.get();
                                                     } else if (selectedPendingNames.containsAll(
@@ -1281,13 +1281,10 @@ public final class ReceiveChangesCoordinator {
                                                             // the user's deliberate local choices.
                                                             finishStage.set(
                                                                 "сохранение обработанной версии хранилища");
-                                                            ReceiveRevisionStore.recordReviewedForSource(
-                                                            project, settings.address(),
-                                                            intermediaryIdentity, branch,
-                                                            revisionForReview.get(),
-                                                            newerHeadAfterSnapshot > 0
-                                                                ? newerHeadAfterSnapshot
-                                                                : revisionForReview.get());
+                                                            ReceiveRevisionStore.recordReviewed(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                revisionForReview.get());
                                                             if (!remainingAfterAudit.isEmpty()) {
                                                                 ReceivePendingStore.acknowledgeReviewed(
                                                                     project, settings.address(),
@@ -1298,19 +1295,14 @@ public final class ReceiveChangesCoordinator {
                                                                 remainingAfterAudit.size();
                                                             confirmedRevision =
                                                                 revisionForReview.get();
-                                                            reason = (reason == null ? "" : reason + "\n")
-                                                                + "Версия "
-                                                                + revisionForReview.get()
-                                                                + " обработана; локальные "
-                                                                + "отличия сохранены.";
+                                                            reason = "Версия обработана, "
+                                                                + "локальные отличия сохранены.";
                                                         } else {
-                                                            reason = (reason == null ? "" : reason + "\n")
-                                                                + "Разбор отличий не "
+                                                            reason = "Разбор отличий не "
                                                                 + "подтверждён разработчиком.";
                                                         }
                                                     } else {
-                                                        reason = (reason == null ? "" : reason + "\n")
-                                                            + "Часть ожидающих изменений "
+                                                        reason = "Часть ожидающих изменений "
                                                             + "отсутствовала в открытом сравнении. "
                                                             + "Версия пока не подтверждена.";
                                                     }
@@ -1356,9 +1348,9 @@ public final class ReceiveChangesCoordinator {
                                             .append(".\nОжидают проверки: ")
                                             .append(pendingAfter).append(".");
                                         if (effectiveFull.get()) {
-                                            report.append("\nПолная сверка охватывает "
-                                                + "весь состав метаданных 1С. "
-                                                + "Число записей учёта — НЕ число новых изменений.");
+                                            report.append("\nПолная сверка: записи учёта "
+                                                + "могут охватывать весь каталог метаданных. "
+                                                + "Это не число НОВЫХ изменений.");
                                         }
                                         if (pendingAfter > 0) {
                                             report.append(
