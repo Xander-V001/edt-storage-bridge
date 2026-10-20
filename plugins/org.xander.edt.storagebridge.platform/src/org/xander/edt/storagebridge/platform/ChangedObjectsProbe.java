@@ -93,7 +93,7 @@ public final class ChangedObjectsProbe {
     }
 
     /**
-     * Retained native incremental XML and its separate -getChanges report.
+     * Retained native incremental XML and -getChanges report from one run.
      * The caller can append only the missing EDT import dependencies using
      * native -listFile; the initial -update XML is NOT discarded.
      */
