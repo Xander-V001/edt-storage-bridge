@@ -50,6 +50,15 @@ public final class RepositoryHeadAttestation {
             && intermediaryUnchanged;
     }
 
+    /**
+     * The caller has already verified the intermediary ConfigDumpInfo is
+     * byte-identical to the saved snapshot. Return that exact older staged
+     * version instead of wrongly relabeling it with a newer HEAD.
+     */
+    public static long attestedPendingRetrySource(long staged, long latest) {
+        return staged > 0 && latest >= staged ? staged : UNKNOWN;
+    }
+
     public static Result confirm(long expectedRevision, LongSupplier nativeProbe,
             BooleanSupplier cancelled, Pause pause) throws InterruptedException {
         if (expectedRevision < 1) {
