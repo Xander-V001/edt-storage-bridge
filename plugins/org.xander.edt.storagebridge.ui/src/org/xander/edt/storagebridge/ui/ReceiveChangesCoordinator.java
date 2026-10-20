@@ -1601,6 +1601,13 @@ public final class ReceiveChangesCoordinator {
                                                                     + "изменилась или недоступна "
                                                                     + "после Merge. REVIEWED "
                                                                     + "не изменена.";
+                                                            } else if (!intermediaryInventoryUnchanged(
+                                                                    journal, detect, monitor)) {
+                                                                reason = "Конфигурация базы-посредника "
+                                                                    + "изменилась во время EDT Merge. "
+                                                                    + "Несмотря на прежний HEAD "
+                                                                    + "хранилища, REVIEWED и PENDING "
+                                                                    + "не менялись.";
                                                             } else {
                                                                 finishStage.set(
                                                                     "фиксация рассмотренной версии");
