@@ -11,7 +11,8 @@ import java.util.Set;
  * not a statement that the developer forgot to select an EDT checkbox.
  */
 public final class ReceivePendingExplanation {
-    private static final int MAX_SHOWN = 20;
+    // Keep modal dialogs readable on first full scans (20k+ identities).
+    private static final int MAX_SHOWN = 5;
 
     private ReceivePendingExplanation() {}
 
