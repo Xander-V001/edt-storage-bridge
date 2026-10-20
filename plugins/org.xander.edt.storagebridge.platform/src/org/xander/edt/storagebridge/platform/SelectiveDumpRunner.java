@@ -26,6 +26,96 @@ public final class SelectiveDumpRunner {
         return exportInternal(request, cancelled);
     }
 
+    /**
+     * Complete a platform-generated -update XML patch IN PLACE, like the
+     * published 1C GitConverter: only unchanged owner dependencies are listed.
+     * The caller retains ownership of the original patch directory. We neither
+     * manufacture XML nor discard the native incremental output.
+     */
+    public void supplement(SelectiveDumpRequest request, Path nativeXml,
+            BooleanSupplier cancelled) throws IOException, InterruptedException {
+        if (cancelled.getAsBoolean()) {
+            throw new java.io.InterruptedIOException("Selective completion cancelled");
+        }
+        if (!Files.isRegularFile(request.executable(), LinkOption.NOFOLLOW_LINKS)
+                || !Files.isDirectory(nativeXml, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(nativeXml)
+                || !Files.isRegularFile(nativeXml.resolve("ConfigDumpInfo.xml"),
+                    LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Native incremental XML source not ready");
+        }
+        Path diagnostics = Files.createTempDirectory("edt-storage-supplement-");
+        boolean success = false;
+        try {
+            Path objects = diagnostics.resolve("objects.txt");
+            Path log = diagnostics.resolve("designer.txt");
+            Path output = diagnostics.resolve("stdout.txt");
+            writeNativeList(objects, request.objectNames());
+            Process process = new ProcessBuilder(
+                SelectiveDumpCommand.arguments(request,
+                    nativeXml.toRealPath(), objects, log))
+                .directory(diagnostics.toFile())
+                .redirectOutput(output.toFile())
+                .redirectErrorStream(true)
+                .start();
+            try {
+                long start = System.nanoTime();
+                while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
+                    if (cancelled.getAsBoolean()) {
+                        throw new java.io.InterruptedIOException(
+                            "Selective completion cancelled");
+                    }
+                    if (System.nanoTime() - start > request.timeout().toNanos()) {
+                        throw new DumpFailure(-1, diagnostics, "timeout");
+                    }
+                    if (tooLarge(log) || tooLarge(output)) {
+                        throw new DumpFailure(-1, diagnostics, "diagnostics limit");
+                    }
+                }
+                if (cancelled.getAsBoolean()) {
+                    throw new java.io.InterruptedIOException(
+                        "Selective completion cancelled");
+                }
+                if (process.exitValue() != 0) {
+                    throw new DumpFailure(process.exitValue(),
+                        diagnostics, "native -listFile completion");
+                }
+            } finally {
+                if (process.isAlive()) {
+                    process.descendants().forEach(ProcessHandle::destroy);
+                    process.destroy();
+                    if (!process.waitFor(1, TimeUnit.SECONDS)) {
+                        process.descendants().forEach(
+                            ProcessHandle::destroyForcibly);
+                        process.destroyForcibly();
+                        process.waitFor(1, TimeUnit.SECONDS);
+                    }
+                }
+            }
+            // Native Designer owns the manifest and all XML. Do not combine
+            // manifests by hand or treat a 0 exit code as sufficient evidence.
+            if (!Files.isRegularFile(nativeXml.resolve("ConfigDumpInfo.xml"),
+                    LinkOption.NOFOLLOW_LINKS)) {
+                throw new DumpFailure(0, diagnostics,
+                    "native incremental index lost during completion");
+            }
+            try (Stream<Path> paths = Files.walk(nativeXml)) {
+                if (paths.noneMatch(p -> Files.isRegularFile(p,
+                        LinkOption.NOFOLLOW_LINKS)
+                        && !p.equals(nativeXml.resolve("ConfigDumpInfo.xml")))) {
+                    throw new DumpFailure(0, diagnostics, "no native XML files");
+                }
+            }
+            success = true;
+        } finally {
+            if (success) {
+                deleteTree(diagnostics);
+            }
+            // On failure diagnostics remain for diagnosis; caller releases
+            // the native XML patch, never an incomplete EDT import.
+        }
+    }
+
     /** Explicit full XML source dump; never a hidden selective fallback. */
     public ExportResult exportInitialFull(InitialFullDumpRequest request,
             BooleanSupplier cancelled) throws IOException, InterruptedException {
@@ -52,16 +142,8 @@ public final class SelectiveDumpRunner {
             Path log = temporaryRoot.resolve("designer.txt");
             Path output = temporaryRoot.resolve("stdout.txt");
             if (!initialFull) {
-                // UTF-8 BOM and CRLF for native 1C -listFile.
-                String lines = String.join("\r\n",
-                    ((SelectiveDumpRequest) request).objectNames()) + "\r\n";
-                byte[] content = lines.getBytes(StandardCharsets.UTF_8);
-                byte[] withBom = new byte[content.length + 3];
-                withBom[0] = (byte) 0xEF;
-                withBom[1] = (byte) 0xBB;
-                withBom[2] = (byte) 0xBF;
-                System.arraycopy(content, 0, withBom, 3, content.length);
-                Files.write(list, withBom);
+                writeNativeList(list,
+                    ((SelectiveDumpRequest) request).objectNames());
             }
             Process process = new ProcessBuilder(initialFull
                     ? InitialFullDumpCommand.arguments(
@@ -170,6 +252,22 @@ public final class SelectiveDumpRunner {
         public Path diagnosticsDirectory() {
             return diagnosticsDirectory;
         }
+    }
+
+    /** Same UTF-8-BOM + CRLF list format for initial and supplemental dumps. */
+    private static void writeNativeList(Path path,
+            java.util.List<String> names) throws IOException {
+        if (names.isEmpty()) {
+            throw new IOException("Cannot export an empty metadata list");
+        }
+        String lines = String.join("\r\n", names) + "\r\n";
+        byte[] content = lines.getBytes(StandardCharsets.UTF_8);
+        byte[] withBom = new byte[content.length + 3];
+        withBom[0] = (byte) 0xEF;
+        withBom[1] = (byte) 0xBB;
+        withBom[2] = (byte) 0xBF;
+        System.arraycopy(content, 0, withBom, 3, content.length);
+        Files.write(path, withBom);
     }
 
     private static boolean tooLarge(Path path) throws IOException {
