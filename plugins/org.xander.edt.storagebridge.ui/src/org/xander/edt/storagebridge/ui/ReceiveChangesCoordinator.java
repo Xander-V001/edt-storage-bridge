@@ -40,7 +40,7 @@ import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
-import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
+import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
@@ -873,8 +873,23 @@ public final class ReceiveChangesCoordinator {
                     // -listFile transport for the union of exactly known
                     // current/previous native changed identities.
                     phase.set("Штатная выборочная выгрузка 1С по списку изменений");
-                    var transportNames = new ConfigurationChangesParser.ChangeSet(
-                        List.of(), selectedList).objectsToExport();
+                    // The existing native listFile planner expands changed
+                    // owners with their independently developed descendants
+                    // from the CURRENT complete ConfigDumpInfo inventory.
+                    // Unsupported Configuration/Language roots are NOT
+                    // silently discarded or marked reviewed.
+                    var listPlan = SelectiveDumpPlanner.planIncludingRelated(
+                        selectedList, currentInventory);
+                    if (!listPlan.deferred().isEmpty()) {
+                        throw new IOException(
+                            "Выборочная выгрузка содержит "
+                            + listPlan.deferred().size()
+                            + " изменений корневой конфигурации/языков, "
+                            + "которые EDT не может импортировать отдельно. "
+                            + "Они сохранены в PENDING; требуется "
+                            + "явно подтверждённая полная сверка.");
+                    }
+                    var transportNames = listPlan.exportable();
                     var unusedPatch = nativePatch.getAndSet(null);
                     if (unusedPatch != null) {
                         unusedPatch.close();
