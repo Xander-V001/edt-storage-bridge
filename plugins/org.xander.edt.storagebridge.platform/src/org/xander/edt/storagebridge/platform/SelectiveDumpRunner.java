@@ -56,8 +56,15 @@ public final class SelectiveDumpRunner {
         // before the supplementary -listFile operation. The latter may write
         // its OWN manifest, which must not replace the incremental baseline.
         Path originalManifest = diagnostics.resolve("original-ConfigDumpInfo.xml");
-        Files.copy(manifest, originalManifest);
+        boolean manifestStaged = false;
         try {
+            // GitConverter moves the baseline OUT of the incremental XML
+            // directory before calling -listFile, then returns it afterwards.
+            // Keeping it inside while Designer writes a fresh manifest is
+            // not the published sequence.
+            Files.copy(manifest, originalManifest);
+            Files.delete(manifest);
+            manifestStaged = true;
             Path objects = diagnostics.resolve("objects.txt");
             Path log = diagnostics.resolve("designer.txt");
             Path output = diagnostics.resolve("stdout.txt");
@@ -119,10 +126,12 @@ public final class SelectiveDumpRunner {
             }
             success = true;
         } finally {
-            // Restore the actual platform-generated -update manifest. This is
-            // a byte-identical copy, not a synthetic ConfigDumpInfo.xml.
-            Files.copy(originalManifest, manifest,
-                StandardCopyOption.REPLACE_EXISTING);
+            // Restore the original -update manifest whether -listFile
+            // succeeded or failed; never leave a supplemental index behind.
+            if (manifestStaged) {
+                Files.copy(originalManifest, manifest,
+                    StandardCopyOption.REPLACE_EXISTING);
+            }
             if (success) {
                 deleteTree(diagnostics);
             }
