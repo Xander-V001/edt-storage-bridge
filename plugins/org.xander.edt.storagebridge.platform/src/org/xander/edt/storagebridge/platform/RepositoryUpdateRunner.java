@@ -92,6 +92,19 @@ public final class RepositoryUpdateRunner {
                 try {
                     evidence = ConfigVersionSnapshotRunner
                         .saveFailureDiagnostics(directory, -1);
+                    // The same safe copier handles ConfigDumpInfo snapshots.
+                    // Rename the private summary to avoid mislabelling a
+                    // failed mutating UpdateCfg as a snapshot failure.
+                    Path summary = evidence.resolve("snapshot-failure.txt");
+                    Path updateSummary =
+                        evidence.resolve("repository-update-failure.txt");
+                    Files.move(summary, updateSummary);
+                    Files.writeString(updateSummary,
+                        "1C ConfigurationRepositoryUpdateCfg failed.\n"
+                        + "The intermediary may already have changed.\n"
+                        + "Never repeat UpdateCfg without recovery.\n"
+                        + "Private logs: designer.log, stdout.txt, stderr.txt.\n"
+                        + "Review confidential information before sharing.\n");
                 } catch (IOException ignored) {
                     // The original update failure stays authoritative.
                 }
