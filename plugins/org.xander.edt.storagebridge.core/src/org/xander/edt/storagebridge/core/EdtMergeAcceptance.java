@@ -27,6 +27,37 @@ public final class EdtMergeAcceptance {
         }
     }
 
+    /** Stable, explicit disposition of the whole native EDT selective scope. */
+    public record ReviewedChoices(Set<String> accepted, Set<String> keptLocal) {
+        public ReviewedChoices {
+            accepted = Set.copyOf(accepted);
+            keptLocal = Set.copyOf(keptLocal);
+            if (!java.util.Collections.disjoint(accepted, keptLocal)) {
+                throw new IllegalArgumentException(
+                    "A changed object cannot be both accepted and kept local");
+            }
+        }
+    }
+
+    /**
+     * The native comparison API does not expose a durable per-checkbox
+     * acceptance receipt after the editor has completed. The developer
+     * explicitly marks identities kept locally; every other presented
+     * identity is confirmed as reviewed/accepted. No byte comparisons.
+     */
+    public static ReviewedChoices classifyReviewed(
+            Set<String> presented, Set<String> explicitlyKeptLocal) {
+        Objects.requireNonNull(presented);
+        Objects.requireNonNull(explicitlyKeptLocal);
+        if (!presented.containsAll(explicitlyKeptLocal)) {
+            throw new IllegalArgumentException(
+                "Unpresented object cannot be marked retained locally");
+        }
+        var accepted = new LinkedHashSet<>(presented);
+        accepted.removeAll(explicitlyKeptLocal);
+        return new ReviewedChoices(accepted, explicitlyKeptLocal);
+    }
+
     /** Native EDT public status: completed means its merge operation finished. */
     public static boolean nativeMergeFinished(String status) {
         return "MERGE_PROCESS_FINISHED".equals(status);
