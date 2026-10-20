@@ -740,6 +740,17 @@ public final class ReceiveChangesCoordinator {
                     + "Ни один объект EDT в этой попытке не применялся.");
                 return;
             }
+            // Without a proven native repository revision, EDT must not
+            // waste a merge session which cannot be recorded as REVIEWED.
+            // The exact pending identities are already journaled.
+            if (revisionForReview.get() < 1) {
+                informationOnUi(shell, "Версия хранилища не подтверждена",
+                    (revisionProofIssue.get() != null
+                        ? revisionProofIssue.get() : "1С не вернула подтверждённую версию.")
+                    + "\nИзменения сохранены для повторной сверки. "
+                    + "Сравнение EDT пока не запускалось.");
+                return;
+            }
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
@@ -856,6 +867,11 @@ public final class ReceiveChangesCoordinator {
             // The exact names listed by native -getChanges can include
             // embedded properties which do not have their own version token.
             sourceCovered.addAll(unindexedNativeNames.get());
+            // A full EDT comparison includes objects removed from the remote
+            // side; the developer may review those deletions explicitly.
+            if (fullNativeComparison) {
+                sourceCovered.addAll(absentFromRemote);
+            }
             final Set<String> selectedPendingNames = Set.copyOf(sourceCovered);
             List<String> selectedList = new ArrayList<>();
             Set<String> selected;
@@ -1481,29 +1497,14 @@ public final class ReceiveChangesCoordinator {
                                                 }
                                             }
                                             if (inventoryOnly) {
-                                                // ConfigDumpInfo is NOT a HEAD.
-                                                // It proves only that the exact
-                                                // source presented in native EDT
-                                                // stayed unchanged in the IB.
-                                                // Outgoing publish still requires
-                                                // independent numeric HEAD proof.
-                                                finishStage.set(
-                                                    "повторный снимок базы-посредника после Merge");
-                                                if (intermediaryInventoryUnchanged(
-                                                        journal, detect, monitor)) {
-                                                    allowReview = true;
-                                                    reason = "Объединение подтверждено "
-                                                        + "в EDT. Снимок базы-посредника "
-                                                        + "не изменился. Номер версии "
-                                                        + "хранилища НЕ подтверждён; "
-                                                        + "отправка заблокирована "
-                                                        + "до получения номера версии.";
-                                                } else {
-                                                    reason = "Снимок конфигурации "
-                                                        + "базы-посредника изменился "
-                                                        + "во время объединения. "
-                                                        + "Записи ожидания сохранены.";
-                                                }
+                                                // ConfigDumpInfo is not native HEAD.
+                                                // A completed merge cannot be accepted
+                                                // by falling back to byte equality.
+                                                allowReview = false;
+                                                reason = "EDT завершила объединение, "
+                                                    + "но 1С не подтвердила версию "
+                                                    + "хранилища. PENDING сохранён, "
+                                                    + "REVIEWED не менялся.";
                                             }
                                             if (allowReview) {
                                                 if (pendingNow.isEmpty() && effectiveFull.get()
@@ -1580,9 +1581,7 @@ public final class ReceiveChangesCoordinator {
                                                                 + "и APPLIED не изменялся.";
                                                         }
                                                     }
-                                                } else if (!inventoryOnly
-                                                        && (!effectiveFull.get()
-                                                            || absentFromRemote.isEmpty())) {
+                                                } else if (!inventoryOnly) {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
                                                     // on separately serialized .mdo/.distr.
