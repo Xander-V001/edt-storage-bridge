@@ -906,8 +906,12 @@ public final class ReceiveChangesCoordinator {
                     // from the CURRENT complete ConfigDumpInfo inventory.
                     // Unsupported Configuration/Language roots are NOT
                     // silently discarded or marked reviewed.
+                    // The full 1C inventory also includes embedded and
+                    // independently developed resources without their own
+                    // configVersion token. Do not accidentally omit those
+                    // related Form/Template/Module transport units.
                     var listPlan = SelectiveDumpPlanner.planIncludingRelated(
-                        selectedList, currentInventory);
+                        selectedList, allCurrentMetadata);
                     if (!listPlan.deferred().isEmpty()) {
                         throw new IOException(
                             "Выборочная выгрузка содержит "
