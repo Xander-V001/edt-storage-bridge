@@ -203,6 +203,19 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
+    public void importContextIncludesConfigurationRootWhenManifestUsesRealName() {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("CommonModule.Utilities.Module"),
+            List.of("Configuration.Зарплата", "Language.Русский",
+                "CommonModule.Utilities", "CommonModule.Utilities.Module"));
+        var additions = SelectiveDumpPlanner.supplementsForNativePatch(
+            plan, List.of("Configuration.Зарплата", "Language.Русский"),
+            java.util.Set.of("CommonModule.Utilities.Module"));
+        assertEquals(List.of("CommonModule.Utilities",
+            "Configuration", "Language.Русский"), additions);
+    }
+
+    @Test
     public void officialIncrementalPatchKeepsChangedModuleAndOnlyAddsSiblings() {
         var current = List.of("Configuration", "Language.Русский",
             "Document.Order", "Document.Order.ObjectModule",
