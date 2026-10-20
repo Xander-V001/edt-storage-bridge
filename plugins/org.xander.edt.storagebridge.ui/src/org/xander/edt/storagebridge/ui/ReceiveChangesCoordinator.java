@@ -53,6 +53,7 @@ import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
+import org.xander.edt.storagebridge.platform.NativeRepositoryCompare;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
 import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
@@ -422,6 +423,55 @@ public final class ReceiveChangesCoordinator {
                     ? readLatestRevisionOrUnknown(
                         executable, transport, settings, jobProgress::isCanceled)
                     : ReceiveRevisionStore.UNKNOWN;
+
+            // Do not spend minutes updating the intermediary and merging in
+            // EDT if the native repository HEAD cannot be proved at all.
+            // Unknown HEAD must never be replaced with a ConfigDumpInfo token.
+            if (!retryPendingOnly && !recovery
+                    && revisionBeforeUpdate < 1) {
+                informationOnUi(shell, "Версия хранилища недоступна",
+                    "1С не подтвердила номер последней версии хранилища. "
+                    + "Обновление базы-посредника и сравнение EDT НЕ запускались. "
+                    + "Проверьте чтение штатного отчёта хранилища в настройках.");
+                return;
+            }
+            if (!retryPendingOnly && !recovery
+                    && previouslyReviewed > revisionBeforeUpdate) {
+                informationOnUi(shell, "Версия хранилища уменьшилась",
+                    "Ранее рассмотрена версия " + previouslyReviewed
+                    + ", а текущее хранилище сообщает "
+                    + revisionBeforeUpdate + ". Автоматическое получение "
+                    + "заблокировано: возможно, выбрано другое хранилище.");
+                return;
+            }
+            if (mode == ReceiveMode.INCREMENTAL && !retryPendingOnly && !recovery
+                    && previouslyReviewed > 0
+                    && revisionBeforeUpdate > previouslyReviewed) {
+                // The platform can compare EXACT repository versions itself.
+                // This is an independent native, read-only comparison of
+                // resulting configurations. 1C does not document TXT CompareCfg
+                // as a machine-readable list; -getChanges still supplies the
+                // selective XML identities and contents below. Never scrape
+                // CompareCfg prose and silently lose nested metadata.
+                progress(jobProgress, 8, monitor -> {
+                    phase.set("Штатное сравнение версий хранилища 1С");
+                    monitor.beginTask("Сравнение ревизий конфигурации", 1);
+                    var compared = NativeRepositoryCompare.compare(
+                        executable, transport,
+                        settings.infobaseUsername(), settings.infobasePassword(),
+                        settings.address(), settings.username(), settings.password(),
+                        previouslyReviewed, revisionBeforeUpdate,
+                        Duration.ofMinutes(10), monitor::isCanceled);
+                    BridgeActivator.getDefault().getLog().info(
+                        "Native CompareCfg completed: from="
+                        + compared.fromRevision() + "; to="
+                        + compared.toRevision() + "; reportBytes="
+                        + compared.reportBytes()
+                        + "; scope source remains native -getChanges");
+                    monitor.worked(1);
+                    return null;
+                });
+            }
 
             if (!retryPendingOnly) {
             // The PRE-update ConfigDumpInfo belongs to the intermediary only.
