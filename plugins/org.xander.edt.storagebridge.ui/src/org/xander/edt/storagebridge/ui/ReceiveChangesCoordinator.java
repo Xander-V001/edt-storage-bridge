@@ -1523,29 +1523,12 @@ public final class ReceiveChangesCoordinator {
                                                         Set<String> keptLocal =
                                                             chooseKeptLocalOnUi(shell, pendingNow);
                                                         if (keptLocal != null) {
-                                                            finishStage.set(
-                                                                "последняя проверка HEAD 1С");
                                                             long finalHead = revisionForReview.get();
-                                                            if (finalHead !=
-                                                                    revisionForReview.get()) {
-                                                                if (finalHead > 0) {
-                                                                    ReceiveRevisionStore.recordObserved(
-                                                                        project,
-                                                                        settings.address(),
-                                                                        intermediaryIdentity,
-                                                                        finalHead);
-                                                                }
-                                                                reason = "Версия хранилища "
-                                                                    + "изменилась или недоступна "
-                                                                    + "после Merge. REVIEWED "
-                                                                    + "не изменена.";
-                                                            } else if (!intermediaryInventoryUnchanged(
+                                                            if (!intermediaryInventoryUnchanged(
                                                                     journal, detect, monitor)) {
                                                                 reason = "Конфигурация базы-посредника "
                                                                     + "изменилась во время EDT Merge. "
-                                                                    + "Несмотря на прежний HEAD "
-                                                                    + "хранилища, REVIEWED и PENDING "
-                                                                    + "не менялись.";
+                                                                    + "PENDING сохранён, REVIEWED не менялся."; 
                                                             } else {
                                                                 finishStage.set(
                                                                     "фиксация рассмотренной версии");
@@ -1566,14 +1549,13 @@ public final class ReceiveChangesCoordinator {
                                                                 }
                                                                 confirmedRevision = finalHead;
                                                                 reason = (effectiveFull.get()
-                                                                        ? "Полное "
-                                                                        : "Выборочное ")
+                                                                        ? "Полное " : "Выборочное ")
                                                                     + "объединение завершено; "
                                                                     + "REVIEWED = " + finalHead
                                                                     + ". Оставлено локально: "
                                                                     + keptLocal.size()
                                                                     + ". Ожидающих изменений: 0. "
-                                                                    + "APPLIED не менялся.";
+                                                                    + "APPLIED не менялся."; 
                                                             }
                                                         } else {
                                                             reason = "Подтверждение выборочного "
