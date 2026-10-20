@@ -703,8 +703,14 @@ public final class ReceiveChangesCoordinator {
             // are deliberately deferred from SELECTIVE XML conversion.
             Set<String> currentInventory = ConfigDumpInfoIndex.exportableNames(
                 journal.lastScannedInfo());
+            // Availability is about whether a metadata identity exists in
+            // the current native 1C model, not whether it has its OWN
+            // configVersion token. Independently developed unversioned
+            // children must be eligible for a later selective retry.
+            Set<String> allCurrentMetadata = ConfigDumpInfoIndex.allMetadataNames(
+                journal.lastScannedInfo());
             Set<String> reviewCandidates = RemoteReceiveScopePlanner
-                .availableInFullReview(pending, currentInventory);
+                .availableInFullReview(pending, allCurrentMetadata);
             var notInSource = new LinkedHashSet<>(pending);
             notInSource.removeAll(reviewCandidates);
             // These exact names were emitted by 1C itself in this receive,
@@ -799,7 +805,7 @@ public final class ReceiveChangesCoordinator {
             final boolean fullNativeComparison = requiresFull;
             final Set<String> deferredDuringReview = Set.of();
             var sourceCovered = new LinkedHashSet<>(
-                ReceiveReviewScope.eligible(pending, currentInventory,
+                ReceiveReviewScope.eligible(pending, allCurrentMetadata,
                     deferredDuringReview, fullNativeComparison));
             // The exact names listed by native -getChanges can include
             // embedded properties which do not have their own version token.
