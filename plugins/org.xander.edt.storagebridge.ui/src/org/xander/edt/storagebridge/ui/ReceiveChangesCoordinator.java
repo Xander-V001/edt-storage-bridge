@@ -951,8 +951,13 @@ public final class ReceiveChangesCoordinator {
                 if (nativeStage != null) {
                     nativeStage.close();
                 }
+                // Root/languages are required ONLY to make the native EDT
+                // importer understand the partial XML. They are NOT selected
+                // incoming changes in the comparison editor.
+                var importNames = SelectiveDumpPlanner.withImportContext(
+                    listPlan, allCurrentMetadata);
                 var selective = new SelectiveDumpRequest(
-                    executable, transport, listPlan.exportable(),
+                    executable, transport, importNames,
                     Duration.ofMinutes(30),
                     settings.infobaseUsername(), settings.infobasePassword());
                 export = progress(jobProgress, 20, monitor -> {
