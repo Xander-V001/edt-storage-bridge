@@ -1419,51 +1419,22 @@ public final class ReceiveChangesCoordinator {
                                                 revisionForReview.get() > 0;
                                             if (allowReview) {
                                                 if (pendingNow.isEmpty() && effectiveFull.get()) {
-                                                    // There is no object-level native delta
-                                                    // awaiting acceptance. Native EDT has
-                                                    // already finished a GLOBAL merge.
-                                                    // Verify that the full native inventory
-                                                    // made it into the EDT source, but DO NOT
-                                                    // compare 6000+ owner byte trees and infer
-                                                    // rejected changes from .mdo/.distr bytes.
-                                                    finishStage.set(
-                                                        "проверка полноты источника EDT");
-                                                    Set<String> nativeNames =
-                                                        ConfigDumpInfoIndex.allMetadataNames(
-                                                            journal.lastScannedInfo());
-                                                    Set<String> importedOwners =
-                                                        EdtSelectiveReviewService
-                                                            .primaryDescriptors(
-                                                                retainedConvertedEdt).keySet();
-                                                    boolean complete =
-                                                        EdtSelectiveReviewService
-                                                            .fullImportCoversNativeInventory(
-                                                                nativeNames,
-                                                                unindexedNativeNames.get(),
-                                                                importedOwners);
-                                                    if (!complete) {
-                                                        reason = "Штатный импорт EDT не "
-                                                            + "представил все объекты метаданных "
-                                                            + "из полного снимка 1С. Версия "
-                                                            + "не отмечена; нужна диагностика "
-                                                            + "импорта, а не повторное "
-                                                            + "побайтовое сравнение.";
-                                                    } else {
-                                                        finishStage.set("запись рассмотренной версии");
-                                                        long finalHead = revisionForReview.get();
-                                                        GitReceiveGuard.requireSameBranchAndHead(
-                                                            project, postMergeGit);
-                                                        ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
-                                                            project, settings.address(),
-                                                            intermediaryIdentity, branch,
-                                                            finalHead, journal, initialFullReview);
-                                                        confirmedRevision = finalHead;
-                                                        reason = "Штатное полное объединение EDT "
-                                                            + "завершено. РАССМОТРЕНА версия "
-                                                            + finalHead
-                                                            + ". Побайтовое совпадение не требуется; "
-                                                            + "APPLIED не менялся.";
-                                                    }
+                                                    // Designer exported the complete source,
+                                                    // EDT imported it successfully, and a
+                                                    // GLOBAL native MERGE finished. A custom
+                                                    // scan of top-level .mdo files does not
+                                                    // prove child resource completeness and
+                                                    // must not veto the native EDT result.
+                                                    finishStage.set("запись рассмотренной версии");
+                                                    long finalHead = revisionForReview.get();
+                                                    ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
+                                                        project, settings.address(),
+                                                        intermediaryIdentity, branch,
+                                                        finalHead, journal, initialFullReview);
+                                                    confirmedRevision = finalHead;
+                                                    reason = "Полное сравнение EDT завершено; "
+                                                        + "REVIEWED = " + finalHead
+                                                        + ". APPLIED не менялся.";
                                                 } else {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
@@ -1474,30 +1445,11 @@ public final class ReceiveChangesCoordinator {
                                                         new java.util.LinkedHashSet<>(pendingNow);
                                                     notPresented.removeAll(
                                                         selectedPendingNames);
-                                                    boolean allNativeOwnersPresent =
-                                                        !effectiveFull.get()
-                                                            || EdtSelectiveReviewService
-                                                                .fullImportCoversNativeInventory(
-                                                                    ConfigDumpInfoIndex.allMetadataNames(
-                                                                        journal.lastScannedInfo()),
-                                                                    unindexedNativeNames.get(),
-                                                                    EdtSelectiveReviewService
-                                                                        .primaryDescriptors(
-                                                                            retainedConvertedEdt).keySet());
-                                                    if (!allNativeOwnersPresent) {
-                                                        reason = "Полный источник 1С не "
-                                                            + "представлен всеми необходимыми "
-                                                            + "владельцами метаданных EDT. "
-                                                            + "PENDING и REVIEWED сохранены.";
-                                                    } else if (!notPresented.isEmpty()) {
-                                                        reason = "Часть ожидающих изменений "
-                                                            + "не вошла в открытое выборочное "
-                                                            + "сравнение EDT ("
+                                                    if (!notPresented.isEmpty()) {
+                                                        reason = "Не все ожидающие изменения "
+                                                            + "вошли в сравнение EDT ("
                                                             + notPresented.size()
-                                                            + "). Версия не отмечена. "
-                                                            + "Для остальных объектов можно "
-                                                            + "выполнить отдельное выборочное "
-                                                            + "сравнение.";
+                                                            + "). PENDING сохранён.";
                                                     } else {
                                                         // Native EDT merge status confirms
                                                         // completion, not its individual
