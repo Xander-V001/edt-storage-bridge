@@ -16,9 +16,9 @@ public final class ReceiveCompletionPolicyTest {
     @Test
     public void exactSelectiveMergeIsReviewedButNeverFullyApplied() {
         assertEquals(Next.REVIEWED_EXACT_SCOPE, ReceiveCompletionPolicy.decide(
-            true, true, false, true, true, true, true, 1, Set.of(), Set.of()));
+            true, true, false, true, true, 1, Set.of(), Set.of()));
         assertEquals(Next.REVIEWED_EXACT_SCOPE, ReceiveCompletionPolicy.decide(
-            true, true, false, true, true, true, true, 1, Set.of(), Set.of("Document.Payroll")));
+            true, true, false, true, true, 1, Set.of(), Set.of("Document.Payroll")));
     }
 
     @Test
@@ -56,7 +56,7 @@ public final class ReceiveCompletionPolicyTest {
     @Test
     public void newerHeadCannotBeSilentlyAcknowledgedFromOlderSnapshot() {
         assertEquals(Next.UNPROVEN_SOURCE, ReceiveCompletionPolicy.decide(
-            true, false, true, true, true, true, 1, Set.of(), Set.of()));
+            true, false, true, true, true, 1, Set.of(), Set.of()));
     }
 
     @Test
