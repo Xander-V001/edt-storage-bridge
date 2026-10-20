@@ -28,7 +28,7 @@ public final class RepositoryVersionReportParser {
     private static final Pattern GROUP =
         Pattern.compile("^[ \t]*(Добавлены|Изменены|Удалены)[ \t]+([0-9]+)[ \t]*$");
     private static final DateTimeFormatter CREATED = DateTimeFormatter
-        .ofPattern("dd.MM.uuuu HH:mm:ss")
+        .ofPattern("dd.MM.uuuu H:mm:ss")
         .withResolverStyle(ResolverStyle.STRICT);
 
     private RepositoryVersionReportParser() {}
@@ -84,8 +84,20 @@ public final class RepositoryVersionReportParser {
             String username = field(lines, cursor++, "Пользователь:");
             String date = field(lines, cursor++, "Дата создания:");
             String time = field(lines, cursor++, "Время создания:");
-            if (cursor >= lines.length || !lines[cursor++].strip().equals("Комментарий:")) {
-                throw new IOException("Repository revision comment heading missing");
+            // Native Designer omits the entire "Комментарий:" heading
+            // when a revision has no comment. Only accept that variation
+            // if the next nonblank line is a structured change group.
+            if (cursor < lines.length
+                    && lines[cursor].strip().equals("Комментарий:")) {
+                cursor++;
+            } else {
+                int next = cursor;
+                while (next < lines.length && lines[next].isBlank()) {
+                    next++;
+                }
+                if (next >= lines.length || !GROUP.matcher(lines[next]).matches()) {
+                    throw new IOException("Repository revision comment heading missing");
+                }
             }
 
             LocalDateTime created;
