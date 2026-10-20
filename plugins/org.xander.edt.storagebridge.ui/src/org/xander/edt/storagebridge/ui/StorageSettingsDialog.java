@@ -1,6 +1,7 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
+import java.nio.file.Path;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.equinox.security.storage.StorageException;
@@ -210,6 +211,16 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             "Только чтение последней версии через штатный отчёт 1С. "
             + "XML не выгружается, рабочий проект EDT не изменяется.");
         refreshVersionsButton.addListener(SWT.Selection, event -> refreshVersions());
+        Button resetReceive = new Button(revisions, SWT.PUSH);
+        resetReceive.setText("Очистить историю получения…");
+        resetReceive.setLayoutData(new GridData(
+            SWT.LEFT, SWT.CENTER, false, false, 2, 1));
+        resetReceive.setEnabled(saved != null && activeBranch != null);
+        resetReceive.setToolTipText(
+            "Архивировать и очистить только состояние получения этого проекта, "
+            + "хранилища и текущей ветки. Настройки подключения, Git и база 1С "
+            + "не затрагиваются.");
+        resetReceive.addListener(SWT.Selection, event -> resetReceiveHistory());
 
         Label note = new Label(content, SWT.WRAP);
         note.setText("Получение обновит только существующую базу хранилища "
@@ -294,6 +305,44 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     setErrorMessage(reason);
                 }
             });
+    }
+
+    private void resetReceiveHistory() {
+        if (saved == null || activeBranch == null) {
+            setErrorMessage("Нет сохранённого подключения или ветки Git.");
+            return;
+        }
+        // Do not silently retarget the reset to edited but unsaved fields.
+        boolean proceed = org.eclipse.jface.dialogs.MessageDialog.openConfirm(
+            getShell(), "Очистка истории получения",
+            "Удалить из активного учёта старые снимки, версии и ожидающие "
+            + "объекты только этого проекта и ветки «" + activeBranch + "»?\n\n"
+            + "Перед удалением плагин создаст резервную копию в рабочей "
+            + "области EDT. Настройки подключения и пароли сохранятся.\n\n"
+            + "После очистки потребуется НОВАЯ полная сверка с актуальным "
+            + "хранилищем. Старое сравнение не подтвердится автоматически.");
+        if (!proceed) return;
+        try {
+            Path backup = ReceiveStateMaintenance.archiveAndReset(
+                project, saved, activeBranch);
+            observedRevisionLabel.setText("Не определена");
+            appliedRevisionLabel.setText("Не определена");
+            setErrorMessage(null);
+            setMessage("История получения очищена. Резервная копия: "
+                + backup + ". Для новой исходной точки выполните полную сверку.");
+            org.eclipse.jface.dialogs.MessageDialog.openInformation(
+                getShell(), "История получения очищена",
+                "Резервная копия сохранена локально:\n"
+                    + backup + "\n\nТеперь запустите полную сверку "
+                    + "с актуальным хранилищем.");
+        } catch (Exception e) {
+            setErrorMessage("История не очищена полностью либо обнаружен "
+                + "незавершённый журнал. Не запускайте повторное получение "
+                + "до проверки журнала EDT и резервной копии.");
+            BridgeActivator.getDefault().getLog().error(
+                "Receive history reset failed: "
+                + e.getClass().getSimpleName());
+        }
     }
 
     private static String formatVersion(long version) {
