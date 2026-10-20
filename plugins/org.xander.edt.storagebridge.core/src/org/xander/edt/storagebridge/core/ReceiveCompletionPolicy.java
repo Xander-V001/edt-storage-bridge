@@ -15,6 +15,8 @@ public final class ReceiveCompletionPolicy {
     public enum Next {
         /** Project exactly matches the complete native source, no debt. */
         FULLY_APPLIED,
+        /** All incoming changes exactly matched, but global equality was NOT proven. */
+        REVIEWED_EXACT_SCOPE,
         /** All remaining pending objects were presented; explicit review needed. */
         REQUIRE_USER_CONFIRMATION,
         /** At least one remote change was not covered by this comparison. */
@@ -29,7 +31,8 @@ public final class ReceiveCompletionPolicy {
 
     public static Next decide(boolean nativeMergeFinished,
             boolean nativeSourceRevisionProven,
-            boolean sourceCompletelyIdentical,
+            boolean fullProjectCoverageVerified,
+            boolean allComparedOwnersIdentical,
             Set<String> pendingAfterReadOnlyAudit,
             Set<String> presentedIdentities) {
         Objects.requireNonNull(pendingAfterReadOnlyAudit);
@@ -40,8 +43,11 @@ public final class ReceiveCompletionPolicy {
         if (!nativeSourceRevisionProven) {
             return Next.UNPROVEN_SOURCE;
         }
-        if (pendingAfterReadOnlyAudit.isEmpty() && sourceCompletelyIdentical) {
-            return Next.FULLY_APPLIED;
+        if (pendingAfterReadOnlyAudit.isEmpty() && allComparedOwnersIdentical) {
+            // A selective patch verifies just its covered owners. In no case
+            // does that establish equality of the entire EDT configuration.
+            return fullProjectCoverageVerified
+                ? Next.FULLY_APPLIED : Next.REVIEWED_EXACT_SCOPE;
         }
         if (!presentedIdentities.containsAll(pendingAfterReadOnlyAudit)) {
             return Next.PARTIAL;
