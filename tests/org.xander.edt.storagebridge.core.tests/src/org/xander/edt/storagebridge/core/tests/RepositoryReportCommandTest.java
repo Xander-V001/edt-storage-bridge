@@ -166,6 +166,42 @@ public class RepositoryReportCommandTest {
     }
 
     @Test
+    public void native1cReportWithSingleDigitHourReturns29431() throws Exception {
+        // A real October 2026 Designer report used '9:29:53', not '09:29:53'.
+        // Use a synthetic endpoint/user to avoid committing personal data.
+        String report = """
+            Отчет по версиям хранилища:\ttcp://example.invalid:1742/Payroll
+            Дата отчета:\t20.10.2026
+            Время отчета:\t9:35:05
+
+            Версия:\t29431
+            Версия конфигурации:\t5.0.114.1
+            Пользователь:\tDeveloper
+            Дата создания:\t20.10.2026
+            Время создания:\t9:29:53
+
+            \tИзменены\t1
+            \tОбщаяФорма.ИнтеграцияССервисомКабинетСотрудника
+            """;
+        assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(report));
+        assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(
+            report.replace("Время отчета:\t9:35:05", "Время отчета:\t9:35:20")));
+        assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(
+            report.getBytes(java.nio.charset.Charset.forName("windows-1251"))));
+        assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(
+            report.replace("Время создания:\t9:29:53",
+                "Время создания:\t09:29:53")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                report.replace("Время создания:\t9:29:53",
+                    "Время создания:\t25:29:53")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryLatestRevisionReader.parseLatest(
+                report.replace("Время создания:\t9:29:53",
+                    "Время создания:\t9:99:53")));
+    }
+
+    @Test
     public void nativeBatchReportAcceptsValidatedWindowsAndUnicodeEncodings()
             throws Exception {
         byte[] cp1251 = REAL_REPORT_SHAPE.getBytes(
