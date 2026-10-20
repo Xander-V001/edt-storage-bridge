@@ -1554,6 +1554,10 @@ public final class ReceiveChangesCoordinator {
                                                 project, settings.address(),
                                                 branch, intermediaryIdentity);
                                         int pendingAfter = remainingPending.size();
+                                        Set<String> retainedLocally =
+                                            ReceivePendingStore.keptLocal(
+                                                project, settings.address(),
+                                                branch, intermediaryIdentity);
                                         StringBuilder report = new StringBuilder(
                                             "Штатное объединение EDT: ")
                                             .append(nativeFinished
@@ -1562,7 +1566,9 @@ public final class ReceiveChangesCoordinator {
                                             .append("\nПодтверждено записей учёта: ")
                                             .append(acknowledgedCount)
                                             .append(".\nОжидают проверки: ")
-                                            .append(pendingAfter).append(".");
+                                            .append(pendingAfter).append(".")
+                                            .append("\nСознательно сохранены локальные версии объектов: ")
+                                            .append(retainedLocally.size()).append(".");
                                         if (effectiveFull.get()) {
                                             report.append("\nПолная сверка: записи учёта "
                                                 + "могут охватывать весь каталог метаданных. "
