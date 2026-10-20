@@ -21,6 +21,20 @@ import org.osgi.service.prefs.BackingStoreException;
 public final class ReceiveCompletionRecorder {
     private ReceiveCompletionRecorder() {}
 
+    /** A native 1C revision containing no object delta needs no EDT merge. */
+    public static void reviewedNoChanges(IProject project, String repository,
+            String intermediary, String branch, long revision)
+            throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        if (!ReceivePendingStore.get(
+                project, repository, branch, intermediary).isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot advance empty-delta version while changes remain pending");
+        }
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+    }
+
     public static int partial(IProject project, String repository, String intermediary,
             String branch, Set<String> exactlyVerified)
             throws BackingStoreException {
