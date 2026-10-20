@@ -537,16 +537,38 @@ public final class ReceiveChangesCoordinator {
                             nativePatch.set(nativeDump);
                             nativeDelta = nativeDump.changes();
                         } catch (ChangedObjectsProbe.NativeStageIncomplete incomplete) {
-                            if (incomplete.nativeChanges().fullDump()
-                                    || incomplete.nativeChanges().exactNames().isEmpty()) {
+                            if (incomplete.nativeChanges().fullDump()) {
                                 throw incomplete;
+                            }
+                            if (incomplete.nativeChanges().exactNames().isEmpty()) {
+                                // Designer wrote a truly EMPTY change list,
+                                // but no incremental XML version manifest.
+                                // That is NOT a successful XML export.
+                                // However, there is no XML to import if
+                                // TWO complete 1C-created ConfigDumpInfo
+                                // inventories are byte-identical. Only then
+                                // may the receiver evaluate its separate
+                                // REVIEWED/SCANNED + native HEAD no-delta
+                                // certificates; never invent a missing file.
+                                if (!incomplete.emptyDeltaMissingOnlyManifest()
+                                        || Files.mismatch(lastScanned,
+                                            remote.configDumpInfo()) != -1) {
+                                    throw incomplete;
+                                }
+                                BridgeActivator.getDefault().getLog().warn(
+                                    "Native 1C changed-object report is empty "
+                                    + "without incremental XML manifest; "
+                                    + "independent full 1C inventory unchanged. "
+                                    + "No source XML will be imported.");
+                            } else {
+                                BridgeActivator.getDefault().getLog().warn(
+                                    "Native XML patch incomplete: using "
+                                    + "documented selective -listFile for "
+                                    + incomplete.reportedChanges()
+                                    + " native changed identities");
                             }
                             nativePatchFailure.set(incomplete);
                             nativeDelta = incomplete.nativeChanges();
-                            BridgeActivator.getDefault().getLog().warn(
-                                "Native XML patch incomplete: will use selective "
-                                + "-listFile transport for "
-                                + incomplete.reportedChanges() + " native changed identities");
                         }
                         nativeChangeReport.set(nativeDelta);
                         // The ConfigDumpInfo.xml IN A PATCH may list
