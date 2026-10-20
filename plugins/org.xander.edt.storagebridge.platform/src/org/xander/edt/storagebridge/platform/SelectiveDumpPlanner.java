@@ -99,6 +99,35 @@ public final class SelectiveDumpPlanner {
         return new Plan(List.copyOf(exportable), List.copyOf(deferred));
     }
 
+    /**
+     * Native EDT XML import needs the Configuration root and independent
+     * Language files even when the actual comparison is only Document.X.
+     * This is a SOURCE-ONLY dependency like in GitConverter: do not add
+     * these identities to the pending journal or EDT comparison scope.
+     * Never use a project-created or synthetic Configuration.xml.
+     */
+    public static List<String> withImportContext(Plan plan,
+            Iterable<String> nativeCurrentInventory) {
+        Objects.requireNonNull(plan);
+        Objects.requireNonNull(nativeCurrentInventory);
+        var export = new LinkedHashSet<String>(plan.exportable());
+        boolean hasRoot = false;
+        var languages = new LinkedHashSet<String>();
+        for (String name : nativeCurrentInventory) {
+            if ("Configuration".equals(name)) {
+                hasRoot = true;
+            } else if (name != null && name.startsWith("Language.")
+                    && name.indexOf('.', "Language.".length()) < 0) {
+                languages.add(name);
+            }
+        }
+        if (hasRoot) {
+            export.add("Configuration");
+            export.addAll(languages);
+        }
+        return List.copyOf(export);
+    }
+
     private static boolean isDeferredRoot(String name) {
         return "Configuration".equals(name)
             || name.startsWith("Configuration.")
