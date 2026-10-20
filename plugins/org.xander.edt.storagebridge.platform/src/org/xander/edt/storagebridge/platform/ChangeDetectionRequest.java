@@ -25,9 +25,8 @@ public record ChangeDetectionRequest(Path executable, InfobaseLocation infobase,
         }
         String exeName = Objects.requireNonNull(executable.getFileName()).toString();
         if (!exeName.equalsIgnoreCase("1cv8.exe")
-                && !exeName.equalsIgnoreCase("1cv8c.exe")
-                && !exeName.equals("1cv8") && !exeName.equals("1cv8c")) {
-            throw new IllegalArgumentException("Expected 1C Designer executable");
+                && !exeName.equals("1cv8")) {
+            throw new IllegalArgumentException("Use 1cv8.exe for Designer (not 1cv8c.exe thin client)");
         }
         if (timeout.compareTo(Duration.ofSeconds(10)) < 0
                 || timeout.compareTo(Duration.ofMinutes(30)) > 0) {
