@@ -9,6 +9,25 @@ import org.xander.edt.storagebridge.platform.SelectiveDumpPlanner;
 
 public final class SelectiveDumpPlannerTest {
     @Test
+    public void unfinishedFormPlusNewNativeModuleUsesSelectiveOwnersOnly() {
+        // A developer previously postponed Document.Order.Form.Main.
+        // A later repository revision modifies CommonModule.Tools.Module.
+        // Both can be transported by documented native -listFile without
+        // enumerating or exporting the entire 1C configuration.
+        var plan = SelectiveDumpPlanner.planIncludingRelated(List.of(
+            "Document.Order.Form.Main", "CommonModule.Tools.Module"),
+            List.of("Document.Order", "Document.Order.Form.Main",
+                "Document.Order.Form.Print", "Document.Order.ObjectModule",
+                "CommonModule.Tools", "CommonModule.Tools.Module",
+                "Document.Unrelated", "Document.Unrelated.Form.Main"));
+        assertEquals(List.of("Document.Order", "Document.Order.Form.Main",
+                "CommonModule.Tools", "CommonModule.Tools.Module",
+                "Document.Order.Form.Print", "Document.Order.ObjectModule"),
+            plan.exportable());
+        assertTrue(plan.deferred().isEmpty());
+    }
+
+    @Test
     public void standaloneConfigurationRootMustNotBreakOtherSelectiveObjects() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Configuration", "Document.Doc1", "Report.Form14",
