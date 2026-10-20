@@ -184,6 +184,13 @@ public final class ReceiveChangesCoordinator {
         // otherwise the temporary native source is closed in finally.
         AtomicReference<ChangedObjectsProbe.NativeExport> nativePatch =
             new AtomicReference<>();
+        // A real -getChanges report can survive a failed platform XML patch.
+        // Its names may then be transported using documented -listFile;
+        // never rebuild change identities from ConfigDumpInfo tokens.
+        AtomicReference<ChangedObjectsProbe.NativeChanges> nativeChangeReport =
+            new AtomicReference<>();
+        AtomicReference<ChangedObjectsProbe.NativeStageIncomplete> nativePatchFailure =
+            new AtomicReference<>();
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
         AtomicReference<String> phase = new AtomicReference<>("Проверка настроек");
@@ -516,14 +523,30 @@ public final class ReceiveChangesCoordinator {
                         // never the persisted pending identity list.
                         phase.set("Штатное определение изменений платформой 1С");
                         monitor.subTask("Конфигуратор 1С формирует список изменений");
-                        // ONE native command produces both the changed-file
-                        // XML PATCH and its changed-object report. Never throw
-                        // away this native payload just to reconstruct it with
-                        // -listFile in a second Designer run.
-                        var nativeDump = new ChangedObjectsProbe().exportNative(
-                            detect, lastScanned, canceled);
-                        nativePatch.set(nativeDump);
-                        var nativeDelta = nativeDump.changes();
+                        // Prefer the platform's one-pass XML patch. If 1C
+                        // produced an authoritative nonempty changes.txt but
+                        // the patch itself is unusable, retain those names and
+                        // use the separately documented -listFile transport.
+                        // This NEVER repeats RepositoryUpdateCfg.
+                        final ChangedObjectsProbe.NativeChanges nativeDelta;
+                        try {
+                            var nativeDump = new ChangedObjectsProbe().exportNative(
+                                detect, lastScanned, canceled);
+                            nativePatch.set(nativeDump);
+                            nativeDelta = nativeDump.changes();
+                        } catch (ChangedObjectsProbe.NativeStageIncomplete incomplete) {
+                            if (incomplete.nativeChanges().fullDump()
+                                    || incomplete.nativeChanges().exactNames().isEmpty()) {
+                                throw incomplete;
+                            }
+                            nativePatchFailure.set(incomplete);
+                            nativeDelta = incomplete.nativeChanges();
+                            BridgeActivator.getDefault().getLog().warn(
+                                "Native XML patch incomplete: will use selective "
+                                + "-listFile transport for "
+                                + incomplete.reportedChanges() + " native changed identities");
+                        }
+                        nativeChangeReport.set(nativeDelta);
                         // The ConfigDumpInfo.xml IN A PATCH may list
                         // ONLY the patch's exported objects. It must NEVER
                         // be treated as a full configuration snapshot.
@@ -693,10 +716,10 @@ public final class ReceiveChangesCoordinator {
                 // commit without changing any configuration object. The
                 // native patch must be truly empty; an empty user-facing
                 // pending set alone is NOT enough to acknowledge the HEAD.
-                var patch = nativePatch.get();
-                boolean emptyNativeDelta = patch != null
-                    && !patch.changes().fullDump()
-                    && patch.changes().exactNames().isEmpty();
+                var delta = nativeChangeReport.get();
+                boolean emptyNativeDelta = delta != null
+                    && !delta.fullDump()
+                    && delta.exactNames().isEmpty();
                 boolean canAdvance = !retryPendingOnly
                     && ((!recovery
                         && ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
@@ -786,15 +809,16 @@ public final class ReceiveChangesCoordinator {
             if (fullNativeComparison) {
                 selected = Set.of();
             } else {
-                var nativeStage = nativePatch.get();
-                if (nativeStage == null
-                        || nativeStage.changes().fullDump()) {
+                var delta = nativeChangeReport.get();
+                if (delta == null || delta.fullDump()) {
                     throw new IOException(
-                        "Нет достоверной инкрементальной выгрузки 1С");
+                        "Нет достоверного списка изменений 1С");
                 }
-                // Native change names are the EDT comparison SCOPE only.
-                // They are not a hand-built Designer transport list.
-                selectedList.addAll(nativeStage.changes().exactNames());
+                // Native change names are EDT comparison scope, NOT
+                // automatically an XML file list. In the fallback the
+                // documented ChangeSet.objectsToExport() makes the
+                // separately-developed children explicit for -listFile.
+                selectedList.addAll(delta.exactNames());
                 if (selectedList.isEmpty()) {
                     // The version-only native export is not a merge source.
                     informationOnUi(shell, "Новых изменений нет",
@@ -829,16 +853,29 @@ public final class ReceiveChangesCoordinator {
                     return result;
                 });
             } else {
-                // Transfer ownership to the same cleanup path as full export.
-                // Native XML output is used AS-IS by EDT; no second Designer
-                // command and no invented metadata parents.
                 var ready = nativePatch.get();
-                if (ready == null) {
+                if (ready != null) {
+                    // Fast path: retain the exact native one-pass XML patch.
+                    export = new SelectiveDumpRunner.ExportResult(
+                        ready.workingRoot(), ready.xmlDirectory());
+                    nativePatch.set(null);
+                } else if (nativePatchFailure.get() != null) {
+                    // 1C provided a real list of changes but its first XML
+                    // output was incomplete. A separate, native -listFile
+                    // export contains only those objects, not 23k metadata.
+                    phase.set("Штатная выборочная выгрузка 1С по списку изменений");
+                    var transportNames = nativeChangeReport.get()
+                        .changes().objectsToExport();
+                    var selective = new SelectiveDumpRequest(
+                        executable, transport, transportNames,
+                        Duration.ofMinutes(30),
+                        settings.infobaseUsername(), settings.infobasePassword());
+                    export = progress(jobProgress, 20, monitor ->
+                        new SelectiveDumpRunner().export(
+                            selective, monitor::isCanceled));
+                } else {
                     throw new IOException("Native 1C incremental XML was lost");
                 }
-                export = new SelectiveDumpRunner.ExportResult(
-                    ready.workingRoot(), ready.xmlDirectory());
-                nativePatch.set(null);
             }
             // Converted EDT files, like native 1C XML, stay OUTSIDE Git.
             phase.set("Создание временных файлов сравнения EDT");
