@@ -963,6 +963,15 @@ public final class ReceiveChangesCoordinator {
                                 settings.infobasePassword()),
                             patch.xmlDirectory(), jobProgress::isCanceled);
                     }
+                    // GitConverter completes the root in a SEPARATE export:
+                    // Configuration.xml, Ext, then languages from that root.
+                    // Do not insert Configuration into the ordinary owner list.
+                    new SelectiveDumpRunner().completeNativeRoot(
+                        new SelectiveDumpRequest(executable, transport,
+                            List.of("Configuration"), Duration.ofMinutes(30),
+                            settings.infobaseUsername(),
+                            settings.infobasePassword()),
+                        patch.xmlDirectory(), jobProgress::isCanceled);
                     // Transfer ownership of the COMPLETE staged native XML;
                     // no second whole-owner export discards the patch.
                     export = new SelectiveDumpRunner.ExportResult(
@@ -977,13 +986,21 @@ public final class ReceiveChangesCoordinator {
                         patch.close();
                     }
                     phase.set("Выборочная выгрузка накопленных изменений 1С");
+                    var request = new SelectiveDumpRequest(
+                        executable, transport, plan.exportable(),
+                        Duration.ofMinutes(30),
+                        settings.infobaseUsername(), settings.infobasePassword());
                     export = new SelectiveDumpRunner().export(
-                        new SelectiveDumpRequest(executable, transport,
-                            SelectiveDumpPlanner.withImportContext(
-                                plan, allCurrentMetadata), Duration.ofMinutes(30),
-                            settings.infobaseUsername(),
-                            settings.infobasePassword()),
-                        jobProgress::isCanceled);
+                        request, jobProgress::isCanceled);
+                    try {
+                        new SelectiveDumpRunner().completeNativeRoot(
+                            request, export.xmlDirectory(),
+                            jobProgress::isCanceled);
+                    } catch (IOException | InterruptedException failure) {
+                        export.close();
+                        export = null;
+                        throw failure;
+                    }
                 }
                 if (!intermediaryInventoryUnchanged(journal, detect, jobProgress)) {
                     export.close();
