@@ -33,6 +33,7 @@ import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
 import org.xander.edt.storagebridge.core.ReceiveConfirmationTexts;
 import org.xander.edt.storagebridge.core.ReceivePendingExplanation;
 import org.xander.edt.storagebridge.core.ReceiveReviewScope;
+import org.xander.edt.storagebridge.core.ReceiveCompletionPolicy;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 import org.xander.edt.storagebridge.edt.EdtDeltaComparisonService;
 import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
@@ -1249,126 +1250,118 @@ public final class ReceiveChangesCoordinator {
                                                     verified.remainingPending() == 0
                                                     && verified.identicalOwners()
                                                         == verified.checkedOwners();
-                                                // A native EDT merge can intentionally preserve
-                                                // locally committed changes. Such a review is
-                                                // NOT byte-identical with the repository, but
-                                                // its confirmed HEAD may still be recorded as
-                                                // developer-reviewed. Never silently accept
-                                                // objects that were outside this comparison.
+                                                // Decide once, from audited source content
+                                                // and exact pending identities. The whole
+                                                // configuration inventory is not a delta.
                                                 GitReceiveGuard.requireSameBranchAndHead(
                                                     project, postMergeGit);
-                                                if (!inventoryOnly) {
-                                                    Set<String> remainingAfterAudit =
-                                                        new java.util.LinkedHashSet<>(
-                                                            ReceivePendingStore.get(
-                                                                project, settings.address(),
-                                                                branch, intermediaryIdentity));
-                                                    remainingAfterAudit.removeAll(
-                                                        verified.verifiedNames());
-                                                    if (allSourceVerified) {
-                                                        finishStage.set(
-                                                            "сохранение обработанной версии хранилища");
-                                                        if (!verified.verifiedNames().isEmpty()) {
-                                                            ReceivePendingStore.clearVerified(
-                                                                project, settings.address(),
-                                                                branch, intermediaryIdentity,
-                                                                verified.verifiedNames());
-                                                        }
-                                                        acknowledgedCount =
-                                                            verified.confirmedPending();
-                                                        ReceiveRevisionStore.recordReviewed(
+                                                Set<String> remainingAfterAudit =
+                                                    new java.util.LinkedHashSet<>(
+                                                        ReceivePendingStore.get(
                                                             project, settings.address(),
-                                                            intermediaryIdentity, branch,
-                                                            revisionForReview.get());
-                                                        confirmedRevision =
-                                                            revisionForReview.get();
-                                                    } else if (selectedPendingNames.containsAll(
-                                                            remainingAfterAudit)) {
-                                                        boolean confirmedByDeveloper =
-                                                            confirmOnUi(shell,
-                                                                "Подтверждение полного разбора изменений",
-                                                                "Штатный Merge EDT завершён, "
-                                                                + "но итоговый проект отличается "
-                                                                + "от выгрузки хранилища. "
-                                                                + "Это допустимо, если вы сознательно "
-                                                                + "оставили локальные изменения.\n\n"
-                                                                + "Все входящие изменения версии "
-                                                                + revisionForReview.get()
-                                                                + " рассмотрены и итоговый выбор "
-                                                                + "завершён?\n\n"
-                                                                + "«Да» зафиксирует версию как "
-                                                                + "РАССМОТРЕННУЮ, а НЕ полностью "
-                                                                + "совпадающую с хранилищем. "
-                                                                + "Выберите «Нет», если редактор "
-                                                                + "был закрыт до завершения работы.");
-                                                        if (confirmedByDeveloper) {
-                                                            GitReceiveGuard.requireSameBranchAndHead(
-                                                                project, postMergeGit);
-                                                            finishStage.set(
-                                                                "сохранение обработанной версии хранилища");
-                                                            if (!verified.verifiedNames().isEmpty()) {
-                                                                ReceivePendingStore.clearVerified(
-                                                                    project, settings.address(),
-                                                                    branch, intermediaryIdentity,
-                                                                    verified.verifiedNames());
-                                                            }
-                                                            acknowledgedCount =
-                                                                verified.confirmedPending();
-                                                            if (!remainingAfterAudit.isEmpty()) {
-                                                                ReceivePendingStore.acknowledgeReviewed(
-                                                                    project, settings.address(),
-                                                                    branch, intermediaryIdentity,
-                                                                    remainingAfterAudit);
-                                                            }
-                                                            acknowledgedCount +=
-                                                                remainingAfterAudit.size();
-                                                            ReceiveRevisionStore.recordReviewed(
+                                                            branch, intermediaryIdentity));
+                                                remainingAfterAudit.removeAll(
+                                                    verified.verifiedNames());
+                                                Set<String> presented = new java.util.LinkedHashSet<>(
+                                                    selectedPendingNames);
+                                                if (effectiveFull.get()) {
+                                                    presented.addAll(absentFromRemote);
+                                                }
+                                                var completion = ReceiveCompletionPolicy.decide(
+                                                    mergeConfirmed, !inventoryOnly,
+                                                    allSourceVerified,
+                                                    remainingAfterAudit, presented);
+                                                finishStage.set(
+                                                    "фиксация результата проверки EDT");
+                                                switch (completion) {
+                                                    case FULLY_APPLIED -> {
+                                                        GitReceiveGuard.requireSameBranchAndHead(
+                                                            project, postMergeGit);
+                                                        acknowledgedCount =
+                                                            ReceiveCompletionRecorder.fullyApplied(
                                                                 project, settings.address(),
                                                                 intermediaryIdentity, branch,
-                                                                revisionForReview.get());
+                                                                revisionForReview.get(),
+                                                                verified.verifiedNames(),
+                                                                journal, initialFullReview);
+                                                        confirmedRevision =
+                                                            revisionForReview.get();
+                                                        reason = "Версия " + confirmedRevision
+                                                            + " полностью применена и сверена.";
+                                                    }
+                                                    case REQUIRE_USER_CONFIRMATION -> {
+                                                        boolean accepted = confirmOnUi(shell,
+                                                            "Подтвердить результат объединения EDT",
+                                                            "Объединение завершено, но итоговый "
+                                                            + "проект не совпадает с хранилищем. "
+                                                            + "Причиной могут быть намеренно "
+                                                            + "сохранённые локальные доработки.\n\n"
+                                                            + "Все изменения версии "
+                                                            + revisionForReview.get()
+                                                            + " действительно рассмотрены? "
+                                                            + "Подтверждайте только если вы "
+                                                            + "завершили выбор в EDT.\n\n"
+                                                            + "Версия будет помечена как "
+                                                            + "РАССМОТРЕННАЯ, а не полностью "
+                                                            + "применённая.");
+                                                        if (accepted) {
+                                                            GitReceiveGuard.requireSameBranchAndHead(
+                                                                project, postMergeGit);
+                                                            acknowledgedCount =
+                                                                ReceiveCompletionRecorder
+                                                                    .reviewedWithLocalDifferences(
+                                                                        project, settings.address(),
+                                                                        intermediaryIdentity, branch,
+                                                                        revisionForReview.get(),
+                                                                        verified.verifiedNames(),
+                                                                        remainingAfterAudit,
+                                                                        presented, journal,
+                                                                        initialFullReview);
                                                             confirmedRevision =
                                                                 revisionForReview.get();
-                                                            reason = "Версия обработана, "
-                                                                + "локальные отличия сохранены.";
+                                                            reason = "Версия "
+                                                                + confirmedRevision
+                                                                + " рассмотрена. Локальные "
+                                                                + "отличия сохранены.";
                                                         } else {
-                                                            reason = "Разбор отличий не "
-                                                                + "подтверждён разработчиком.";
+                                                            reason = "Разбор изменений не "
+                                                                + "подтверждён. Версия не отмечена.";
                                                         }
-                                                    } else {
-                                                        // Strictly identical objects can be
-                                                        // retired individually even when
-                                                        // a separate remote change was not
-                                                        // included in this comparison.
-                                                        if (!verified.verifiedNames().isEmpty()) {
-                                                            ReceivePendingStore.clearVerified(
-                                                                project, settings.address(),
-                                                                branch, intermediaryIdentity,
-                                                                verified.verifiedNames());
-                                                        }
-                                                        acknowledgedCount = verified.confirmedPending();
-                                                        reason = "Часть ожидающих изменений "
-                                                            + "отсутствовала в открытом сравнении. "
-                                                            + "Версия пока не подтверждена.";
                                                     }
-                                                } else if (!verified.verifiedNames().isEmpty()) {
-                                                    // Source version is unavailable, but
-                                                    // exact matching native content was proven.
-                                                    ReceivePendingStore.clearVerified(
-                                                        project, settings.address(),
-                                                        branch, intermediaryIdentity,
-                                                        verified.verifiedNames());
-                                                    acknowledgedCount = verified.confirmedPending();
-                                                }
-                                                // Initial full review is complete only
-                                                // AFTER a proven HEAD, successful native
-                                                // merge and explicit developer acceptance.
-                                                // Merely opening the editor is never enough.
-                                                if (initialFullReview
-                                                        && confirmedRevision > 0
-                                                        && ReceivePendingStore.get(
-                                                            project, settings.address(),
-                                                            branch, intermediaryIdentity).isEmpty()) {
-                                                    journal.markInitialReviewPrepared();
+                                                    case PARTIAL -> {
+                                                        GitReceiveGuard.requireSameBranchAndHead(
+                                                            project, postMergeGit);
+                                                        acknowledgedCount =
+                                                            ReceiveCompletionRecorder.partial(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                verified.verifiedNames());
+                                                        reason = "Часть изменений отсутствовала "
+                                                            + "в открытом сравнении EDT. "
+                                                            + "Подтверждены только точно "
+                                                            + "совпавшие объекты; версия "
+                                                            + "не отмечена.";
+                                                    }
+                                                    case UNPROVEN_SOURCE -> {
+                                                        // A missing native HEAD can never be
+                                                        // inferred from file hashes. The exact
+                                                        // source content was nevertheless
+                                                        // audited against this EDT project.
+                                                        acknowledgedCount =
+                                                            ReceiveCompletionRecorder.partial(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                verified.verifiedNames());
+                                                        if (reason == null) {
+                                                            reason = "Номер версии хранилища "
+                                                                + "не подтверждён. Только точно "
+                                                                + "совпавшие объекты отмечены.";
+                                                        }
+                                                    }
+                                                    case NOT_MERGED -> {
+                                                        reason = "EDT не подтвердила Merge. "
+                                                            + "Ничего не отмечено.";
+                                                    }
                                                 }
                                                 if (!allSourceVerified) {
                                                     if (reason == null) {
