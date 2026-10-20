@@ -72,22 +72,15 @@ public final class RepositoryRevisionHistoryDelta {
         Objects.requireNonNull(candidates);
         Objects.requireNonNull(oldNames);
         Objects.requireNonNull(currentNames);
-        Set<String> present = new LinkedHashSet<>(candidates.touched());
-        present.retainAll(currentNames);
-        // Native child names may have no own configVersion entry. Keep those
-        // for the native selective export rather than guessing an owner.
-        for (String name : candidates.touched()) {
-            if (!present.contains(name) && !oldNames.contains(name)
-                    && !currentNames.contains(name)
-                    && name != null && !name.isBlank()) {
-                // Potential unindexed metadata or addition/deletion. It must
-                // NEVER be silently discarded by the optimizer.
-                present.add(name);
-            }
-        }
+        // Keep every touched native identity, including one that existed
+        // in the baseline but is now deleted. The receiver must notice its
+        // absence in the CURRENT full inventory and request a global review
+        // instead of silently dropping a deleted nested form or module.
+        // A later selective -listFile is only used after absent names have
+        // been filtered into the full-comparison route.
         return new ChangedObjectsProbe.NativeChanges(false,
             new ConfigurationChangesParser.ChangeSet(List.of(),
-                new ArrayList<>(present)));
+                new ArrayList<>(candidates.touched())));
     }
 
     public static Candidates read(Path executable, InfobaseLocation intermediary,
