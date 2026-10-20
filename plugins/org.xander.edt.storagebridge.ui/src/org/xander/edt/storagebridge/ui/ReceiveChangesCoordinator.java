@@ -990,8 +990,7 @@ public final class ReceiveChangesCoordinator {
                 new AtomicReference<>(export);
             final AtomicReference<Path> stagedConversion =
                 new AtomicReference<>(conversionRoot);
-            final AtomicBoolean effectiveFull =
-                new AtomicBoolean(fullNativeComparison);
+            final boolean effectiveFull = fullNativeComparison;
             // Exactly one read-only native -listFile retry if an otherwise
             // valid 1C incremental PATCH lacks the owner's files required
             // by the native EDT XML importer. Do not loop or re-run the
@@ -1007,12 +1006,17 @@ public final class ReceiveChangesCoordinator {
                 try {
                     var descriptor = EdtPublicServiceBridge.prepare(
                         project, stagedExport.get().xmlDirectory(), converted,
-                        selectedList, effectiveFull.get(), monitor);
+                        selectedList, effectiveFull, monitor);
                     monitor.worked(2);
                     return descriptor;
                 } catch (EdtSelectiveReviewService.NativeEdtImportFailure
                         | EdtSelectiveReviewService.MissingConvertedOwnersException
                         | EdtSelectiveReviewService.MissingEmbeddedLanguagesException failure) {
+                    if (effectiveFull) {
+                        // Full mode invokes only the native FULL importer;
+                        // report its actual failure, never a selective hint.
+                        throw failure;
+                    }
                     // A failed selective EDT import is a diagnosis, not an
                     // invitation to secretly run a FULL dump or repeat the
                     // same source export. Keep PENDING and let the developer
@@ -1029,7 +1033,7 @@ public final class ReceiveChangesCoordinator {
             // is retained until EDT's native merge reaches a terminal state.
             export = stagedExport.get();
             conversionRoot = stagedConversion.get();
-            final Set<String> actualSelected = effectiveFull.get()
+            final Set<String> actualSelected = effectiveFull
                 ? Set.of() : selected;
             GitReceiveGuard.requireUnchanged(project, git);
 
@@ -1039,7 +1043,7 @@ public final class ReceiveChangesCoordinator {
             // Force a separate, explicit acknowledgement before opening it.
             if (!confirmOnUi(shell,
                     "Проверка перед объединением EDT",
-                    (effectiveFull.get()
+                    (effectiveFull
                         ? "ПОЛНАЯ СВЕРКА: сравниваются ВСЕ объекты и ресурсы "
                           + "обоих проектов штатным глобальным механизмом EDT. "
                           + "Вложенные формы, модули, подсистемы, изображения "
@@ -1300,7 +1304,7 @@ public final class ReceiveChangesCoordinator {
                                             boolean allowReview =
                                                 revisionForReview.get() > 0;
                                             if (allowReview) {
-                                                if (pendingNow.isEmpty() && effectiveFull.get()) {
+                                                if (pendingNow.isEmpty() && effectiveFull) {
                                                     // Designer exported the complete source,
                                                     // EDT imported it successfully, and a
                                                     // GLOBAL native MERGE finished. A custom
@@ -1361,12 +1365,12 @@ public final class ReceiveChangesCoordinator {
                                                                             intermediaryIdentity,
                                                                             branch, finalHead,
                                                                             pendingNow, keptLocal);
-                                                                if (effectiveFull.get()
+                                                                if (effectiveFull
                                                                         && initialFullReview) {
                                                                     journal.markInitialReviewPrepared();
                                                                 }
                                                                 confirmedRevision = finalHead;
-                                                                reason = (effectiveFull.get()
+                                                                reason = (effectiveFull
                                                                         ? "Полное " : "Выборочное ")
                                                                     + "объединение завершено; "
                                                                     + "REVIEWED = " + finalHead
@@ -1406,7 +1410,7 @@ public final class ReceiveChangesCoordinator {
                                             .append(pendingAfter).append(".")
                                             .append("\nСознательно сохранены локальные версии объектов: ")
                                             .append(retainedLocally.size()).append(".");
-                                        if (effectiveFull.get()) {
+                                        if (effectiveFull) {
                                             report.append("\nПолная сверка: записи учёта "
                                                 + "могут охватывать весь каталог метаданных. "
                                                 + "Это не число НОВЫХ изменений.");
