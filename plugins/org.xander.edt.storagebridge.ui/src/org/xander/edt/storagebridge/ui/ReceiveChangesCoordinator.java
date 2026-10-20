@@ -336,22 +336,30 @@ public final class ReceiveChangesCoordinator {
                 }
                 // An update to latest is the primary action; reopening an
                 // old pending stage must never be mistaken for that update.
-                pendingChoice = choiceOnUi(shell, "Как получить изменения?",
-                    pendingDescription,
-                    "Обновить и сравнить", "Повторно сравнить старое", "Отмена");
-                if (pendingChoice != 0 && pendingChoice != 1) {
-                    return;
-                }
-                if (pendingChoice == 1
-                        && latestPendingRevision > stagedPendingRevision
-                        && stagedPendingRevision > 0
-                        && !confirmOnUi(shell, "Сравнение старой версии",
-                            "Будет повторно открыт только сохранённый снимок "
-                            + stagedPendingRevision + ". Новая версия "
-                            + latestPendingRevision + " НЕ будет получена в EDT. "
-                            + "Продолжить именно старое сравнение?",
-                            "Сравнить старое")) {
-                    return;
+                // Old pending XML can be replayed only while its saved
+                // native HEAD is still the current repository HEAD. The
+                // checkpoint store cannot attest an older version against
+                // a newer/unknown HEAD; do not offer a dead-end choice.
+                boolean canReplayAttestedPending =
+                    stagedPendingRevision > 0
+                    && stagedPendingRevision == latestPendingRevision;
+                if (canReplayAttestedPending) {
+                    pendingChoice = choiceOnUi(shell, "Как получить изменения?",
+                        pendingDescription,
+                        "Обновить и сравнить", "Повторно сравнить", "Отмена");
+                    if (pendingChoice != 0 && pendingChoice != 1) {
+                        return;
+                    }
+                } else {
+                    pendingChoice = choiceOnUi(shell, "Как получить изменения?",
+                        pendingDescription
+                        + "\n\nСтарую очередь нельзя подтвердить при другой "
+                        + "или неизвестной актуальной версии хранилища. "
+                        + "Для продолжения требуется новое получение.",
+                        "Обновить и сравнить", "Отмена");
+                    if (pendingChoice != 0) {
+                        return;
+                    }
                 }
             }
 
