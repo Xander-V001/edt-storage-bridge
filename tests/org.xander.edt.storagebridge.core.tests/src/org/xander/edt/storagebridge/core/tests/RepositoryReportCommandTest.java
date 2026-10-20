@@ -184,6 +184,11 @@ public class RepositoryReportCommandTest {
             \tОбщаяФорма.ИнтеграцияССервисомКабинетСотрудника
             """;
         assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(report));
+        var parsedHistory = RepositoryVersionReportParser.parse(report);
+        assertEquals(1, parsedHistory.size());
+        assertEquals(29431L, parsedHistory.get(0).number());
+        assertEquals("", parsedHistory.get(0).comment());
+        assertEquals(1, parsedHistory.get(0).modified().size());
         assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(
             report.replace("Время отчета:\t9:35:05", "Время отчета:\t9:35:20")));
         assertEquals(29431L, RepositoryLatestRevisionReader.parseLatest(
@@ -199,6 +204,14 @@ public class RepositoryReportCommandTest {
             RepositoryLatestRevisionReader.parseLatest(
                 report.replace("Время создания:\t9:29:53",
                     "Время создания:\t9:99:53")));
+        // Missing comment header is valid only when the next content is a
+        // native change group. Reject any arbitrary intervening text.
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryVersionReportParser.parse(report.replace(
+                "\tИзменены\t1", "непроверенная строка\n\tИзменены\t1")));
+        assertThrows(java.io.IOException.class, () ->
+            RepositoryVersionReportParser.parse(report.replace(
+                "Время создания:\t9:29:53", "Время создания:\t25:29:53")));
     }
 
     @Test
