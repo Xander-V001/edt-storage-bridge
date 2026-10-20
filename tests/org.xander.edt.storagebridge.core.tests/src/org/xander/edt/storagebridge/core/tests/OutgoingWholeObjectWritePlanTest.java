@@ -33,7 +33,7 @@ public final class OutgoingWholeObjectWritePlanTest {
                 "Roles/Manager.xml", "Roles/Manager/Ext/Rights.xml",
                 "AccumulationRegisters/Balance.xml",
                 "CommonTemplates/Print.xml", "CommonTemplates/Print/Ext/Template.mxl"));
-        assertEquals(7, publish.loadFiles().size());
+        assertEquals(4, publish.loadFiles().size());
         Path scopeDir = Files.createTempDirectory("edt-object-scopes-");
         try {
             Path lockList = scopeDir.resolve("selected-objects.xml");
@@ -48,8 +48,10 @@ public final class OutgoingWholeObjectWritePlanTest {
             assertEquals((byte) 0xBF, bytes[2]);
             String list = new String(bytes,
                 java.nio.charset.StandardCharsets.UTF_8);
-            assertTrue(list.contains("Documents/Order/Forms/Main.xml"));
-            assertTrue(list.contains("Roles/Manager/Ext/Rights.xml"));
+            assertTrue(list.contains("Documents/Order.xml"));
+            assertTrue(list.contains("Roles/Manager.xml"));
+            assertFalse(list.contains("Documents/Order/Forms/Main.xml"));
+            assertFalse(list.contains("Roles/Manager/Ext/Rights.xml"));
         } finally {
             try (var paths = Files.walk(scopeDir)) {
                 for (Path file : paths.sorted(java.util.Comparator.reverseOrder()).toList())
