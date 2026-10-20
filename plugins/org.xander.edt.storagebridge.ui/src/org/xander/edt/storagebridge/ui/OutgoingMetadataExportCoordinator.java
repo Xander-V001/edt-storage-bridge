@@ -178,7 +178,7 @@ public final class OutgoingMetadataExportCoordinator {
                                     + "метаданные и их подчинённые файлы. "
                                     + "Подготовить ТЕСТОВОЕ помещение "
                                     + approvedPlan.classicOwners().size()
-                                    + " объектов без ограничения BSL? "
+                                    + " объектов? "
                                     + "Рабочие хранилища не использовать. "
                                     + "Перед записью будут ещё два подтверждения.")) {
                                 OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
