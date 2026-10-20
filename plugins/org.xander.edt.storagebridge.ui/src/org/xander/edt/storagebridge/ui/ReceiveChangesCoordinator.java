@@ -48,6 +48,7 @@ import org.xander.edt.storagebridge.platform.RepositoryUpdateRequest;
 import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
+import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
 import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
 
