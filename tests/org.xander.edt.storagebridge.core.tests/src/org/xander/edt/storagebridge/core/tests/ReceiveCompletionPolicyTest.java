@@ -8,6 +8,28 @@ import org.xander.edt.storagebridge.core.ReceiveCompletionPolicy.Next;
 
 public final class ReceiveCompletionPolicyTest {
     @Test
+    public void versionOnlyRepositoryCommitCanAdvanceFromReviewedNativeBaseline() {
+        org.junit.Assert.assertTrue(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                29432, 29432, 29434, 29434, 29434, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                -1, 29432, 29434, 29434, 29434, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                29432, 29431, 29434, 29434, 29434, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                29432, 29432, 29434, 29434, 29435, true, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                29432, 29432, 29434, 29434, 29434, false, true));
+        org.junit.Assert.assertFalse(
+            ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                29432, 29432, 29434, 29434, 29434, true, false));
+    }
+
+    @Test
     public void exactFullMergeMarksAppliedEvenWithNoObjectDelta() {
         assertEquals(Next.FULLY_APPLIED, ReceiveCompletionPolicy.decide(
             true, true, true, true, true, 1, Set.of(), Set.of()));
