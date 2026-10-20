@@ -83,14 +83,19 @@ public final class ChangedObjectsProbeNativeTest {
     }
 
     @Test
-    public void nativeEmptyChangeReportNeedsNoXmlOrManifest()
+    public void nativeEmptyChangeReportWithoutVersionManifestIsNotAccepted()
             throws Exception {
         Path root = Files.createTempDirectory("1c-native-empty-delta-");
         try {
             var noChanges = ChangedObjectsProbe.parseNativeText("");
             assertFalse(noChanges.fullDump());
             assertTrue(noChanges.exactNames().isEmpty());
-            ChangedObjectsProbe.validateNativeStage(noChanges, root);
+            var ex = assertThrows(
+                ChangedObjectsProbe.NativeStageIncomplete.class,
+                () -> ChangedObjectsProbe.validateNativeStage(noChanges, root));
+            assertEquals(0, ex.reportedChanges());
+            assertTrue(ex.nativeChanges().exactNames().isEmpty());
+            assertFalse(ex.manifestPresent());
         } finally {
             Files.deleteIfExists(root);
         }
@@ -107,6 +112,8 @@ public final class ChangedObjectsProbeNativeTest {
             var ex = assertThrows(ChangedObjectsProbe.NativeStageIncomplete.class,
                 () -> ChangedObjectsProbe.validateNativeStage(changed, root));
             assertEquals(1, ex.reportedChanges());
+            assertEquals(Set.of("Document.Payroll.Form.Main"),
+                ex.nativeChanges().exactNames());
             assertFalse(ex.manifestPresent());
         } finally {
             Files.deleteIfExists(root.resolve("Document.xml"));
