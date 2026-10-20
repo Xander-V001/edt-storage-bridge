@@ -22,6 +22,10 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jface.viewers.ArrayContentProvider;
+import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.jface.window.Window;
+import org.eclipse.ui.dialogs.ListSelectionDialog;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
@@ -1480,23 +1484,14 @@ public final class ReceiveChangesCoordinator {
                                                             + "выполнить отдельное выборочное "
                                                             + "сравнение.";
                                                     } else {
-                                                        boolean accepted = confirmOnUi(shell,
-                                                            "Завершить выборочное получение 1С",
-                                                            "EDT подтвердила завершение "
-                                                            + "штатного Merge. Были показаны "
-                                                            + pendingNow.size()
-                                                            + " ожидающих изменений 1С.\n\n"
-                                                            + "Подтвердите, что вы рассмотрели "
-                                                            + "ВСЕ предъявленные изменения. "
-                                                            + "Оставлять свои локальные варианты "
-                                                            + "можно: версия будет отмечена "
-                                                            + "РАССМОТРЕННОЙ, не полностью "
-                                                            + "применённой.\n\n"
-                                                            + "Плагин не определяет выбор "
-                                                            + "отдельных галочек по различию "
-                                                            + "байтов и не будет выдумывать "
-                                                            + "список KEPT_LOCAL.");
-                                                        if (accepted) {
+                                                        // Native EDT merge status confirms
+                                                        // completion, not its individual
+                                                        // checkboxes. An explicit per-identity
+                                                        // user decision is required to preserve
+                                                        // genuine KEPT_LOCAL without byte audits.
+                                                        Set<String> keptLocal =
+                                                            chooseKeptLocalOnUi(shell, pendingNow);
+                                                        if (keptLocal != null) {
                                                             finishStage.set(
                                                                 "последняя проверка HEAD 1С");
                                                             long finalHead =
@@ -1531,11 +1526,13 @@ public final class ReceiveChangesCoordinator {
                                                                             settings.address(),
                                                                             intermediaryIdentity,
                                                                             branch, finalHead,
-                                                                            pendingNow);
+                                                                            pendingNow, keptLocal);
                                                                 confirmedRevision = finalHead;
                                                                 reason = "Выборочное "
                                                                     + "объединение завершено; "
                                                                     + "REVIEWED = " + finalHead
+                                                                    + ". Оставлено локально: "
+                                                                    + keptLocal.size()
                                                                     + ". Ожидающих изменений: 0. "
                                                                     + "APPLIED не менялся.";
                                                             }
@@ -2023,6 +2020,48 @@ public final class ReceiveChangesCoordinator {
             throw failure.get();
         }
         return result.get();
+    }
+
+    /**
+     * AFTER native EDT confirmed a completed selective Merge, ask the
+     * developer to identify exactly which presented native 1C metadata
+     * identities they intentionally kept local, including partial BSL/form
+     * merges. A node unchecked here means the user accepts it as reviewed
+     * against the incoming source. Do not infer from byte mismatches.
+     *
+     * null = Cancel: keep every PENDING and DO NOT advance REVIEWED.
+     * This UI is local and does not send metadata names to logs or servers.
+     */
+    private static Set<String> chooseKeptLocalOnUi(Shell shell,
+            Set<String> presented) throws Exception {
+        return uiCall(shell, active -> {
+            var ordered = presented.stream().sorted().toList();
+            var dialog = new ListSelectionDialog(active, ordered,
+                ArrayContentProvider.getInstance(), new LabelProvider(),
+                "EDT завершила Merge. Отметьте объекты, для которых вы "
+                + "сознательно сохранили локальный вариант полностью или "
+                + "частично (в том числе процедуры модулей). "
+                + "Неотмеченные считаются рассмотренными и принятыми. "
+                + "После ОК будет записана версия REVIEWED, но не APPLIED. "
+                + "Отмена оставит весь PENDING без изменений.");
+            dialog.setTitle("Результат выборочного Merge — оставлено локально");
+            if (dialog.open() != Window.OK) {
+                return null;
+            }
+            Object[] chosen = dialog.getResult();
+            if (chosen == null) {
+                throw new IOException("EDT review selection returned no result");
+            }
+            var locallyKept = new LinkedHashSet<String>();
+            for (Object item : chosen) {
+                if (!(item instanceof String name)
+                        || !presented.contains(name)) {
+                    throw new IOException("Invalid native review identity");
+                }
+                locallyKept.add(name);
+            }
+            return Set.copyOf(locallyKept);
+        });
     }
 
     private static Shell liveShell(Shell owner) {
