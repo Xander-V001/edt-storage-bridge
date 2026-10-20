@@ -160,27 +160,21 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
-    public void selectiveXmlImportsNativeRootAndLanguagesButNotOtherObjects() {
+    public void nativeRootAndLanguagesAreNotOrdinaryOwnerSupplements() {
         var plan = SelectiveDumpPlanner.planIncludingRelated(
             List.of("DataProcessor.Assistant.Form.Форма.Form"),
             List.of("Configuration", "Language.Русский",
-                "Language.Английский",
                 "DataProcessor.Assistant",
                 "DataProcessor.Assistant.Form.Форма",
-                "DataProcessor.Assistant.Form.Форма.Form",
-                "DataProcessor.Other",
-                "DataProcessor.Other.Form.Unrelated"));
-        var importNames = SelectiveDumpPlanner.withImportContext(
-            plan, List.of("Configuration", "Language.Русский",
-                "Language.Английский", "DataProcessor.Other"));
-        assertEquals(List.of("DataProcessor.Assistant",
-            "DataProcessor.Assistant.Form.Форма",
-            "DataProcessor.Assistant.Form.Форма.Form",
-            "Configuration", "Language.Русский", "Language.Английский"),
-            importNames);
+                "DataProcessor.Assistant.Form.Форма.Form"));
         assertEquals(List.of("DataProcessor.Assistant",
             "DataProcessor.Assistant.Form.Форма",
             "DataProcessor.Assistant.Form.Форма.Form"), plan.exportable());
+        var supplements = SelectiveDumpPlanner.supplementsForNativePatch(
+            plan, List.of("Configuration", "Language.Русский"),
+            java.util.Set.of("DataProcessor.Assistant.Form.Форма.Form"));
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма"), supplements);
     }
 
     @Test
@@ -210,8 +204,7 @@ public final class SelectiveDumpPlannerTest {
         var additions = SelectiveDumpPlanner.supplementsForNativePatch(
             plan, List.of("Configuration.Зарплата", "Language.Русский"),
             java.util.Set.of("CommonModule.Utilities.Module"));
-        assertEquals(List.of("CommonModule.Utilities",
-            "Configuration", "Language.Русский"), additions);
+        assertEquals(List.of("CommonModule.Utilities"), additions);
     }
 
     @Test
@@ -232,8 +225,7 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of("Document.Order",
             "Document.Order.Form.Main",
             "Document.Order.Form.Main.Form",
-            "Document.Order.Template.Print",
-            "Configuration"), supplements);
+            "Document.Order.Template.Print"), supplements);
     }
 
     @Test
@@ -251,8 +243,7 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of("Document.Order",
             "Document.Order.Form.Main",
             "Document.Order.Form.Main.Form",
-            "Document.Order.Template.Print",
-            "Configuration", "Language.Русский"), extras);
+            "Document.Order.Template.Print"), extras);
         assertTrue(!extras.contains("Document.Order.ObjectModule"));
         assertTrue(!extras.contains("Document.Unrelated"));
     }
@@ -272,8 +263,7 @@ public final class SelectiveDumpPlannerTest {
             java.util.Set.of("DataProcessor.Assistant.Form.Main.Form"));
         assertEquals(List.of("DataProcessor.Assistant",
             "DataProcessor.Assistant.Form.Main",
-            "DataProcessor.Assistant.Form.Other",
-            "Configuration", "Language.Русский"), extras);
+            "DataProcessor.Assistant.Form.Other"), extras);
         assertTrue(!extras.contains("DataProcessor.Unrelated"));
     }
 
