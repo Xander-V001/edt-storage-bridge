@@ -37,6 +37,9 @@ public class RepositoryReportCommandTest {
         assertTrue(argv.contains("/ConfigurationRepositoryReport"));
         assertTrue(argv.contains("-ReportFormat"));
         assertTrue(argv.contains("txt"));
+        // Native Designer excludes comments beginning with // unless
+        // explicitly requested. Match the unchecked UI exclusion.
+        assertTrue(argv.contains("-IncludeCommentLinesWithDoubleSlash"));
         assertEquals("-1", argv.get(argv.indexOf("-NBegin") + 1));
         assertFalse(argv.contains("/ConfigurationRepositoryUpdateCfg"));
         assertFalse(argv.contains("/ConfigurationRepositoryCommit"));
@@ -54,6 +57,7 @@ public class RepositoryReportCommandTest {
         assertEquals("/S", args.get(2));
         assertEquals("29397", args.get(args.indexOf("-NBegin") + 1));
         assertEquals("29410", args.get(args.indexOf("-NEnd") + 1));
+        assertTrue(args.contains("-IncludeCommentLinesWithDoubleSlash"));
         assertEquals(REPORT.toString(),
             args.get(args.indexOf("/ConfigurationRepositoryReport") + 1));
     }
@@ -103,6 +107,10 @@ public class RepositoryReportCommandTest {
         assertEquals("storage-secret",
             cmd.get(cmd.indexOf("/ConfigurationRepositoryP") + 1));
         assertEquals("-1", cmd.get(cmd.indexOf("-NBegin") + 1));
+        assertTrue(cmd.contains("-IncludeCommentLinesWithDoubleSlash"));
+        assertFalse(cmd.contains("-GroupByObject"));
+        assertFalse(cmd.contains("-GroupByComment"));
+        assertFalse(cmd.contains("-IncludeOnlyVersionsWithLabels"));
         assertFalse(cmd.contains("/ConfigurationRepositoryUpdateCfg"));
         assertFalse(cmd.contains("/ConfigurationRepositoryCommit"));
         assertThrows(UnsupportedOperationException.class,
