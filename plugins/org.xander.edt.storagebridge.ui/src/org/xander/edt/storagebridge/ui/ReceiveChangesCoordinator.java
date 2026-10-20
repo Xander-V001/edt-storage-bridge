@@ -1188,26 +1188,90 @@ public final class ReceiveChangesCoordinator {
                                                     verified.remainingPending() == 0
                                                     && verified.identicalOwners()
                                                         == verified.checkedOwners();
-                                                if (!inventoryOnly
-                                                        && allSourceVerified) {
-                                                    finishStage.set(
-                                                        "сохранение обработанной версии хранилища");
-                                                    ReceiveRevisionStore.recordReviewed(
-                                                        project, settings.address(),
-                                                        intermediaryIdentity, branch,
-                                                        revisionForReview.get());
-                                                    confirmedRevision =
-                                                        revisionForReview.get();
+                                                // A native EDT merge can intentionally preserve
+                                                // locally committed changes. Such a review is
+                                                // NOT byte-identical with the repository, but
+                                                // its confirmed HEAD may still be recorded as
+                                                // developer-reviewed. Never silently accept
+                                                // objects that were outside this comparison.
+                                                if (!inventoryOnly) {
+                                                    GitReceiveGuard.requireSameBranchAndHead(
+                                                        project, git);
+                                                    Set<String> remainingAfterAudit =
+                                                        ReceivePendingStore.get(
+                                                            project, settings.address(),
+                                                            branch, intermediaryIdentity);
+                                                    if (allSourceVerified) {
+                                                        finishStage.set(
+                                                            "сохранение обработанной версии хранилища");
+                                                        ReceiveRevisionStore.recordReviewed(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, branch,
+                                                            revisionForReview.get());
+                                                        confirmedRevision =
+                                                            revisionForReview.get();
+                                                    } else if (selectedPendingNames.containsAll(
+                                                            remainingAfterAudit)) {
+                                                        boolean confirmedByDeveloper =
+                                                            confirmOnUi(shell,
+                                                                "Подтверждение полного разбора изменений",
+                                                                "Штатный Merge EDT завершён, "
+                                                                + "но итоговый проект отличается "
+                                                                + "от выгрузки хранилища. "
+                                                                + "Это допустимо, если вы сознательно "
+                                                                + "оставили локальные изменения.\n\n"
+                                                                + "Все входящие изменения версии "
+                                                                + revisionForReview.get()
+                                                                + " рассмотрены и итоговый выбор "
+                                                                + "завершён?\n\n"
+                                                                + "«Да» зафиксирует версию как "
+                                                                + "РАССМОТРЕННУЮ, а НЕ полностью "
+                                                                + "совпадающую с хранилищем. "
+                                                                + "Выберите «Нет», если редактор "
+                                                                + "был закрыт до завершения работы.");
+                                                        if (confirmedByDeveloper) {
+                                                            GitReceiveGuard
+                                                                .requireSameBranchAndHead(
+                                                                    project, git);
+                                                            // Journal the confirmation first:
+                                                            // a crash must not silently forget
+                                                            // the user's deliberate local choices.
+                                                            finishStage.set(
+                                                                "сохранение обработанной версии хранилища");
+                                                            ReceiveRevisionStore.recordReviewed(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                revisionForReview.get());
+                                                            if (!remainingAfterAudit.isEmpty()) {
+                                                                ReceivePendingStore.acknowledgeReviewed(
+                                                                    project, settings.address(),
+                                                                    branch, intermediaryIdentity,
+                                                                    remainingAfterAudit);
+                                                            }
+                                                            acknowledgedCount +=
+                                                                remainingAfterAudit.size();
+                                                            confirmedRevision =
+                                                                revisionForReview.get();
+                                                            reason = "Версия обработана, "
+                                                                + "локальные отличия сохранены.";
+                                                        } else {
+                                                            reason = "Разбор отличий не "
+                                                                + "подтверждён разработчиком.";
+                                                        }
+                                                    } else {
+                                                        reason = "Часть ожидающих изменений "
+                                                            + "отсутствовала в открытом сравнении. "
+                                                            + "Версия пока не подтверждена.";
+                                                    }
                                                 }
                                                 if (!allSourceVerified) {
-                                                    reason = "EDT выполнила Merge, "
-                                                        + "но некоторые объекты "
-                                                        + "не совпадают с полученной "
-                                                        + "конфигурацией 1С. "
-                                                        + "Они не объявлены принятыми.";
+                                                    if (reason == null) {
+                                                        reason = "EDT выполнила Merge, "
+                                                            + "но часть объектов не совпадает "
+                                                            + "с полученной конфигурацией 1С.";
+                                                    }
                                                     if (verified.diagnosticFile() != null) {
-                                                        reason += "\nПодробности в "
-                                                            + "локальном отчёте: "
+                                                        reason += "\nПодробности в локальном отчёте: "
                                                             + verified.diagnosticFile();
                                                     }
                                                 }
