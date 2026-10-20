@@ -1291,8 +1291,40 @@ public final class ReceiveChangesCoordinator {
                                                 if (effectiveFull.get()) {
                                                     presented.addAll(absentFromRemote);
                                                 }
+                                                // A global full EDT audit can take minutes.
+                                                // Do not rely solely on a HEAD read from
+                                                // BEFORE that audit: 1C may have advanced
+                                                // again while the project's files were read.
+                                                boolean finalHeadProven = !inventoryOnly;
+                                                if (finalHeadProven) {
+                                                    finishStage.set(
+                                                        "последняя проверка HEAD перед записью");
+                                                    long finalHead = readLatestRevisionOrUnknown(
+                                                        executable, transport, settings,
+                                                        Duration.ofSeconds(30),
+                                                        monitor::isCanceled);
+                                                    if (finalHead > 0
+                                                            && finalHead != revisionForReview.get()) {
+                                                        ReceiveRevisionStore.recordObserved(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, finalHead);
+                                                    }
+                                                    if (finalHead != revisionForReview.get()) {
+                                                        finalHeadProven = false;
+                                                        reason = finalHead > 0
+                                                            ? "Хранилище обновилось до версии "
+                                                                + finalHead
+                                                                + " во время проверки EDT. "
+                                                                + "Прежний снимок не объявляется "
+                                                                + "актуальным. Новая версия "
+                                                                + "требует отдельного получения."
+                                                            : "Не удалось повторно проверить HEAD "
+                                                                + "перед записью результата. "
+                                                                + "Версия не фиксируется.";
+                                                    }
+                                                }
                                                 var completion = ReceiveCompletionPolicy.decide(
-                                                    mergeConfirmed, !inventoryOnly,
+                                                    mergeConfirmed, finalHeadProven,
                                                     allSourceVerified,
                                                     remainingAfterAudit, presented);
                                                 finishStage.set(
