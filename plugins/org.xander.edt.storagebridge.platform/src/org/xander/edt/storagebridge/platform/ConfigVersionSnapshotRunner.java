@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -192,8 +193,12 @@ public final class ConfigVersionSnapshotRunner {
             throw new IOException("No native snapshot staging directory");
         }
         Files.createDirectories(diagnostics);
+        // Contains unredacted native /Out; never expose this directory
+        // through a public/shared workspace or Git project.
+        restrictToOwner(diagnostics, true);
         Path saved = Files.createDirectory(
             diagnostics.resolve("snapshot-" + UUID.randomUUID()));
+        restrictToOwner(saved, true);
         // Avoid ever publishing paths, login/password arguments or raw
         // diagnostic text to the regular EDT error log. The user inspects
         // the private files explicitly before sharing them.
@@ -203,7 +208,8 @@ public final class ConfigVersionSnapshotRunner {
                 if (Files.size(source) > 8L * 1024 * 1024) {
                     throw new IOException("Native 1C diagnostics exceed size limit");
                 }
-                Files.copy(source, saved.resolve(name));
+                Path copied = Files.copy(source, saved.resolve(name));
+                restrictToOwner(copied, false);
             }
         }
         Files.writeString(saved.resolve("snapshot-failure.txt"),
@@ -213,12 +219,24 @@ public final class ConfigVersionSnapshotRunner {
             + System.lineSeparator()
             + "These files may contain private environment data; review before sharing."
             + System.lineSeparator(), StandardCharsets.UTF_8);
+        restrictToOwner(saved.resolve("snapshot-failure.txt"), false);
         // Never advertise a directory before its existence is verified.
         if (!Files.isDirectory(saved)
                 || !Files.isRegularFile(saved.resolve("snapshot-failure.txt"))) {
             throw new IOException("Native snapshot diagnostics could not be saved");
         }
         return saved.toRealPath();
+    }
+
+    private static void restrictToOwner(Path path, boolean directory)
+            throws IOException {
+        try {
+            Files.setPosixFilePermissions(path,
+                PosixFilePermissions.fromString(directory ? "rwx------"
+                    : "rw-------"));
+        } catch (UnsupportedOperationException ignored) {
+            // Windows uses ACLs inherited from per-user LOCALAPPDATA.
+        }
     }
 
     public static final class SnapshotFailure extends IOException {
