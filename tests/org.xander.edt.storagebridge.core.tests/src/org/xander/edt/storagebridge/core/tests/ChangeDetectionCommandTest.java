@@ -29,6 +29,13 @@ public final class ChangeDetectionCommandTest {
             Duration.ofMinutes(2));
 
     @Test
+    public void thinClientCannotRunDesignerSnapshot() {
+        assertThrows(IllegalArgumentException.class, () ->
+            new ChangeDetectionRequest(Path.of("/opt/1cv8c.exe"),
+                REQUEST.infobase(), Duration.ofMinutes(2)));
+    }
+
+    @Test
     public void incrementalChangeDetectionUsesRequiredUpdateSwitch() {
         Path baseline = Path.of("/tmp/previous/ConfigDumpInfo.xml");
         Path root = Path.of("/tmp/inspection");
