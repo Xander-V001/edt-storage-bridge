@@ -117,6 +117,7 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of(
             "Document.Invoice",
             "Document.Invoice.Form.Main",
+            "Document.Invoice.Form.Main.Form",
             "Document.Invoice.ObjectModule",
             "Document.Invoice.Template.Print",
             "Role.Accountant", "Role.Accountant.Rights",
@@ -156,6 +157,24 @@ public final class SelectiveDumpPlannerTest {
             "Subsystem.Кадры",
             "Subsystem.Кадры.Subsystem.Интеграция1СКС",
             "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная"),
+            plan.exportable());
+    }
+
+    @Test
+    public void independentFormPayloadAndTemplatePayloadAreNotLostByListFile()
+            throws Exception {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("DataProcessor.Assistant.Form.Форма.Form"),
+            List.of("DataProcessor.Assistant",
+                "DataProcessor.Assistant.Form.Форма",
+                "DataProcessor.Assistant.Form.Форма.Form",
+                "DataProcessor.Assistant.Form.Форма.Module",
+                "DataProcessor.Other.Form.Unrelated"));
+        assertEquals(List.of(
+            "DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form",
+            "DataProcessor.Assistant.Form.Форма.Module"),
             plan.exportable());
     }
 
