@@ -44,6 +44,24 @@ public final class ConfigDumpInfoIndex {
     /** Full object names and their opaque native 1C identity/version pair. */
     public static Map<String, Version> readVersions(Path configDumpInfo)
             throws IOException {
+        return readInventory(configDumpInfo, false).versioned();
+    }
+
+    /**
+     * Strict global-source completeness audit. Unlike the incremental index,
+     * this includes Metadata entries WITHOUT configVersion: those entries
+     * cannot participate in the native change-token algorithm, but must not
+     * silently disappear when claiming a complete full-configuration import.
+     */
+    public static Set<String> allMetadataNames(Path configDumpInfo)
+            throws IOException {
+        return readInventory(configDumpInfo, true).all();
+    }
+
+    private record Inventory(Map<String, Version> versioned, Set<String> all) {}
+
+    private static Inventory readInventory(Path configDumpInfo,
+            boolean includeUnversioned) throws IOException {
         if (configDumpInfo == null || !Files.isRegularFile(configDumpInfo)
                 || Files.size(configDumpInfo) < 30
                 || Files.size(configDumpInfo) > MAX_BYTES) {
@@ -84,28 +102,34 @@ public final class ConfigDumpInfoIndex {
                 ? ((Element) versions.item(0)).getElementsByTagName("Metadata")
                 : ((Element) versions.item(0)).getElementsByTagNameNS(ns, "Metadata");
             Map<String, Version> result = new LinkedHashMap<>();
+            var allNames = new java.util.LinkedHashSet<String>();
             for (int i = 0; i < metadata.getLength(); i++) {
                 Element item = (Element) metadata.item(i);
                 String token = item.getAttribute("configVersion");
-                if (token.isBlank()) {
+                if (token.isBlank() && !includeUnversioned) {
                     continue;
                 }
                 String name = item.getAttribute("name");
                 if (!name.matches("[\\p{L}\\p{N}_]+(\\.[\\p{L}\\p{N}_]+)*")) {
                     throw new IOException("Invalid metadata name in ConfigDumpInfo");
                 }
-                if (result.size() >= MAX_OBJECTS) {
+                if (allNames.size() >= MAX_OBJECTS) {
                     throw new IOException("ConfigDumpInfo object limit exceeded");
                 }
-                if (result.putIfAbsent(name,
-                        new Version(item.getAttribute("id"), token)) != null) {
+                if (!allNames.add(name)) {
                     throw new IOException("Duplicated metadata name in ConfigDumpInfo");
+                }
+                if (!token.isBlank()) {
+                    if (result.putIfAbsent(name,
+                            new Version(item.getAttribute("id"), token)) != null) {
+                        throw new IOException("Duplicated metadata name in ConfigDumpInfo");
+                    }
                 }
             }
             if (result.isEmpty()) {
                 throw new IOException("No exportable metadata in ConfigDumpInfo");
             }
-            return Map.copyOf(result);
+            return new Inventory(Map.copyOf(result), Set.copyOf(allNames));
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
