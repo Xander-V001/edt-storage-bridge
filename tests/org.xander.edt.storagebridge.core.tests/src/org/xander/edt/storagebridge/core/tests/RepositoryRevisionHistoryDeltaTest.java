@@ -61,11 +61,8 @@ public class RepositoryRevisionHistoryDeltaTest {
         assertEquals(Set.of("Документ.Заказ", "Обработка.Импорт.Форма.Главная",
             "Документ.Новый", "Справочник.Старый"), candidate.touched());
 
-        var nativeChanges = RepositoryRevisionHistoryDelta.forCurrentInventory(
-            candidate,
-            Set.of("Документ.Заказ", "Справочник.Старый"),
-            Set.of("Документ.Заказ", "Документ.Новый",
-                "Обработка.Импорт.Форма.Главная"));
+        var nativeChanges = RepositoryRevisionHistoryDelta
+            .asNativeChangedNames(candidate);
         assertFalse(nativeChanges.fullDump());
         assertTrue(nativeChanges.exactNames().contains("Документ.Заказ"));
         assertTrue(nativeChanges.exactNames()
@@ -102,9 +99,8 @@ public class RepositoryRevisionHistoryDeltaTest {
             throws Exception {
         var candidates = RepositoryRevisionHistoryDelta.fromNativeReport(
             VERSIONS.getBytes(java.nio.charset.StandardCharsets.UTF_8), 100, 103);
-        var changes = RepositoryRevisionHistoryDelta.forCurrentInventory(
-            candidates, Set.of("Документ.Заказ"),
-            Set.of("Документ.Заказ", "Документ.Новый"));
+        var changes = RepositoryRevisionHistoryDelta
+            .asNativeChangedNames(candidates);
         assertTrue(changes.exactNames().contains("Обработка.Импорт.Форма.Главная"));
     }
 }
