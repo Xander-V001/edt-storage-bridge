@@ -40,6 +40,10 @@ public final class ReadOnlyReportCommand {
             args.add("-NEnd");
             args.add(Long.toString(request.endVersion()));
         }
+        // Match the interactive "По версиям хранилища" report with
+        // "Не выводить строки комментария, начинающиеся с //": unchecked.
+        // Without this switch, native Designer silently omits task comments.
+        args.add("-IncludeCommentLinesWithDoubleSlash");
         args.add("-ReportFormat");
         args.add("txt");
         args.add("/Out");
