@@ -103,7 +103,7 @@ public final class ChangedObjectsProbeNativeTest {
         try {
             Files.writeString(root.resolve("Document.xml"), "<Document/>");
             var changed = ChangedObjectsProbe.parseNativeText(
-                "Modified:Document.Payroll.Form.Main\\n");
+                "Modified:Document.Payroll.Form.Main\n");
             var ex = assertThrows(ChangedObjectsProbe.NativeStageIncomplete.class,
                 () -> ChangedObjectsProbe.validateNativeStage(changed, root));
             assertEquals(1, ex.reportedChanges());
@@ -134,7 +134,7 @@ public final class ChangedObjectsProbeNativeTest {
             throws Exception {
         Path root = Files.createTempDirectory("1c-native-fulldump-");
         try {
-            var fullDump = ChangedObjectsProbe.parseNativeText("FullDump\\n");
+            var fullDump = ChangedObjectsProbe.parseNativeText("FullDump\n");
             ChangedObjectsProbe.validateNativeStage(fullDump, root);
         } finally {
             Files.deleteIfExists(root);
