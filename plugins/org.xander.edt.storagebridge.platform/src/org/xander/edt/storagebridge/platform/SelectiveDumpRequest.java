@@ -7,7 +7,9 @@ import java.util.Objects;
 
 /**
  * Explicit set of changed metadata objects from the existing storage-bound IB.
- * This request cannot mean "export entire configuration".
+ * This request cannot mean "export entire configuration". The documented
+ * standalone Configuration root is allowed as an EDT import dependency in
+ * an otherwise selective -listFile; bare Language is not a valid unit.
  */
 public record SelectiveDumpRequest(
         Path executable, InfobaseLocation infobase,
@@ -40,12 +42,10 @@ public record SelectiveDumpRequest(
         }
         for (String nameOfObject : objectNames) {
             if (nameOfObject == null || nameOfObject.length() > 1024
-                    || "Configuration".equals(nameOfObject)
                     || "Language".equals(nameOfObject)
                     || nameOfObject.isBlank()
                     || (!nameOfObject.contains(".")
-                        && !"Configuration".equals(nameOfObject)
-                        && !"Language".equals(nameOfObject))
+                        && !"Configuration".equals(nameOfObject))
                     || !nameOfObject.matches("[\\p{L}\\p{N}_.]+")) {
                 throw new IllegalArgumentException("Invalid 1C metadata object name");
             }
