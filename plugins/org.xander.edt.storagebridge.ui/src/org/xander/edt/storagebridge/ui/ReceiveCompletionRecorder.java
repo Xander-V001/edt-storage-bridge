@@ -69,6 +69,10 @@ public final class ReceiveCompletionRecorder {
             project, repository, intermediary, branch, revision);
         ReceiveRevisionStore.recordApplied(
             project, repository, intermediary, branch, revision);
+        // Full native-project equality supersedes all older decisions
+        // to retain a locally different remote metadata identity.
+        ReceivePendingStore.clearKeptLocalAfterGlobalEquality(
+            project, repository, branch, intermediary);
         if (initialReview) {
             journal.markInitialReviewPrepared();
         }
