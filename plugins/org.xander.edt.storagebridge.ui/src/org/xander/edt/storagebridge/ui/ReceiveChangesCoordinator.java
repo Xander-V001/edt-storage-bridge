@@ -1027,13 +1027,12 @@ public final class ReceiveChangesCoordinator {
                                     settings.infobasePassword()),
                                 monitor::isCanceled);
                             stagedExport.set(retrySource);
+                            try {
                             // A failed first EDT import does not give the
                             // second native export permission to work with a
                             // different intermediary configuration.
                             if (!intermediaryInventoryUnchanged(
                                     journal, detect, monitor)) {
-                                retrySource.close();
-                                stagedExport.set(null);
                                 throw new IOException(
                                     "База-посредник изменилась при повторной "
                                     + "выборочной XML-выгрузке 1С");
@@ -1059,6 +1058,13 @@ public final class ReceiveChangesCoordinator {
                                 // An actual binary/importer limitation: only
                                 // an explicitly approved full review remains.
                             }
+                            } catch (Exception retryFailure) {
+                                cleanupQuietly(stagedExport.get(),
+                                    stagedConversion.get());
+                                stagedExport.set(null);
+                                stagedConversion.set(null);
+                                throw retryFailure;
+                            }
                         }
                     }
                     boolean useFull = confirmOnUi(shell,
@@ -1073,9 +1079,12 @@ public final class ReceiveChangesCoordinator {
                         + "не обновляется. Операция может занять долгое время.",
                         "Полная сверка");
                     if (!useFull) {
-                        // User declined the expensive fallback. This is a
-                        // cancellation, not a corrupted project or a failed
-                        // repository update. Pending changes remain intact.
+                        // A declined full fallback must release BOTH the
+                        // original patch and any failed selective retry.
+                        // No editor has opened and PENDING remains intact.
+                        cleanupQuietly(stagedExport.get(), stagedConversion.get());
+                        stagedExport.set(null);
+                        stagedConversion.set(null);
                         throw new InterruptedException(
                             "Полная сверка отклонена пользователем");
                     }
