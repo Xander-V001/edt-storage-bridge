@@ -51,9 +51,12 @@ public class SelectiveDumpCommandTest {
     }
 
     @Test
-    public void rejectsAmbiguousBareRootMarkersButAllowsExplicitProperties() {
-        assertThrows(IllegalArgumentException.class,
-            () -> request(List.of("Configuration")));
+    public void acceptsNativeConfigurationRootButRejectsBareLanguage() {
+        // Native -listFile accepts the short Configuration name as an EDT
+        // import dependency. It is not an implicit FULL configuration dump.
+        var root = request(List.of("Document.Заказ", "Configuration"));
+        assertEquals(2, root.objectNames().size());
+        assertTrue(root.objectNames().contains("Configuration"));
         assertThrows(IllegalArgumentException.class,
             () -> request(List.of("Language")));
         var req = request(List.of(
