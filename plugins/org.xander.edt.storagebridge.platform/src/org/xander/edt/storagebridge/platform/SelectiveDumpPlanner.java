@@ -111,19 +111,15 @@ public final class SelectiveDumpPlanner {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(nativeCurrentInventory);
         var export = new LinkedHashSet<String>(plan.exportable());
-        boolean hasRoot = false;
-        var languages = new LinkedHashSet<String>();
+        // GitConverter exports the native configuration root for EDT even
+        // when ConfigDumpInfo names it Configuration.<ActualName>. A bare
+        // Configuration index entry is not guaranteed to exist.
+        export.add("Configuration");
         for (String name : nativeCurrentInventory) {
-            if ("Configuration".equals(name)) {
-                hasRoot = true;
-            } else if (name != null && name.startsWith("Language.")
+            if (name != null && name.startsWith("Language.")
                     && name.indexOf('.', "Language.".length()) < 0) {
-                languages.add(name);
+                export.add(name);
             }
-        }
-        if (hasRoot) {
-            export.add("Configuration");
-            export.addAll(languages);
         }
         return List.copyOf(export);
     }
