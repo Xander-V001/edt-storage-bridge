@@ -28,7 +28,6 @@ import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
 import org.xander.edt.storagebridge.core.OutgoingDifferenceSummary;
-import org.xander.edt.storagebridge.core.OutgoingBslWritePlan;
 import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
@@ -176,17 +175,6 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         converted, Path.of(project.getLocation().toOSString()));
                     var summary = OutgoingDifferenceSummary.from(delta);
                     var metadataPlan = OutgoingMetadataObjectPlan.fromDelta(delta);
-                    // Publication is allowed only when EVERY changed resource
-                    // maps to one verified standalone modified BSL file.
-                    // Unrecognized metadata, forms, attributes, additions,
-                    // deletions block the native write path completely.
-                    OutgoingBslWritePlan eligible;
-                    try {
-                        eligible = OutgoingBslWritePlan.fromDelta(delta);
-                    } catch (IOException unsupported) {
-                        eligible = null;
-                    }
-                    final OutgoingBslWritePlan testWritePlan = eligible;
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
 
@@ -271,7 +259,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                                                             OutgoingMetadataExportCoordinator
                                                                 .preview(shell, project, settings,
                                                                     expectedGit, headRevision,
-                                                                    metadataPlan, testWritePlan);
+                                                                    metadataPlan);
                                                         }
                                                     }
                                                 });
