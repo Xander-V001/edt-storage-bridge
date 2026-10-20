@@ -10,6 +10,32 @@ import org.xander.edt.storagebridge.core.EdtMergeAcceptance;
 
 public final class EdtMergeAcceptanceTest {
     @Test
+    public void explicitLocalChoicesAreDisjointFromAcceptedChanges() {
+        var reviewed = EdtMergeAcceptance.classifyReviewed(
+            Set.of("Document.Payroll.Form.Main",
+                "Document.Payroll.ManagerModule", "Catalog.People"),
+            Set.of("Document.Payroll.Form.Main"));
+        assertEquals(Set.of("Document.Payroll.Form.Main"),
+            reviewed.keptLocal());
+        assertEquals(Set.of("Document.Payroll.ManagerModule",
+            "Catalog.People"), reviewed.accepted());
+    }
+
+    @Test
+    public void noKeptObjectsMeansDeveloperReviewedAndAcceptedAllShown() {
+        var reviewed = EdtMergeAcceptance.classifyReviewed(
+            Set.of("Catalog.People"), Set.of());
+        assertTrue(reviewed.keptLocal().isEmpty());
+        assertEquals(Set.of("Catalog.People"), reviewed.accepted());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void cannotClaimUnpresentedObjectWasKeptLocal() {
+        EdtMergeAcceptance.classifyReviewed(
+            Set.of("Catalog.People"), Set.of("Document.Secret"));
+    }
+
+    @Test
     public void nativeEdtDecisionClosesAllPresentedWithoutComparingBslBytes() {
         var decision = EdtMergeAcceptance.evaluate(
             Set.of("Document.Payroll", "Document.Payroll.ManagerModule",
