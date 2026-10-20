@@ -121,9 +121,9 @@ public final class ChangedObjectsProbe {
     }
 
     /**
-     * Native patch and native change report are ONE command result. Retain the
-     * PLATFORM-generated XML files until EDT finishes comparing them.
-     * The owner controls their lifetime; no second -listFile export occurs.
+     * Retained native incremental XML and its separate -getChanges report.
+     * The caller can append only the missing EDT import dependencies using
+     * native -listFile; the initial -update XML is NOT discarded.
      */
     public record NativeExport(Path workingRoot, Path xmlDirectory,
             NativeChanges changes) implements AutoCloseable {
