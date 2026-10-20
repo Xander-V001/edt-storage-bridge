@@ -27,12 +27,17 @@ import org.xander.edt.storagebridge.platform.OutgoingStorageObjectsXml;
 public final class OutgoingWholeObjectWritePlan {
     private final List<String> edtOwners;
     private final List<String> nativeNames;
+    // Native EDT exports the entire object tree. Designer loads each
+    // specified root and reads its children from that same directory.
+    private final List<String> exportFiles;
     private final List<String> loadFiles;
 
     private OutgoingWholeObjectWritePlan(List<String> edtOwners,
-            List<String> nativeNames, List<String> loadFiles) {
+            List<String> nativeNames, List<String> exportFiles,
+            List<String> loadFiles) {
         this.edtOwners = List.copyOf(edtOwners);
         this.nativeNames = List.copyOf(nativeNames);
+        this.exportFiles = List.copyOf(exportFiles);
         this.loadFiles = List.copyOf(loadFiles);
     }
 
@@ -107,10 +112,12 @@ public final class OutgoingWholeObjectWritePlan {
         if (!mainFiles.containsAll(roots.values())) {
             throw new IOException("Whole-object XML descriptors are missing");
         }
-        var load = new ArrayList<String>(uniqueFiles);
-        load.remove("ConfigDumpInfo.xml");
+        // Official 1C partial import: specifying the owner XML imports
+        // this owner with its subordinate objects from the export directory.
+        // Do not request every module/form/resource as a separate operation.
         return new OutgoingWholeObjectWritePlan(exportedOwners,
-            exportedNativeNames, load);
+            exportedNativeNames, new ArrayList<>(uniqueFiles),
+            new ArrayList<>(roots.values()));
     }
 
     public List<String> edtOwners() { return edtOwners; }
@@ -149,7 +156,7 @@ public final class OutgoingWholeObjectWritePlan {
                 LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(exportRoot)) {
             throw new IOException("Whole-object export directory unavailable");
         }
-        for (String name : loadFiles) {
+        for (String name : exportFiles) {
             Path target = exportRoot;
             for (String segment : name.split("/")) {
                 target = target.resolve(segment);
