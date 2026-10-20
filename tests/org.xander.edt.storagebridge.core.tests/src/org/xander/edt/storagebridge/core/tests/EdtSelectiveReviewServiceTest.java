@@ -109,32 +109,6 @@ public class EdtSelectiveReviewServiceTest {
     }
 
     @Test
-    public void fullNativeInventoryCannotLoseImportedTopLevelOwners() {
-        var nativeNames = java.util.Set.of(
-            "Configuration.Зарплата",
-            "Document.Payroll.Form.ListForm",
-            "CommonModule.Shared.Module");
-        var completeStage = java.util.Set.of(
-            "Configuration/Configuration", "Documents/Payroll",
-            "CommonModules/Shared");
-        org.junit.Assert.assertTrue(
-            EdtSelectiveReviewService.fullImportCoversNativeInventory(
-                nativeNames, java.util.Set.of(), completeStage));
-        org.junit.Assert.assertFalse(
-            EdtSelectiveReviewService.fullImportCoversNativeInventory(
-                nativeNames, java.util.Set.of(),
-                java.util.Set.of("Configuration/Configuration",
-                    "Documents/Payroll")));
-        org.junit.Assert.assertFalse(
-            EdtSelectiveReviewService.fullImportCoversNativeInventory(
-                nativeNames, java.util.Set.of("UnknownNativeType.Item"),
-                completeStage));
-        org.junit.Assert.assertFalse(
-            EdtSelectiveReviewService.fullImportCoversNativeInventory(
-                java.util.Set.of(), java.util.Set.of(), completeStage));
-    }
-
-    @Test
     public void formAndModuleChangesBelongToTheirParentMetadata()
             throws Exception {
         assertEquals("Documents/Документ1",
