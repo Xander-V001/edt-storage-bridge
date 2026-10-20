@@ -96,7 +96,7 @@ public final class OutgoingMetadataExportCoordinator {
                             .append("changed_resources=").append(
                                 owner.changes().size()).append('\n');
                     }
-                    summary.append("\nDeleted metadata owners (no XML export):\n");
+                    summary.append("\nDeleted metadata owners (handled through Configuration.xml parent):\n");
                     plan.removedOwners().forEach(x -> summary.append(x).append('\n'));
 
                     phase = "NATIVE_EDT_EXPORT";
@@ -121,7 +121,7 @@ public final class OutgoingMetadataExportCoordinator {
                                 result.outputFiles());
                             event(log, "WRITE_QUALIFIED",
                                 "owners=" + qualifiedWrite.classicOwners().size()
-                                + " owners=" + qualifiedWrite.loadFiles().size());
+                                + " root_files=" + qualifiedWrite.loadFiles().size());
                         } catch (IOException unsupported) {
                             event(log, "WRITE_REJECTED",
                                 "reason=" + unsupported.getClass().getSimpleName()
@@ -143,7 +143,7 @@ public final class OutgoingMetadataExportCoordinator {
                                 .append(files - max).append('\n');
                         }
                     } else {
-                        event(log, "NO_EXPORT", "all-selected-owners-deleted");
+                        event(log, "NO_EXPORT", "nothing-exportable");
                     }
                     phase = "VERIFY";
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
@@ -165,7 +165,7 @@ public final class OutgoingMetadataExportCoordinator {
                             "Экспорт метаданных EDT завершён",
                             "Объектов с изменениями: " + plan.owners().size()
                             + "\nСформировано XML/ресурсов: " + fileCount
-                            + "\nУдалённых объектов (отдельная обработка): "
+                            + "\nУдалённых объектов (через родителя Configuration): "
                             + plan.removedOwners().size()
                             + "\n\nОтчёт и файлы: " + resultDir
                             + "\n\nЭто диагностический экспорт без изменений "
@@ -179,6 +179,10 @@ public final class OutgoingMetadataExportCoordinator {
                                     + "Подготовить ТЕСТОВОЕ помещение "
                                     + approvedPlan.classicOwners().size()
                                     + " объектов? "
+                                    + (approvedPlan.capturesAllRootChildren()
+                                        ? "Для удаления будет рекурсивно захвачен "
+                                          + "корень конфигурации. "
+                                        : "")
                                     + "Рабочие хранилища не использовать. "
                                     + "Перед записью будут ещё два подтверждения.")) {
                                 OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
@@ -188,11 +192,9 @@ public final class OutgoingMetadataExportCoordinator {
                         } else if (approvedPlan == null && !shell.isDisposed()) {
                             MessageDialog.openInformation(shell,
                                 "Помещение объектов пока заблокировано",
-                                "XML для проверки подготовлен, но весь набор "
-                                + "объектов не прошёл проверку допустимой "
-                                + "области частичной загрузки. "
-                                + "Новые/удалённые объекты и корень конфигурации "
-                                + "требуют отдельной операции. "
+                                "Штатный XML-экспорт или состав объектов "
+                                + "не прошёл проверку допустимой области "
+                                + "частичной загрузки. "
                                 + "Данные тестового экспорта сохранены для "
                                 + "диагностики. Ничего в 1С не записывалось.");
                         }
