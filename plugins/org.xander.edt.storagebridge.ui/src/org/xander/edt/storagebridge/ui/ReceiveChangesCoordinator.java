@@ -1069,7 +1069,7 @@ public final class ReceiveChangesCoordinator {
                                         }
 
                                         GitReceiveGuard.requireSameBranchAndHead(
-                                            project, git);
+                                            project, postMergeGit);
                                         String reason = null;
                                         long confirmedRevision = ReceiveRevisionStore.UNKNOWN;
                                         int acknowledgedCount = 0;
