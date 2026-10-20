@@ -190,6 +190,10 @@ public final class ReceiveChangesCoordinator {
         AtomicBoolean updateAttempted = new AtomicBoolean(false);
         // Native exit=0 is not yet a verified post-update base inventory.
         AtomicBoolean updateNeedsSnapshot = new AtomicBoolean(false);
+        // Recovery may be proven without a second 1C update when the
+        // complete native inventory still matches an already reviewed
+        // and revision-attested previous source snapshot.
+        AtomicBoolean recoveredSameReviewedSource = new AtomicBoolean(false);
         // A real native repository revision, NEVER a ConfigDumpInfo token.
         // Unknown revision must not block the existing XML receiving flow.
         AtomicLong revisionForReview = new AtomicLong(ReceiveRevisionStore.UNKNOWN);
@@ -475,6 +479,13 @@ public final class ReceiveChangesCoordinator {
                         updateNeedsSnapshot.set(false);
                     }
                     Path lastScanned = journal.lastScannedInfo();
+                    if (recovery && lastScanned != null
+                            && previouslyReviewed > 0
+                            && previouslyReviewed == previouslyScanned) {
+                        recoveredSameReviewedSource.set(
+                            Files.mismatch(lastScanned,
+                                remote.configDumpInfo()) == -1);
+                    }
                     boolean selectAllRemote = fullReview || lastScanned == null;
                     phase.set(selectAllRemote
                         ? (mode == ReceiveMode.FULL_REVIEW
@@ -686,11 +697,18 @@ public final class ReceiveChangesCoordinator {
                 boolean emptyNativeDelta = patch != null
                     && !patch.changes().fullDump()
                     && patch.changes().exactNames().isEmpty();
-                boolean canAdvance = !retryPendingOnly && !recovery
-                    && ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
-                        previouslyReviewed, previouslyScanned,
-                        revisionBeforeUpdate, revisionForReview.get(),
-                        observedRevision, emptyNativeDelta, true);
+                boolean canAdvance = !retryPendingOnly
+                    && ((!recovery
+                        && ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                            previouslyReviewed, previouslyScanned,
+                            revisionBeforeUpdate, revisionForReview.get(),
+                            observedRevision, emptyNativeDelta, true))
+                        || (recovery
+                            && ReceiveCompletionPolicy.canAcknowledgeRecoveredEmptyDelta(
+                                previouslyReviewed, previouslyScanned,
+                                observedRevision,
+                                recoveredSameReviewedSource.get(),
+                                emptyNativeDelta, true)));
                 if (canAdvance) {
                     GitReceiveGuard.requireUnchanged(project, git);
                     long finalHead = readLatestRevisionOrUnknown(
@@ -705,7 +723,10 @@ public final class ReceiveChangesCoordinator {
                             + observedRevision + "; previousReviewed="
                             + previouslyReviewed + "; no EDT merge necessary");
                         informationOnUi(shell, "Версия хранилища проверена",
-                            "1С подтвердила отсутствие изменений объектов. "
+                            "1С подтвердила отсутствие изменений объектов"
+                            + (recovery
+                                ? " после восстановления предыдущей попытки. "
+                                : ". ")
                             + "Обработанная версия хранилища: "
                             + observedRevision + ".\nСравнение EDT не требуется. "
                             + "Существующие локальные изменения не затрагивались.");
