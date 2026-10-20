@@ -134,6 +134,21 @@ public final class RemoteReceiveScopePlannerTest {
     }
 
     @Test
+    public void initialFullComparisonDoesNotCreateFakePendingObjects()
+            throws Exception {
+        Path now = inventory(
+            "<Metadata name=\"Document.One\" id=\"1\" configVersion=\"1\"/>"
+            + "<Metadata name=\"Document.Two\" id=\"2\" configVersion=\"1\"/>");
+        try {
+            var review = RemoteReceiveScopePlanner.fullInventory(null, now);
+            assertTrue(review.requiresFullNativeComparison());
+            assertTrue(review.pendingIdentities().isEmpty());
+        } finally {
+            Files.deleteIfExists(now);
+        }
+    }
+
+    @Test
     public void nativeUnversionedPropertyMustNotBeSilentlyDiscarded()
             throws Exception {
         Path old = inventory(
