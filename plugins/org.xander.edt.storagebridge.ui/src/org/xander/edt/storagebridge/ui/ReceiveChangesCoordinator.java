@@ -184,7 +184,7 @@ public final class ReceiveChangesCoordinator {
             String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
             AtomicReference<IStatus> outcome) {
         SelectiveDumpRunner.ExportResult export = null;
-        // Native -update produces XML; a separate -getChanges names changes.
+        // One native -update/-getChanges run produces XML and changed names.
         // Supplement XML in place for EDT, then transfer cleanup ownership.
         AtomicReference<ChangedObjectsProbe.NativeExport> nativePatch =
             new AtomicReference<>();
