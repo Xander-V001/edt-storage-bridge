@@ -1551,8 +1551,9 @@ public final class ReceiveChangesCoordinator {
                                                                 + "и APPLIED не изменялся.";
                                                         }
                                                     }
-                                                } else if (!effectiveFull.get()
-                                                        && !inventoryOnly) {
+                                                } else if (!inventoryOnly
+                                                        && (!effectiveFull.get()
+                                                            || absentFromRemote.isEmpty())) {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
                                                     // on separately serialized .mdo/.distr.
@@ -1562,7 +1563,22 @@ public final class ReceiveChangesCoordinator {
                                                         new java.util.LinkedHashSet<>(pendingNow);
                                                     notPresented.removeAll(
                                                         selectedPendingNames);
-                                                    if (!notPresented.isEmpty()) {
+                                                    boolean allNativeOwnersPresent =
+                                                        !effectiveFull.get()
+                                                            || EdtSelectiveReviewService
+                                                                .fullImportCoversNativeInventory(
+                                                                    ConfigDumpInfoIndex.allMetadataNames(
+                                                                        journal.lastScannedInfo()),
+                                                                    unindexedNativeNames.get(),
+                                                                    EdtSelectiveReviewService
+                                                                        .primaryDescriptors(
+                                                                            retainedConvertedEdt).keySet());
+                                                    if (!allNativeOwnersPresent) {
+                                                        reason = "Полный источник 1С не "
+                                                            + "представлен всеми необходимыми "
+                                                            + "владельцами метаданных EDT. "
+                                                            + "PENDING и REVIEWED сохранены.";
+                                                    } else if (!notPresented.isEmpty()) {
                                                         reason = "Часть ожидающих изменений "
                                                             + "не вошла в открытое выборочное "
                                                             + "сравнение EDT ("
@@ -1622,8 +1638,14 @@ public final class ReceiveChangesCoordinator {
                                                                             intermediaryIdentity,
                                                                             branch, finalHead,
                                                                             pendingNow, keptLocal);
+                                                                if (effectiveFull.get()
+                                                                        && initialFullReview) {
+                                                                    journal.markInitialReviewPrepared();
+                                                                }
                                                                 confirmedRevision = finalHead;
-                                                                reason = "Выборочное "
+                                                                reason = (effectiveFull.get()
+                                                                        ? "Полное "
+                                                                        : "Выборочное ")
                                                                     + "объединение завершено; "
                                                                     + "REVIEWED = " + finalHead
                                                                     + ". Оставлено локально: "
