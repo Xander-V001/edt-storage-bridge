@@ -1268,16 +1268,6 @@ public final class ReceiveChangesCoordinator {
                                                         fullyImportedOwners,
                                                         retainedConvertedEdt,
                                                         retainedExport.xmlDirectory());
-                                                // No owner was inspected: 0 out of 0
-                                                // is NOT evidence of an applied 1C source.
-                                                // Fail conservatively after native merge,
-                                                // without changing pending or revision data.
-                                                if (verified.checkedOwners() == 0) {
-                                                    throw new IOException(
-                                                        "EDT comparison produced no metadata "
-                                                        + "owners to verify; revision is not "
-                                                        + "eligible for acknowledgement");
-                                                }
                                                 // This is only a candidate count; inspect
                                                 // must not clear any pending objects yet.
                                                 boolean allSourceVerified =
@@ -1340,6 +1330,7 @@ public final class ReceiveChangesCoordinator {
                                                     mergeConfirmed, finalHeadProven,
                                                     entireProjectAudited,
                                                     allSourceVerified,
+                                                    verified.checkedOwners(),
                                                     remainingAfterAudit, presented);
                                                 finishStage.set(
                                                     "фиксация результата проверки EDT");
@@ -1443,6 +1434,14 @@ public final class ReceiveChangesCoordinator {
                                                                 + "не доказана. Журнал ожидающих "
                                                                 + "изменений оставлен без правок.";
                                                         }
+                                                    }
+                                                    case AUDIT_INCOMPLETE -> {
+                                                        // Zero imported owners is never
+                                                        // evidence of successful comparison.
+                                                        reason = "Проверка файлов EDT не нашла "
+                                                            + "ни одного объекта метаданных. "
+                                                            + "Версия не отмечена, журнал "
+                                                            + "ожидающих изменений сохранён.";
                                                     }
                                                     case NOT_MERGED -> {
                                                         reason = "EDT не подтвердила Merge. "
