@@ -62,14 +62,18 @@ public final class ReceivePendingStore {
             String branch, String intermediaryIdentity, Set<String> verifiedObjects)
             throws BackingStoreException {
         Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
+        // Validate the entire batch BEFORE the first mutation. Otherwise
+        // a stale/missing record in the middle of the set could remove some
+        // unrelated pending items and then fail the EDT completion.
         for (String name : verifiedObjects) {
             requireObject(name);
-            String key = ITEM + digest(name);
-            if (!name.equals(node.get(key, ""))) {
+            if (!name.equals(node.get(ITEM + digest(name), ""))) {
                 throw new IllegalStateException(
                     "Pending journal does not match verified metadata object");
             }
-            node.remove(key);
+        }
+        for (String name : verifiedObjects) {
+            node.remove(ITEM + digest(name));
         }
         node.flush();
     }
