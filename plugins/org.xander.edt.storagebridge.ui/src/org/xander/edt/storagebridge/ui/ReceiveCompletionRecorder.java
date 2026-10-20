@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.eclipse.core.resources.IProject;
+import org.xander.edt.storagebridge.core.EdtMergeAcceptance;
 import org.osgi.service.prefs.BackingStoreException;
 
 /**
@@ -86,10 +87,8 @@ public final class ReceiveCompletionRecorder {
             String repository, String intermediary, String branch,
             long revision, Set<String> presentedPending,
             Set<String> explicitlyKeptLocal) throws BackingStoreException {
-        if (!presentedPending.containsAll(explicitlyKeptLocal)) {
-            throw new IllegalArgumentException(
-                "Unpresented native identity cannot be marked kept locally");
-        }
+        var choices = EdtMergeAcceptance.classifyReviewed(
+            presentedPending, explicitlyKeptLocal);
         requireCheckpointVersion(project, repository, intermediary, branch, revision);
         var current = ReceivePendingStore.get(
             project, repository, branch, intermediary);
@@ -108,7 +107,7 @@ public final class ReceiveCompletionRecorder {
         if (!current.isEmpty()) {
             ReceivePendingStore.acknowledgeNativeReviewedScope(
                 project, repository, branch, intermediary, current,
-                explicitlyKeptLocal);
+                choices.keptLocal());
         }
         return current.size();
     }
