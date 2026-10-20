@@ -70,6 +70,36 @@ public final class ReceiveCompletionRecorder {
     }
 
     /**
+     * Native EDT finished a selective merge. The developer explicitly
+     * confirmed that EVERY native 1C change in this pending batch was shown
+     * and considered. We cannot infer the choice of individual checkboxes
+     * from EDT's serialized .mdo/.distr bytes.
+     *
+     * A reviewed native revision can advance even if some remote changes
+     * were intentionally left local. This NEVER writes APPLIED or fabricates
+     * a KEPT_LOCAL decision for an unidentified object.
+     */
+    public static int reviewedNativeSelective(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, Set<String> presentedPending)
+            throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        var current = ReceivePendingStore.get(
+            project, repository, branch, intermediary);
+        if (!current.equals(presentedPending)) {
+            throw new IllegalStateException(
+                "Not all pending changes were present in native EDT comparison");
+        }
+        if (!current.isEmpty()) {
+            ReceivePendingStore.acknowledgeNativeReviewedScope(
+                project, repository, branch, intermediary, current);
+        }
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        return current.size();
+    }
+
+    /**
      * Every presented changed owner matches native 1C content, but the
      * comparison covered only the change set, not the whole configuration.
      * Never write APPLIED from this method.
