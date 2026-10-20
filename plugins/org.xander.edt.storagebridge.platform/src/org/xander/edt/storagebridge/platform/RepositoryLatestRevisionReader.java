@@ -46,11 +46,11 @@ public final class RepositoryLatestRevisionReader {
     private static final Pattern DATE = Pattern.compile(
         "(?iu)^Дата создания\\s*:\\s*(\\d{2}\\.\\d{2}\\.\\d{4})\\s*$");
     private static final Pattern TIME = Pattern.compile(
-        "(?iu)^Время создания\\s*:\\s*(\\d{2}:\\d{2}:\\d{2})\\s*$");
+        "(?iu)^Время создания\\s*:\\s*(\\d{1,2}:\\d{2}:\\d{2})\\s*$");
     private static final DateTimeFormatter CREATED_DATE = DateTimeFormatter
         .ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT);
     private static final DateTimeFormatter CREATED_TIME = DateTimeFormatter
-        .ofPattern("HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
+        .ofPattern("H:mm:ss").withResolverStyle(ResolverStyle.STRICT);
 
     private RepositoryLatestRevisionReader() {}
 
