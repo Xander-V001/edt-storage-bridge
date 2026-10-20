@@ -83,9 +83,24 @@ public final class ConfigurationChangesParser {
                             ownerPath.append('.').append(segment)
                                 .append('.').append(parts[index + 1]);
                             export.add(ownerPath.toString());
+                            // Native 1C may version the FORM PAYLOAD separately
+                            // from Form.<name> itself (e.g. Form.Main.Form).
+                            // It is an exportable unit in ConfigDumpInfo,
+                            // and dropping it left EDT forms incomplete.
+                            // Keep ONLY a known immediate payload, never
+                            // construct arbitrary deeper Form.Module paths.
+                            if (index + 2 == parts.length - 1
+                                    && (("Form".equals(segment) || "Форма".equals(segment))
+                                        && ("Form".equals(parts[index + 2])
+                                            || "Module".equals(parts[index + 2]))
+                                        || ("Template".equals(segment)
+                                            || "Макет".equals(segment))
+                                        && "Template".equals(parts[index + 2]))) {
+                                export.add(object);
+                            }
                         }
-                        // Payload suffixes like Form.Main.Form.Module are
-                        // NOT independently exported native metadata names.
+                        // Deeper suffixes like Form.Main.Form.Module are not
+                        // standalone file units; the immediate payload is.
                         break descendants;
                     }
                     case "ManagerModule", "ObjectModule",

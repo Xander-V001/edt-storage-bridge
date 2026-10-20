@@ -33,7 +33,6 @@ import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
-import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
 import org.xander.edt.storagebridge.core.ReceiveConfirmationTexts;
 import org.xander.edt.storagebridge.core.ReceivePendingExplanation;
 import org.xander.edt.storagebridge.core.ReceiveReviewScope;
@@ -423,6 +422,26 @@ public final class ReceiveChangesCoordinator {
                         executable, transport, settings, jobProgress::isCanceled)
                     : ReceiveRevisionStore.UNKNOWN;
 
+            // Do not spend minutes updating the intermediary and merging in
+            // EDT if the native repository HEAD cannot be proved at all.
+            // Unknown HEAD must never be replaced with a ConfigDumpInfo token.
+            if (!retryPendingOnly && !recovery
+                    && revisionBeforeUpdate < 1) {
+                informationOnUi(shell, "Версия хранилища недоступна",
+                    "1С не подтвердила номер последней версии хранилища. "
+                    + "Обновление базы-посредника и сравнение EDT НЕ запускались. "
+                    + "Проверьте чтение штатного отчёта хранилища в настройках.");
+                return;
+            }
+            if (!retryPendingOnly && !recovery
+                    && previouslyReviewed > revisionBeforeUpdate) {
+                informationOnUi(shell, "Версия хранилища уменьшилась",
+                    "Ранее рассмотрена версия " + previouslyReviewed
+                    + ", а текущее хранилище сообщает "
+                    + revisionBeforeUpdate + ". Автоматическое получение "
+                    + "заблокировано: возможно, выбрано другое хранилище.");
+                return;
+            }
             if (!retryPendingOnly) {
             // The PRE-update ConfigDumpInfo belongs to the intermediary only.
             // It is NEVER the baseline of the current EDT project. The first
@@ -515,13 +534,14 @@ public final class ReceiveChangesCoordinator {
                     // Compare native NAME SETS only to recognize removals.
                     // Internal 1C configVersion/id values are not our diff API.
                     RemoteReceiveScopePlanner.Changes discovered;
-                    if (lastScanned == null) {
-                        // No proved baseline: compare the entire configuration,
-                        // but do not put EVERY metadata identity into pending.
-                        // Reviewed HEAD requires the finished EDT merge and
-                        // explicit developer confirmation, not a fake delta.
+                    if (selectAllRemote) {
+                        // The explicit FULL comparison is independent of the
+                        // incremental dump and change-list commands. Avoid
+                        // letting failures in -getChanges veto a valid native
+                        // global EDT comparison. FULL mode imports ALL remote
+                        // metadata; no invented per-object pending identities.
                         discovered = RemoteReceiveScopePlanner.fullInventory(
-                            null, remote.configDumpInfo());
+                            lastScanned, remote.configDumpInfo());
                     } else {
                         // Even when the user requested a FULL comparison,
                         // discover actual changed identities using native 1C.
@@ -720,6 +740,17 @@ public final class ReceiveChangesCoordinator {
                     + "Ни один объект EDT в этой попытке не применялся.");
                 return;
             }
+            // Without a proven native repository revision, EDT must not
+            // waste a merge session which cannot be recorded as REVIEWED.
+            // The exact pending identities are already journaled.
+            if (revisionForReview.get() < 1) {
+                informationOnUi(shell, "Версия хранилища не подтверждена",
+                    (revisionProofIssue.get() != null
+                        ? revisionProofIssue.get() : "1С не вернула подтверждённую версию.")
+                    + "\nИзменения сохранены для повторной сверки. "
+                    + "Сравнение EDT пока не запускалось.");
+                return;
+            }
             phase.set("Загрузка ожидающих обработки объектов");
             Set<String> pending = ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity);
@@ -836,6 +867,11 @@ public final class ReceiveChangesCoordinator {
             // The exact names listed by native -getChanges can include
             // embedded properties which do not have their own version token.
             sourceCovered.addAll(unindexedNativeNames.get());
+            // A full EDT comparison includes objects removed from the remote
+            // side; the developer may review those deletions explicitly.
+            if (fullNativeComparison) {
+                sourceCovered.addAll(absentFromRemote);
+            }
             final Set<String> selectedPendingNames = Set.copyOf(sourceCovered);
             List<String> selectedList = new ArrayList<>();
             Set<String> selected;
@@ -893,73 +929,57 @@ public final class ReceiveChangesCoordinator {
                     return result;
                 });
             } else {
-                var ready = nativePatch.get();
-                if (ready != null && !hadUnresolvedBefore && !retryPendingOnly) {
-                    // Fast path: retain the exact native one-pass XML patch.
-                    export = new SelectiveDumpRunner.ExportResult(
-                        ready.workingRoot(), ready.xmlDirectory());
-                    nativePatch.set(null);
-                } else if (nativePatchFailure.get() != null
-                        || retryPendingOnly || hadUnresolvedBefore) {
-                    // Fallback and retained PENDING: use the documented
-                    // -listFile transport for the union of exactly known
-                    // current/previous native changed identities.
-                    phase.set("Штатная выборочная выгрузка 1С по списку изменений");
-                    // The existing native listFile planner expands changed
-                    // owners with their independently developed descendants
-                    // from the CURRENT complete ConfigDumpInfo inventory.
-                    // Unsupported Configuration/Language roots are NOT
-                    // silently discarded or marked reviewed.
-                    // The full 1C inventory also includes embedded and
-                    // independently developed resources without their own
-                    // configVersion token. Do not accidentally omit those
-                    // related Form/Template/Module transport units.
-                    var listPlan = SelectiveDumpPlanner.planIncludingRelated(
-                        selectedList, allCurrentMetadata);
-                    if (!listPlan.deferred().isEmpty()) {
-                        throw new IOException(
-                            "Выборочная выгрузка содержит "
-                            + listPlan.deferred().size()
-                            + " изменений корневой конфигурации/языков, "
-                            + "которые EDT не может импортировать отдельно. "
-                            + "Они сохранены в PENDING; требуется "
-                            + "явно подтверждённая полная сверка.");
-                    }
-                    var transportNames = listPlan.exportable();
-                    var unusedPatch = nativePatch.getAndSet(null);
-                    if (unusedPatch != null) {
-                        unusedPatch.close();
-                    }
-                    var selective = new SelectiveDumpRequest(
-                        executable, transport, transportNames,
-                        Duration.ofMinutes(30),
-                        settings.infobaseUsername(), settings.infobasePassword());
-                    export = progress(jobProgress, 20, monitor -> {
-                        var result = new SelectiveDumpRunner().export(
-                            selective, monitor::isCanceled);
-                        // A separate Designer -listFile command does not
-                        // prove the intermediary remained unchanged during
-                        // export. Compare two COMPLETE 1C-created snapshots,
-                        // never the patch manifest or opaque version tokens.
-                        boolean stable;
-                        try {
-                            stable = intermediaryInventoryUnchanged(
-                                journal, detect, monitor);
-                        } catch (IOException | InterruptedException failure) {
-                            result.close();
-                            throw failure;
-                        }
-                        if (!stable) {
-                            result.close();
-                            throw new IOException(
-                                "База-посредник изменилась во время "
-                                + "выборочной XML-выгрузки 1С");
-                        }
-                        return result;
-                    });
-                } else {
-                    throw new IOException("Native 1C incremental XML was lost");
+                // The native -update patch can contain ONLY a changed form
+                // payload, without the owning descriptor and its unchanged
+                // independently developed siblings. Importing such a partial
+                // owner into EDT used to fail (or offer false deletions).
+                //
+                // Use native -getChanges ONLY to discover the exact scope;
+                // export each affected COMPLETE OWNER through documented
+                // -listFile. This is still selective: other metadata owners
+                // are not exported, converted or compared.
+                phase.set("Выборочная выгрузка полных изменённых объектов 1С");
+                var listPlan = SelectiveDumpPlanner.planIncludingRelated(
+                    selectedList, allCurrentMetadata);
+                if (!listPlan.deferred().isEmpty()
+                        || listPlan.exportable().isEmpty()) {
+                    throw new IOException(
+                        "Штатная выборочная выгрузка не покрывает "
+                        + "некоторые корневые или неподдерживаемые объекты 1С. "
+                        + "Для них требуется полная сверка.");
                 }
+                var nativeStage = nativePatch.getAndSet(null);
+                if (nativeStage != null) {
+                    nativeStage.close();
+                }
+                // Root/languages are required ONLY to make the native EDT
+                // importer understand the partial XML. They are NOT selected
+                // incoming changes in the comparison editor.
+                var importNames = SelectiveDumpPlanner.withImportContext(
+                    listPlan, allCurrentMetadata);
+                var selective = new SelectiveDumpRequest(
+                    executable, transport, importNames,
+                    Duration.ofMinutes(30),
+                    settings.infobaseUsername(), settings.infobasePassword());
+                export = progress(jobProgress, 20, monitor -> {
+                    var result = new SelectiveDumpRunner().export(
+                        selective, monitor::isCanceled);
+                    boolean stable;
+                    try {
+                        stable = intermediaryInventoryUnchanged(
+                            journal, detect, monitor);
+                    } catch (IOException | InterruptedException failure) {
+                        result.close();
+                        throw failure;
+                    }
+                    if (!stable) {
+                        result.close();
+                        throw new IOException(
+                            "База-посредник изменилась во время "
+                            + "выборочной XML-выгрузки 1С");
+                    }
+                    return result;
+                });
             }
             // Converted EDT files, like native 1C XML, stay OUTSIDE Git.
             phase.set("Создание временных файлов сравнения EDT");
@@ -980,9 +1000,9 @@ public final class ReceiveChangesCoordinator {
             // by the native EDT XML importer. Do not loop or re-run the
             // repository update. A previously listFile-based transport
             // must never be retried indefinitely.
-            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(
-                nativePatchFailure.get() != null || retryPendingOnly
-                    || hadUnresolvedBefore);
+            // Incoming source already used the complete-owner -listFile
+            // transport. Retrying identical XML would not repair it.
+            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(true);
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
@@ -1390,104 +1410,15 @@ public final class ReceiveChangesCoordinator {
                                             // checkpoints. A failed 1C history
                                             // TXT report must not repeatedly
                                             // present the SAME merged objects.
-                                            boolean allowReview = false;
-                                            boolean inventoryOnly = false;
-                                            if (revisionForReview.get() > 0) {
-                                                finishStage.set(
-                                                    "проверка версии хранилища после Merge");
-                                                var proof = RepositoryHeadAttestation
-                                                    .confirm(revisionForReview.get(),
-                                                        () -> readLatestRevisionOrUnknown(
-                                                            executable, transport,
-                                                            settings,
-                                                            Duration.ofSeconds(30),
-                                                            monitor::isCanceled),
-                                                        monitor::isCanceled,
-                                                        Thread::sleep);
-                                                if (proof.observed() > 0) {
-                                                    ReceiveRevisionStore.recordObserved(
-                                                        project, settings.address(),
-                                                        intermediaryIdentity,
-                                                        proof.observed());
-                                                }
-                                                switch (proof.state()) {
-                                                    case CONFIRMED -> allowReview = true;
-                                                    case CHANGED -> reason =
-                                                        "Хранилище изменилось во время "
-                                                        + "сравнения: ожидалась версия "
-                                                        + revisionForReview.get()
-                                                        + ", текущая "
-                                                        + proof.observed()
-                                                        + ". Нужна повторная сверка.";
-                                                    case CANCELLED -> reason =
-                                                        "Проверка актуальной версии "
-                                                        + "хранилища отменена.";
-                                                    case UNAVAILABLE ->
-                                                        inventoryOnly = true;
-                                                }
-                                            } else if (revisionBeforeUpdate > 0
-                                                    && observedRevision > 0
-                                                    && revisionBeforeUpdate
-                                                        != observedRevision) {
-                                                // A POSITIVE difference between
-                                                // two native HEAD reads is an
-                                                // actual race, NOT a missing
-                                                // report. Never downgrade a
-                                                // witnessed remote change to
-                                                // weak IB-inventory equality.
-                                                reason = "Во время получения "
-                                                    + "зафиксирована смена версии "
-                                                    + "хранилища: "
-                                                    + revisionBeforeUpdate
-                                                    + " → " + observedRevision
-                                                    + ". Требуется новое получение.";
-                                            } else {
-                                                inventoryOnly = true;
-                                            }
-                                            if (inventoryOnly && observedRevision > 0) {
-                                                long now = readLatestRevisionOrUnknown(
-                                                    executable, transport, settings,
-                                                    Duration.ofSeconds(30),
-                                                    monitor::isCanceled);
-                                                if (now > 0 && now != observedRevision) {
-                                                    inventoryOnly = false;
-                                                    reason = "Хранилище изменилось "
-                                                        + "после подготовки "
-                                                        + "сравнения: было "
-                                                        + observedRevision
-                                                        + ", теперь " + now
-                                                        + ". Списание ожиданий "
-                                                        + "отменено.";
-                                                }
-                                            }
-                                            if (inventoryOnly) {
-                                                // ConfigDumpInfo is NOT a HEAD.
-                                                // It proves only that the exact
-                                                // source presented in native EDT
-                                                // stayed unchanged in the IB.
-                                                // Outgoing publish still requires
-                                                // independent numeric HEAD proof.
-                                                finishStage.set(
-                                                    "повторный снимок базы-посредника после Merge");
-                                                if (intermediaryInventoryUnchanged(
-                                                        journal, detect, monitor)) {
-                                                    allowReview = true;
-                                                    reason = "Объединение подтверждено "
-                                                        + "в EDT. Снимок базы-посредника "
-                                                        + "не изменился. Номер версии "
-                                                        + "хранилища НЕ подтверждён; "
-                                                        + "отправка заблокирована "
-                                                        + "до получения номера версии.";
-                                                } else {
-                                                    reason = "Снимок конфигурации "
-                                                        + "базы-посредника изменился "
-                                                        + "во время объединения. "
-                                                        + "Записи ожидания сохранены.";
-                                                }
-                                            }
+                                            // Native HEAD was verified both before
+                                            // and after updating the intermediary.
+                                            // REVIEWED refers to that staged version,
+                                            // not to any later repository commit.
+                                            // Outgoing checks live HEAD independently.
+                                            boolean allowReview =
+                                                revisionForReview.get() > 0;
                                             if (allowReview) {
-                                                if (pendingNow.isEmpty() && effectiveFull.get()
-                                                        && !inventoryOnly) {
+                                                if (pendingNow.isEmpty() && effectiveFull.get()) {
                                                     // There is no object-level native delta
                                                     // awaiting acceptance. Native EDT has
                                                     // already finished a GLOBAL merge.
@@ -1518,51 +1449,22 @@ public final class ReceiveChangesCoordinator {
                                                             + "импорта, а не повторное "
                                                             + "побайтовое сравнение.";
                                                     } else {
-                                                        finishStage.set(
-                                                            "последняя проверка HEAD 1С");
-                                                        long finalHead =
-                                                            readLatestRevisionOrUnknown(
-                                                                executable, transport, settings,
-                                                                Duration.ofSeconds(30),
-                                                                monitor::isCanceled);
-                                                        if (finalHead != revisionForReview.get()) {
-                                                            if (finalHead > 0) {
-                                                                ReceiveRevisionStore.recordObserved(
-                                                                    project, settings.address(),
-                                                                    intermediaryIdentity,
-                                                                    finalHead);
-                                                            }
-                                                            reason = "Версия хранилища "
-                                                                + "изменилась или недоступна "
-                                                                + "при итоговой проверке. "
-                                                                + "Результат EDT сохранён, "
-                                                                + "но отметка REVIEWED "
-                                                                + "не изменена.";
-                                                        } else {
-                                                            finishStage.set(
-                                                                "запись рассмотренной версии");
-                                                            GitReceiveGuard
-                                                                .requireSameBranchAndHead(
-                                                                    project, postMergeGit);
-                                                            ReceiveCompletionRecorder
-                                                                .reviewedGlobalNativeMerge(
-                                                                    project, settings.address(),
-                                                                    intermediaryIdentity, branch,
-                                                                    finalHead, journal,
-                                                                    initialFullReview);
-                                                            confirmedRevision = finalHead;
-                                                            reason = "Штатное полное объединение "
-                                                                + "EDT завершено. Все входящие "
-                                                                + "изменения рассмотрены; "
-                                                                + "REVIEWED = " + finalHead
-                                                                + ". Побайтовое совпадение "
-                                                                + "конфигураций не проверялось "
-                                                                + "и APPLIED не изменялся.";
-                                                        }
+                                                        finishStage.set("запись рассмотренной версии");
+                                                        long finalHead = revisionForReview.get();
+                                                        GitReceiveGuard.requireSameBranchAndHead(
+                                                            project, postMergeGit);
+                                                        ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, branch,
+                                                            finalHead, journal, initialFullReview);
+                                                        confirmedRevision = finalHead;
+                                                        reason = "Штатное полное объединение EDT "
+                                                            + "завершено. РАССМОТРЕНА версия "
+                                                            + finalHead
+                                                            + ". Побайтовое совпадение не требуется; "
+                                                            + "APPLIED не менялся.";
                                                     }
-                                                } else if (!inventoryOnly
-                                                        && (!effectiveFull.get()
-                                                            || absentFromRemote.isEmpty())) {
+                                                } else {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
                                                     // on separately serialized .mdo/.distr.
@@ -1605,34 +1507,12 @@ public final class ReceiveChangesCoordinator {
                                                         Set<String> keptLocal =
                                                             chooseKeptLocalOnUi(shell, pendingNow);
                                                         if (keptLocal != null) {
-                                                            finishStage.set(
-                                                                "последняя проверка HEAD 1С");
-                                                            long finalHead =
-                                                                readLatestRevisionOrUnknown(
-                                                                    executable, transport,
-                                                                    settings,
-                                                                    Duration.ofSeconds(30),
-                                                                    monitor::isCanceled);
-                                                            if (finalHead !=
-                                                                    revisionForReview.get()) {
-                                                                if (finalHead > 0) {
-                                                                    ReceiveRevisionStore.recordObserved(
-                                                                        project,
-                                                                        settings.address(),
-                                                                        intermediaryIdentity,
-                                                                        finalHead);
-                                                                }
-                                                                reason = "Версия хранилища "
-                                                                    + "изменилась или недоступна "
-                                                                    + "после Merge. REVIEWED "
-                                                                    + "не изменена.";
-                                                            } else if (!intermediaryInventoryUnchanged(
+                                                            long finalHead = revisionForReview.get();
+                                                            if (!intermediaryInventoryUnchanged(
                                                                     journal, detect, monitor)) {
                                                                 reason = "Конфигурация базы-посредника "
                                                                     + "изменилась во время EDT Merge. "
-                                                                    + "Несмотря на прежний HEAD "
-                                                                    + "хранилища, REVIEWED и PENDING "
-                                                                    + "не менялись.";
+                                                                    + "PENDING сохранён, REVIEWED не менялся."; 
                                                             } else {
                                                                 finishStage.set(
                                                                     "фиксация рассмотренной версии");
@@ -1653,14 +1533,13 @@ public final class ReceiveChangesCoordinator {
                                                                 }
                                                                 confirmedRevision = finalHead;
                                                                 reason = (effectiveFull.get()
-                                                                        ? "Полное "
-                                                                        : "Выборочное ")
+                                                                        ? "Полное " : "Выборочное ")
                                                                     + "объединение завершено; "
                                                                     + "REVIEWED = " + finalHead
                                                                     + ". Оставлено локально: "
                                                                     + keptLocal.size()
                                                                     + ". Ожидающих изменений: 0. "
-                                                                    + "APPLIED не менялся.";
+                                                                    + "APPLIED не менялся."; 
                                                             }
                                                         } else {
                                                             reason = "Подтверждение выборочного "
@@ -1668,285 +1547,6 @@ public final class ReceiveChangesCoordinator {
                                                                 + "PENDING сохранён.";
                                                         }
                                                     }
-                                                } else {
-                                                // A finished native EDT MERGE is
-                                                // NOT proof that each checkbox
-                                                // was selected. Never erase a
-                                                // committed local change merely
-                                                // because its owner was in the
-                                                // comparison scope. Audit the
-                                                // resulting EDT files against
-                                                // the native imported source.
-                                                finishStage.set(
-                                                    "проверка файлов после Merge EDT");
-                                                Path stageSrc = retainedConvertedEdt.resolve("src");
-                                                Path projectSrc = project.getLocation()
-                                                    .toFile().toPath().resolve("src");
-                                                BridgeActivator.getDefault().getLog().info(
-                                                    "Post-merge audit roots: stageSrcIsDirectory="
-                                                    + Files.isDirectory(stageSrc)
-                                                    + "; stageSrcIsLink="
-                                                    + Files.isSymbolicLink(stageSrc)
-                                                    + "; projectSrcIsDirectory="
-                                                    + Files.isDirectory(projectSrc)
-                                                    + "; projectSrcIsLink="
-                                                    + Files.isSymbolicLink(projectSrc));
-                                                Set<String> fullyImportedOwners =
-                                                    effectiveFull.get()
-                                                        ? EdtSelectiveReviewService
-                                                            .primaryDescriptors(
-                                                                retainedConvertedEdt).keySet()
-                                                        : Set.of();
-                                                // No pending journal mutation may happen
-                                                // until Git's branch and HEAD have remained
-                                                // stable for this specific post-merge audit.
-                                                GitReceiveGuard.requireSameBranchAndHead(
-                                                    project, postMergeGit);
-                                                var verified = VerifiedReceiveContent
-                                                    .inspect(
-                                                        project,
-                                                        settings.address(),
-                                                        branch,
-                                                        intermediaryIdentity,
-                                                        actualSelected,
-                                                        selectedPendingNames,
-                                                        absentFromRemote,
-                                                        fullyImportedOwners,
-                                                        retainedConvertedEdt,
-                                                        retainedExport.xmlDirectory());
-                                                // This is only a candidate count; inspect
-                                                // must not clear any pending objects yet.
-                                                boolean allSourceVerified =
-                                                    verified.remainingPending() == 0
-                                                    && verified.identicalOwners()
-                                                        == verified.checkedOwners();
-                                                // Decide once, from audited source content
-                                                // and exact pending identities. The whole
-                                                // configuration inventory is not a delta.
-                                                GitReceiveGuard.requireSameBranchAndHead(
-                                                    project, postMergeGit);
-                                                Set<String> remainingAfterAudit =
-                                                    new java.util.LinkedHashSet<>(
-                                                        ReceivePendingStore.get(
-                                                            project, settings.address(),
-                                                            branch, intermediaryIdentity));
-                                                remainingAfterAudit.removeAll(
-                                                    verified.verifiedNames());
-                                                Set<String> presented = new java.util.LinkedHashSet<>(
-                                                    selectedPendingNames);
-                                                if (effectiveFull.get()) {
-                                                    presented.addAll(absentFromRemote);
-                                                }
-                                                // A global full EDT audit can take minutes.
-                                                // Do not rely solely on a HEAD read from
-                                                // BEFORE that audit: 1C may have advanced
-                                                // again while the project's files were read.
-                                                boolean finalHeadProven = !inventoryOnly;
-                                                if (finalHeadProven) {
-                                                    finishStage.set(
-                                                        "последняя проверка HEAD перед записью");
-                                                    long finalHead = readLatestRevisionOrUnknown(
-                                                        executable, transport, settings,
-                                                        Duration.ofSeconds(30),
-                                                        monitor::isCanceled);
-                                                    if (finalHead > 0
-                                                            && finalHead != revisionForReview.get()) {
-                                                        ReceiveRevisionStore.recordObserved(
-                                                            project, settings.address(),
-                                                            intermediaryIdentity, finalHead);
-                                                    }
-                                                    if (finalHead != revisionForReview.get()) {
-                                                        finalHeadProven = false;
-                                                        reason = finalHead > 0
-                                                            ? "Хранилище обновилось до версии "
-                                                                + finalHead
-                                                                + " во время проверки EDT. "
-                                                                + "Прежний снимок не объявляется "
-                                                                + "актуальным. Новая версия "
-                                                                + "требует отдельного получения."
-                                                            : "Не удалось повторно проверить HEAD "
-                                                                + "перед записью результата. "
-                                                                + "Версия не фиксируется.";
-                                                    }
-                                                }
-                                                // The incremental index intentionally omits
-                                                // Metadata without configVersion (e.g. object
-                                                // attributes). A GLOBAL APPLIED proof must
-                                                // include those names and verify their EDT
-                                                // owner, otherwise an unversioned object could
-                                                // disappear without being counted.
-                                                Set<String> allNativeMetadata =
-                                                    effectiveFull.get()
-                                                        ? ConfigDumpInfoIndex.allMetadataNames(
-                                                            journal.lastScannedInfo())
-                                                        : currentInventory;
-                                                boolean fullSourceInventoryCovered =
-                                                    !effectiveFull.get()
-                                                    || EdtSelectiveReviewService
-                                                        .fullImportCoversNativeInventory(
-                                                            allNativeMetadata,
-                                                            unindexedNativeNames.get(),
-                                                            fullyImportedOwners);
-                                                boolean entireProjectAudited =
-                                                    effectiveFull.get()
-                                                        && fullSourceInventoryCovered
-                                                        && verified.checkedOwners() > 0;
-                                                var completion = ReceiveCompletionPolicy.decide(
-                                                    mergeConfirmed, finalHeadProven,
-                                                    entireProjectAudited,
-                                                    fullSourceInventoryCovered,
-                                                    allSourceVerified,
-                                                    verified.checkedOwners(),
-                                                    remainingAfterAudit, presented);
-                                                finishStage.set(
-                                                    "фиксация результата проверки EDT");
-                                                switch (completion) {
-                                                    case REVIEWED_EXACT_SCOPE -> {
-                                                        GitReceiveGuard.requireSameBranchAndHead(
-                                                            project, postMergeGit);
-                                                        acknowledgedCount =
-                                                            ReceiveCompletionRecorder.reviewedExactScope(
-                                                                project, settings.address(),
-                                                                intermediaryIdentity, branch,
-                                                                revisionForReview.get(),
-                                                                verified.verifiedNames());
-                                                        confirmedRevision =
-                                                            revisionForReview.get();
-                                                        reason = "Все изменения в выборочном "
-                                                            + "сравнении применены, версия "
-                                                            + confirmedRevision + " рассмотрена. "
-                                                            + "Полное совпадение проекта "
-                                                            + "не установлено.";
-                                                    }
-                                                    case FULLY_APPLIED -> {
-                                                        GitReceiveGuard.requireSameBranchAndHead(
-                                                            project, postMergeGit);
-                                                        acknowledgedCount =
-                                                            ReceiveCompletionRecorder.fullyApplied(
-                                                                project, settings.address(),
-                                                                intermediaryIdentity, branch,
-                                                                revisionForReview.get(),
-                                                                verified.verifiedNames(),
-                                                                journal, initialFullReview);
-                                                        confirmedRevision =
-                                                            revisionForReview.get();
-                                                        reason = "Версия " + confirmedRevision
-                                                            + " полностью применена и сверена.";
-                                                    }
-                                                    case REQUIRE_USER_CONFIRMATION -> {
-                                                        boolean accepted = confirmOnUi(shell,
-                                                            "Подтвердить результат объединения EDT",
-                                                            "Объединение завершено, но итоговый "
-                                                            + "проект не совпадает с хранилищем. "
-                                                            + "Причиной могут быть намеренно "
-                                                            + "сохранённые локальные доработки.\n\n"
-                                                            + "Все изменения версии "
-                                                            + revisionForReview.get()
-                                                            + " действительно рассмотрены? "
-                                                            + "Подтверждайте только если вы "
-                                                            + "завершили выбор в EDT.\n\n"
-                                                            + "Версия будет помечена как "
-                                                            + "РАССМОТРЕННАЯ, а не полностью "
-                                                            + "применённая.");
-                                                        if (accepted) {
-                                                            GitReceiveGuard.requireSameBranchAndHead(
-                                                                project, postMergeGit);
-                                                            acknowledgedCount =
-                                                                ReceiveCompletionRecorder
-                                                                    .reviewedWithLocalDifferences(
-                                                                        project, settings.address(),
-                                                                        intermediaryIdentity, branch,
-                                                                        revisionForReview.get(),
-                                                                        verified.verifiedNames(),
-                                                                        remainingAfterAudit,
-                                                                        presented, journal,
-                                                                        initialFullReview);
-                                                            confirmedRevision =
-                                                                revisionForReview.get();
-                                                            reason = "Версия "
-                                                                + confirmedRevision
-                                                                + " рассмотрена. Локальные "
-                                                                + "отличия сохранены.";
-                                                        } else {
-                                                            reason = "Разбор изменений не "
-                                                                + "подтверждён. Версия не отмечена.";
-                                                        }
-                                                    }
-                                                    case PARTIAL -> {
-                                                        GitReceiveGuard.requireSameBranchAndHead(
-                                                            project, postMergeGit);
-                                                        acknowledgedCount =
-                                                            ReceiveCompletionRecorder.partial(
-                                                                project, settings.address(),
-                                                                intermediaryIdentity, branch,
-                                                                verified.verifiedNames());
-                                                        reason = "Часть изменений отсутствовала "
-                                                            + "в открытом сравнении EDT. "
-                                                            + "Подтверждены только точно "
-                                                            + "совпавшие объекты; версия "
-                                                            + "не отмечена.";
-                                                    }
-                                                    case UNPROVEN_SOURCE -> {
-                                                        // NEVER remove pending identities
-                                                        // when the staged 1C source may be
-                                                        // behind a newer native repository HEAD.
-                                                        // Content equality with a stale source
-                                                        // is not proof that remote changes
-                                                        // were accepted.
-                                                        acknowledgedCount = 0;
-                                                        if (reason == null) {
-                                                            reason = "Связь исходного снимка "
-                                                                + "с текущей версией 1С "
-                                                                + "не доказана. Журнал ожидающих "
-                                                                + "изменений оставлен без правок.";
-                                                        }
-                                                    }
-                                                    case SOURCE_INCOMPLETE -> {
-                                                        // Full XML source was not fully
-                                                        // materialized by the EDT importer.
-                                                        // Never let a partial native source
-                                                        // certify the repository HEAD.
-                                                        reason = "Полная выгрузка 1С "
-                                                            + "не полностью представлена "
-                                                            + "объектами временного EDT-проекта. "
-                                                            + "Версия не отмечена, журнал "
-                                                            + "ожидающих изменений сохранён.";
-                                                    }
-                                                    case AUDIT_INCOMPLETE -> {
-                                                        // Zero imported owners is never
-                                                        // evidence of successful comparison.
-                                                        reason = "Проверка файлов EDT не нашла "
-                                                            + "ни одного объекта метаданных. "
-                                                            + "Версия не отмечена, журнал "
-                                                            + "ожидающих изменений сохранён.";
-                                                    }
-                                                    case NOT_MERGED -> {
-                                                        reason = "EDT не подтвердила Merge. "
-                                                            + "Ничего не отмечено.";
-                                                    }
-                                                }
-                                                if (!allSourceVerified) {
-                                                    if (reason == null) {
-                                                        reason = "EDT выполнила Merge, "
-                                                            + "но часть объектов не совпадает "
-                                                            + "с полученной конфигурацией 1С.";
-                                                    }
-                                                    if (verified.diagnosticFile() != null) {
-                                                        reason += "\nПодробности в локальном отчёте: "
-                                                            + verified.diagnosticFile();
-                                                    }
-                                                }
-                                                BridgeActivator.getDefault().getLog().info(
-                                                    "Native EDT merge audited; "
-                                                    + "contentVerified="
-                                                    + verified.confirmedPending()
-                                                    + "; remaining="
-                                                    + verified.remainingPending()
-                                                    + "; fullyMatchingOwners="
-                                                    + verified.identicalOwners()
-                                                    + "/" + verified.checkedOwners()
-                                                    + "; headAttested="
-                                                    + !inventoryOnly);
                                                 }
                                             }
                                         }

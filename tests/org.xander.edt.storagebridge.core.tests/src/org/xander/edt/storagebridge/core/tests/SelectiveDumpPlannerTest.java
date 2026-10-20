@@ -117,6 +117,7 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of(
             "Document.Invoice",
             "Document.Invoice.Form.Main",
+            "Document.Invoice.Form.Main.Form",
             "Document.Invoice.ObjectModule",
             "Document.Invoice.Template.Print",
             "Role.Accountant", "Role.Accountant.Rights",
@@ -156,6 +157,48 @@ public final class SelectiveDumpPlannerTest {
             "Subsystem.Кадры",
             "Subsystem.Кадры.Subsystem.Интеграция1СКС",
             "Subsystem.Кадры.Subsystem.Интеграция1СКС.Subsystem.Вложенная"),
+            plan.exportable());
+    }
+
+    @Test
+    public void selectiveXmlImportsNativeRootAndLanguagesButNotOtherObjects() {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("DataProcessor.Assistant.Form.Форма.Form"),
+            List.of("Configuration", "Language.Русский",
+                "Language.Английский",
+                "DataProcessor.Assistant",
+                "DataProcessor.Assistant.Form.Форма",
+                "DataProcessor.Assistant.Form.Форма.Form",
+                "DataProcessor.Other",
+                "DataProcessor.Other.Form.Unrelated"));
+        var importNames = SelectiveDumpPlanner.withImportContext(
+            plan, List.of("Configuration", "Language.Русский",
+                "Language.Английский", "DataProcessor.Other"));
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form",
+            "Configuration", "Language.Русский", "Language.Английский"),
+            importNames);
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form"), plan.exportable());
+    }
+
+    @Test
+    public void independentFormPayloadAndTemplatePayloadAreNotLostByListFile()
+            throws Exception {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("DataProcessor.Assistant.Form.Форма.Form"),
+            List.of("DataProcessor.Assistant",
+                "DataProcessor.Assistant.Form.Форма",
+                "DataProcessor.Assistant.Form.Форма.Form",
+                "DataProcessor.Assistant.Form.Форма.Module",
+                "DataProcessor.Other.Form.Unrelated"));
+        assertEquals(List.of(
+            "DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form",
+            "DataProcessor.Assistant.Form.Форма.Module"),
             plan.exportable());
     }
 

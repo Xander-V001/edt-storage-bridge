@@ -20,7 +20,7 @@ import org.xander.edt.storagebridge.platform.InfobaseLocation;
 
 /**
  * Validate batch Designer argv without starting 1C or touching a real infobase.
- * 1C requires -configDumpInfoForChanges with both -update and -getChanges.
+ * 1C supports two separate operations against the SAME native baseline.
  */
 public final class ChangeDetectionCommandTest {
     private static final ChangeDetectionRequest REQUEST =
@@ -36,29 +36,34 @@ public final class ChangeDetectionCommandTest {
     }
 
     @Test
-    public void incrementalChangeDetectionUsesRequiredUpdateSwitch() {
+    public void nativeIncrementalUsesSeparateUpdateAndChangeListCommands() {
         Path baseline = Path.of("/tmp/previous/ConfigDumpInfo.xml");
         Path root = Path.of("/tmp/inspection");
         Path changes = Path.of("/tmp/changes.txt");
         Path log = Path.of("/tmp/designer.log");
-        List<String> args = new ChangedObjectsProbe().command(
+        var probe = new ChangedObjectsProbe();
+        List<String> xml = probe.command(REQUEST, baseline, root, changes, log);
+        List<String> list = probe.changeListCommand(
             REQUEST, baseline, root, changes, log);
-        assertEquals("DESIGNER", args.get(1));
-        int dump = args.indexOf("/DumpConfigToFiles");
-        assertTrue(dump > 4);
-        assertEquals(root.toString(), args.get(dump + 1));
-        assertEquals("-update", args.get(dump + 2));
-        assertEquals("-configDumpInfoForChanges", args.get(dump + 3));
-        assertEquals(baseline.toString(), args.get(dump + 4));
-        assertEquals("-getChanges", args.get(dump + 5));
-        assertEquals(changes.toString(), args.get(dump + 6));
-        assertFalse(args.contains("-force"));
-        assertFalse(args.contains("-listFile"));
-        // The same invocation must produce native XML and the native
-        // change report. There is no separate handwritten transport list.
-        assertEquals(1L, args.stream()
-            .filter("/DumpConfigToFiles"::equals).count());
-        assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
+        for (List<String> args : List.of(xml, list)) {
+            assertEquals("DESIGNER", args.get(1));
+            int dump = args.indexOf("/DumpConfigToFiles");
+            assertTrue(dump > 4);
+            assertEquals(root.toString(), args.get(dump + 1));
+            assertEquals(baseline.toString(),
+                args.get(args.indexOf("-configDumpInfoForChanges") + 1));
+            assertFalse(args.contains("-listFile"));
+            assertFalse(args.contains("/ConfigurationRepositoryUpdateCfg"));
+        }
+        assertTrue(xml.contains("-update"));
+        assertTrue(xml.contains("-force"));
+        assertFalse(xml.contains("-getChanges"));
+        assertFalse(list.contains("-update"));
+        assertFalse(list.contains("-force"));
+        assertEquals(changes.toString(),
+            list.get(list.indexOf("-getChanges") + 1));
+        assertTrue(list.indexOf("-getChanges")
+            < list.indexOf("-configDumpInfoForChanges"));
     }
 
     @Test
@@ -71,7 +76,10 @@ public final class ChangeDetectionCommandTest {
         var probe = new ChangedObjectsProbe().command(authenticated,
             Path.of("/tmp/old/ConfigDumpInfo.xml"), Path.of("/tmp/out"),
             Path.of("/tmp/changes"), Path.of("/tmp/log"));
-        for (var cmd : List.of(snapshot, probe)) {
+        var list = new ChangedObjectsProbe().changeListCommand(authenticated,
+            Path.of("/tmp/old/ConfigDumpInfo.xml"), Path.of("/tmp/out"),
+            Path.of("/tmp/changes"), Path.of("/tmp/log"));
+        for (var cmd : List.of(snapshot, probe, list)) {
             assertEquals("ib-user", cmd.get(cmd.indexOf("/N") + 1));
             assertEquals("ib-secret", cmd.get(cmd.indexOf("/P") + 1));
             assertTrue(cmd.indexOf("/P") < cmd.indexOf("/DumpConfigToFiles"));

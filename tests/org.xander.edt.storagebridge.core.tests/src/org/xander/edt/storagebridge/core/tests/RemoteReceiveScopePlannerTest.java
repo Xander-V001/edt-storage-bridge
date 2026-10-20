@@ -87,6 +87,37 @@ public final class RemoteReceiveScopePlannerTest {
     }
 
     @Test
+    public void nativeDeletedFormIsNotClassifiedAsUnindexedPresentResource()
+            throws Exception {
+        Path old = inventory("""
+            <Metadata name="DataProcessor.Assistant" id="a" configVersion="1"/>
+            <Metadata name="DataProcessor.Assistant.Form.Main"
+                id="f" configVersion="1"/>
+            <Metadata name="DataProcessor.Assistant.Form.Main.Form"
+                id="p" configVersion="1"/>""");
+        Path now = inventory("""
+            <Metadata name="DataProcessor.Assistant" id="a" configVersion="2"/>""");
+        try {
+            var delta = RemoteReceiveScopePlanner.reconcileNative(old, now,
+                ChangedObjectsProbe.parseNativeText(
+                    "Modified:DataProcessor.Assistant.Form.Main\n"
+                    + "Modified:DataProcessor.Assistant.Form.Main.Form\n"));
+            assertTrue(delta.requiresFullNativeComparison());
+            assertTrue(delta.removed().contains(
+                "DataProcessor.Assistant.Form.Main"));
+            assertTrue(delta.removed().contains(
+                "DataProcessor.Assistant.Form.Main.Form"));
+            assertFalse(delta.unindexed().contains(
+                "DataProcessor.Assistant.Form.Main"));
+            assertFalse(delta.unindexed().contains(
+                "DataProcessor.Assistant.Form.Main.Form"));
+        } finally {
+            Files.deleteIfExists(old);
+            Files.deleteIfExists(now);
+        }
+    }
+
+    @Test
     public void configurationLanguageAndNativeFullDumpRequireCompleteReview()
             throws Exception {
         Path old = inventory("""
