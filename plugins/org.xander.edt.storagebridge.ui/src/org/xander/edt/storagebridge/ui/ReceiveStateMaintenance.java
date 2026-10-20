@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -13,6 +12,7 @@ import java.util.UUID;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.osgi.service.prefs.Preferences;
+import org.xander.edt.storagebridge.core.ReceiveAttemptLedger;
 import org.xander.edt.storagebridge.core.ReceiveAttemptLedger.Phase;
 
 /**
@@ -43,7 +43,11 @@ public final class ReceiveStateMaintenance {
                 + settings.infobaseAddress().trim();
             var journal = new ReceiveBaselineJournal(
                 project, settings.address(), branch, intermediary);
-            if (journal.phase() != Phase.NONE) {
+            // A legacy/corrupt intermediary fingerprint is exactly one
+            // reason a user might need a reset. Read ONLY the phase ledger,
+            // without requiring the old source fingerprint to be trusted.
+            if (new ReceiveAttemptLedger(journal.stateDirectory()).read()
+                    != Phase.NONE) {
                 throw new IOException("Остался журнал незавершённого обновления 1С. "
                     + "Сброс запрещён до проверки состояния базы-посредника.");
             }
