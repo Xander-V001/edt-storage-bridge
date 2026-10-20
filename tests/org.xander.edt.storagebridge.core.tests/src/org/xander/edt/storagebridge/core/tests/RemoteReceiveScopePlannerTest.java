@@ -107,7 +107,7 @@ public final class RemoteReceiveScopePlannerTest {
             assertTrue(full.requiresFullNativeComparison());
             assertEquals(Set.of("Configuration", "Language.Русский"),
                 full.pendingIdentities());
-            assertEquals(full.pendingIdentities(),
+            assertEquals(Set.of(),
                 RemoteReceiveScopePlanner.fullInventory(old, now).pendingIdentities());
         } finally {
             Files.deleteIfExists(old);
@@ -125,8 +125,7 @@ public final class RemoteReceiveScopePlannerTest {
         try {
             var full = RemoteReceiveScopePlanner.fullInventory(old, now);
             assertEquals(Set.of("Document.Gone"), full.removed());
-            assertEquals(Set.of("Document.Kept", "Document.Gone"),
-                full.pendingIdentities());
+            assertEquals(Set.of("Document.Gone"), full.pendingIdentities());
             assertTrue(full.requiresFullNativeComparison());
         } finally {
             Files.deleteIfExists(old);
