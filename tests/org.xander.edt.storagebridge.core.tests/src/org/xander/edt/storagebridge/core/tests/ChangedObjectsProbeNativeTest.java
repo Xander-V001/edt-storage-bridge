@@ -96,6 +96,8 @@ public final class ChangedObjectsProbeNativeTest {
             assertEquals(0, ex.reportedChanges());
             assertTrue(ex.nativeChanges().exactNames().isEmpty());
             assertFalse(ex.manifestPresent());
+            assertFalse(ex.metadataPresent());
+            assertTrue(ex.emptyDeltaMissingOnlyManifest());
         } finally {
             Files.deleteIfExists(root);
         }
@@ -115,6 +117,8 @@ public final class ChangedObjectsProbeNativeTest {
             assertEquals(Set.of("Document.Payroll.Form.Main"),
                 ex.nativeChanges().exactNames());
             assertFalse(ex.manifestPresent());
+            assertTrue(ex.metadataPresent());
+            assertFalse(ex.emptyDeltaMissingOnlyManifest());
         } finally {
             Files.deleteIfExists(root.resolve("Document.xml"));
             Files.deleteIfExists(root);
@@ -128,8 +132,11 @@ public final class ChangedObjectsProbeNativeTest {
         try {
             Files.writeString(root.resolve("Document.xml"), "<Document/>");
             var noChanges = ChangedObjectsProbe.parseNativeText("");
-            assertThrows(ChangedObjectsProbe.NativeStageIncomplete.class,
+            var ex = assertThrows(
+                ChangedObjectsProbe.NativeStageIncomplete.class,
                 () -> ChangedObjectsProbe.validateNativeStage(noChanges, root));
+            assertTrue(ex.metadataPresent());
+            assertFalse(ex.emptyDeltaMissingOnlyManifest());
         } finally {
             Files.deleteIfExists(root.resolve("Document.xml"));
             Files.deleteIfExists(root);
