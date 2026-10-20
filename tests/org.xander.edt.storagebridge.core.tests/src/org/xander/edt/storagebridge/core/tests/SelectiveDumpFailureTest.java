@@ -140,6 +140,7 @@ public final class SelectiveDumpFailureTest {
                 [ -f "$names" ] || exit 32
                 [ -f "$destination/OriginalChanged.xml" ] || exit 33
                 echo '<NativeSupplement/>' > "$destination/AdditionalForm.xml"
+                echo '<OverwrittenManifest/>' > "$destination/ConfigDumpInfo.xml"
                 exit 0
                 """, StandardCharsets.UTF_8);
             assertTrue(executable.toFile().setExecutable(true));
@@ -150,8 +151,7 @@ public final class SelectiveDumpFailureTest {
             var request = new SelectiveDumpRequest(executable,
                 new InfobaseLocation(InfobaseLocation.Kind.FILE,
                     "/no-real-infobase"),
-                List.of("Document.Order.Form.Main", "Configuration",
-                    "Language.Русский"), Duration.ofSeconds(10));
+                List.of("Document.Order.Form.Main"), Duration.ofSeconds(10));
             new SelectiveDumpRunner().supplement(
                 request, nativePatch, () -> false);
             assertEquals("<NativeChangedModule/>",
@@ -163,6 +163,92 @@ public final class SelectiveDumpFailureTest {
         } finally {
             deleteTree(nativePatch);
             deleteTree(bin);
+        }
+    }
+
+    @Test
+    public void missingNativeRootComesFromSeparateConfigurationAndLanguageExports()
+            throws Exception {
+        Assume.assumeTrue(System.getProperty("os.name")
+            .toLowerCase(Locale.ROOT).contains("linux"));
+        Path bin = Files.createTempDirectory("fake-native-root-bin-");
+        Path patch = Files.createTempDirectory("fake-native-root-patch-");
+        try {
+            Path executable = bin.resolve("1cv8");
+            Files.writeString(executable, """
+                #!/bin/sh
+                destination=""
+                names=""
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in
+                    /DumpConfigToFiles) shift; destination="$1" ;;
+                    -listFile) shift; names="$1" ;;
+                  esac
+                  shift
+                done
+                [ -f "$names" ] || exit 38
+                if grep -q 'Language.English' "$names"; then
+                  mkdir -p "$destination/Languages"
+                  echo '<Language/>' > "$destination/Languages/English.xml"
+                elif grep -q 'Configuration' "$names"; then
+                  mkdir -p "$destination/Ext"
+                  echo '<Configuration><ChildObjects><Language>English</Language></ChildObjects></Configuration>' > "$destination/Configuration.xml"
+                  echo '<NativeExt/>' > "$destination/Ext/ClientApplicationInterface.xml"
+                else
+                  exit 39
+                fi
+                echo '<OtherStageIndex/>' > "$destination/ConfigDumpInfo.xml"
+                exit 0
+                """, StandardCharsets.UTF_8);
+            assertTrue(executable.toFile().setExecutable(true));
+            Files.writeString(patch.resolve("ConfigDumpInfo.xml"),
+                "<OriginalNativeIncrementIndex/>");
+            Files.writeString(patch.resolve("ChangedModule.xml"),
+                "<OriginalChangedModule/>");
+            var request = new SelectiveDumpRequest(executable,
+                new InfobaseLocation(InfobaseLocation.Kind.FILE,
+                    "/no-real-infobase"),
+                List.of("Document.Order"), Duration.ofSeconds(10));
+            var runner = new SelectiveDumpRunner();
+            runner.completeNativeRoot(request, patch, () -> false);
+            assertTrue(Files.isRegularFile(
+                patch.resolve("Configuration.xml")));
+            assertTrue(Files.isRegularFile(
+                patch.resolve("Ext/ClientApplicationInterface.xml")));
+            assertTrue(Files.isRegularFile(
+                patch.resolve("Languages/English.xml")));
+            assertEquals("<OriginalNativeIncrementIndex/>",
+                Files.readString(patch.resolve("ConfigDumpInfo.xml")));
+            assertEquals("<OriginalChangedModule/>",
+                Files.readString(patch.resolve("ChangedModule.xml")));
+
+            // A second call does not re-export a root which is already present.
+            Files.delete(executable);
+            runner.completeNativeRoot(request, patch, () -> false);
+            assertTrue(Files.isRegularFile(patch.resolve("Configuration.xml")));
+        } finally {
+            deleteTree(patch);
+            deleteTree(bin);
+        }
+    }
+
+    @Test
+    public void configurationLanguageNamesAreTakenFromNativeRootXml()
+            throws Exception {
+        Path root = Files.createTempFile("native-1c-root-", ".xml");
+        try {
+            Files.writeString(root, """
+                <MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses">
+                  <Configuration>
+                    <ChildObjects><Language>Русский</Language>
+                      <Language>English</Language></ChildObjects>
+                  </Configuration>
+                </MetaDataObject>
+                """);
+            assertEquals(List.of("Language.Русский", "Language.English"),
+                SelectiveDumpRunner.languagesFromConfiguration(root));
+        } finally {
+            Files.deleteIfExists(root);
         }
     }
 
