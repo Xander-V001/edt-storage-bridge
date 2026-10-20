@@ -105,8 +105,8 @@ public final class RemoteReceiveScopePlannerTest {
             var full = RemoteReceiveScopePlanner.reconcileNative(old, now,
                 ChangedObjectsProbe.parseNativeText("FullDump"));
             assertTrue(full.requiresFullNativeComparison());
-            assertEquals(Set.of("Configuration", "Language.Русский"),
-                full.pendingIdentities());
+            assertEquals(Set.of(), full.pendingIdentities());
+            assertTrue(full.requiresFullNativeComparison());
             assertEquals(Set.of(),
                 RemoteReceiveScopePlanner.fullInventory(old, now).pendingIdentities());
         } finally {
