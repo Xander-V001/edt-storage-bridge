@@ -106,6 +106,11 @@ public final class ReceiveRevisionStore {
                 "Remote version changed: applied checkpoint cannot advance");
         }
         var preferences = branchScope(project, repository, intermediary, branch);
+        long previous = preferences.getLong(APPLIED, UNKNOWN);
+        if (previous > revision) {
+            throw new IllegalStateException(
+                "Fully applied repository revision would regress");
+        }
         preferences.putLong(APPLIED, revision);
         preferences.flush();
     }
