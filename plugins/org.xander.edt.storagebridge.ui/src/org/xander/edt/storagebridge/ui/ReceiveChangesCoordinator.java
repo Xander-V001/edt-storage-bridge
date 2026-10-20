@@ -291,6 +291,11 @@ public final class ReceiveChangesCoordinator {
             // operations. Cancel means CANCEL, never an implicit update.
             final boolean hadUnresolvedBefore = !ReceivePendingStore.get(
                 project, settings.address(), branch, intermediaryIdentity).isEmpty();
+            // Capture PRE-update source checkpoint before any new SCANNED
+            // certificate replaces the previous metadata manifest.
+            final long previouslyReviewed = ReceiveRevisionStore.reviewed(
+                project, settings.address(), intermediaryIdentity, branch);
+            final long previouslyScanned = journal.scannedRevision();
             boolean pendingAvailable = mode == ReceiveMode.INCREMENTAL
                 && !recovery && !firstInventory && hadUnresolvedBefore;
             int pendingChoice = -1;
@@ -671,9 +676,48 @@ public final class ReceiveChangesCoordinator {
             notInSource.removeAll(unindexedNativeNames.get());
             final Set<String> absentFromRemote = Set.copyOf(notInSource);
 
-            if (pending.isEmpty() && !fullReview) {
-                informationOnUi(shell, "Новых изменений нет",
-                    "В хранилище нет новых изменений для сравнения в EDT.");
+            if (pending.isEmpty() && !fullReview
+                    && !changeScopeRequiresFull.get()) {
+                // 1C can advance HEAD for a repository comment/metadata-only
+                // commit without changing any configuration object. The
+                // native patch must be truly empty; an empty user-facing
+                // pending set alone is NOT enough to acknowledge the HEAD.
+                var patch = nativePatch.get();
+                boolean emptyNativeDelta = patch != null
+                    && !patch.changes().fullDump()
+                    && patch.changes().exactNames().isEmpty();
+                boolean canAdvance = !retryPendingOnly && !recovery
+                    && ReceiveCompletionPolicy.canAcknowledgeEmptyNativeDelta(
+                        previouslyReviewed, previouslyScanned,
+                        revisionBeforeUpdate, revisionForReview.get(),
+                        observedRevision, emptyNativeDelta, true);
+                if (canAdvance) {
+                    GitReceiveGuard.requireUnchanged(project, git);
+                    long finalHead = readLatestRevisionOrUnknown(
+                        executable, transport, settings,
+                        Duration.ofSeconds(30), jobProgress::isCanceled);
+                    if (finalHead == observedRevision) {
+                        ReceiveRevisionStore.recordReviewed(
+                            project, settings.address(), intermediaryIdentity,
+                            branch, observedRevision);
+                        BridgeActivator.getDefault().getLog().info(
+                            "Native no-delta receive: reviewedRevision="
+                            + observedRevision + "; previousReviewed="
+                            + previouslyReviewed + "; no EDT merge necessary");
+                        informationOnUi(shell, "Версия хранилища проверена",
+                            "1С подтвердила отсутствие изменений объектов. "
+                            + "Обработанная версия хранилища: "
+                            + observedRevision + ".\nСравнение EDT не требуется. "
+                            + "Существующие локальные изменения не затрагивались.");
+                        return;
+                    }
+                }
+                informationOnUi(shell, "Нет изменений для сравнения EDT",
+                    "Штатная 1С не сообщила изменений объектов, но новая "
+                    + "обработанная версия не может быть подтверждена "
+                    + "по сохранённой исходной точке.\n"
+                    + "Для установления подтверждённой базы выполните "
+                    + "«Полную сверку с хранилищем».");
                 return;
             }
             // A platform patch may contain only separately developed
