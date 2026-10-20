@@ -1323,13 +1323,34 @@ public final class ReceiveChangesCoordinator {
                                                                 + "Версия не фиксируется.";
                                                     }
                                                 }
+                                                boolean entireProjectAudited =
+                                                    effectiveFull.get()
+                                                        && verified.checkedOwners() > 0;
                                                 var completion = ReceiveCompletionPolicy.decide(
                                                     mergeConfirmed, finalHeadProven,
+                                                    entireProjectAudited,
                                                     allSourceVerified,
                                                     remainingAfterAudit, presented);
                                                 finishStage.set(
                                                     "фиксация результата проверки EDT");
                                                 switch (completion) {
+                                                    case REVIEWED_EXACT_SCOPE -> {
+                                                        GitReceiveGuard.requireSameBranchAndHead(
+                                                            project, postMergeGit);
+                                                        acknowledgedCount =
+                                                            ReceiveCompletionRecorder.reviewedExactScope(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                revisionForReview.get(),
+                                                                verified.verifiedNames());
+                                                        confirmedRevision =
+                                                            revisionForReview.get();
+                                                        reason = "Все изменения в выборочном "
+                                                            + "сравнении применены, версия "
+                                                            + confirmedRevision + " рассмотрена. "
+                                                            + "Полное совпадение проекта "
+                                                            + "не установлено.";
+                                                    }
                                                     case FULLY_APPLIED -> {
                                                         GitReceiveGuard.requireSameBranchAndHead(
                                                             project, postMergeGit);
@@ -1399,19 +1420,18 @@ public final class ReceiveChangesCoordinator {
                                                             + "не отмечена.";
                                                     }
                                                     case UNPROVEN_SOURCE -> {
-                                                        // A missing native HEAD can never be
-                                                        // inferred from file hashes. The exact
-                                                        // source content was nevertheless
-                                                        // audited against this EDT project.
-                                                        acknowledgedCount =
-                                                            ReceiveCompletionRecorder.partial(
-                                                                project, settings.address(),
-                                                                intermediaryIdentity, branch,
-                                                                verified.verifiedNames());
+                                                        // NEVER remove pending identities
+                                                        // when the staged 1C source may be
+                                                        // behind a newer native repository HEAD.
+                                                        // Content equality with a stale source
+                                                        // is not proof that remote changes
+                                                        // were accepted.
+                                                        acknowledgedCount = 0;
                                                         if (reason == null) {
-                                                            reason = "Номер версии хранилища "
-                                                                + "не подтверждён. Только точно "
-                                                                + "совпавшие объекты отмечены.";
+                                                            reason = "Связь исходного снимка "
+                                                                + "с текущей версией 1С "
+                                                                + "не доказана. Журнал ожидающих "
+                                                                + "изменений оставлен без правок.";
                                                         }
                                                     }
                                                     case NOT_MERGED -> {
