@@ -128,6 +128,23 @@ public final class SelectiveDumpPlanner {
         return List.copyOf(export);
     }
 
+    /**
+     * Official GitConverter algorithm: after Designer -update has written
+     * the changed objects, request ONLY the unchanged siblings/owner files
+     * needed to import the affected objects into EDT, plus real root/languages.
+     * The changed identities already present in -getChanges stay in the
+     * existing native patch and must not be exported again.
+     */
+    public static List<String> supplementsForNativePatch(Plan plan,
+            Iterable<String> currentInventory,
+            java.util.Set<String> nativeChangedNames) {
+        Objects.requireNonNull(nativeChangedNames);
+        var supplement = new LinkedHashSet<>(
+            withImportContext(plan, currentInventory));
+        supplement.removeAll(nativeChangedNames);
+        return List.copyOf(supplement);
+    }
+
     private static boolean isDeferredRoot(String name) {
         return "Configuration".equals(name)
             || name.startsWith("Configuration.")
