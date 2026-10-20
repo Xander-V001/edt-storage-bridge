@@ -175,7 +175,17 @@ public final class ChangedObjectsProbe {
                 }
 
                 NativeChanges result = parseNativeFile(changes);
-                validateNativeStage(result, inspection);
+                try {
+                    validateNativeStage(result, inspection);
+                } catch (NativeStageIncomplete incomplete) {
+                    // The native stage must be removed on failure, but its
+                    // small LOCAL-only Designer reports are vital for the
+                    // next diagnosis. Never retain XML metadata or the
+                    // previous ConfigDumpInfo snapshot in this directory.
+                    incomplete.setDiagnosticsDirectory(
+                        preserveDiagnostics(log, changes, output, errors));
+                    throw incomplete;
+                }
                 ready = true;
                 return new NativeExport(work, inspection, result);
             } finally {
@@ -254,6 +264,7 @@ public final class ChangedObjectsProbe {
         private static final long serialVersionUID = 1L;
         private final int reportedChanges;
         private final boolean manifestPresent;
+        private Path diagnosticsDirectory;
 
         public NativeStageIncomplete(String reason, int reportedChanges,
                 boolean manifestPresent) {
@@ -264,6 +275,41 @@ public final class ChangedObjectsProbe {
 
         public int reportedChanges() { return reportedChanges; }
         public boolean manifestPresent() { return manifestPresent; }
+        public Path diagnosticsDirectory() { return diagnosticsDirectory; }
+
+        private void setDiagnosticsDirectory(Path directory) {
+            this.diagnosticsDirectory = directory;
+        }
+    }
+
+    private static Path preserveDiagnostics(Path designerLog, Path changeReport,
+            Path stdout, Path stderr) {
+        Path destination = null;
+        try {
+            destination = Files.createTempDirectory("edt-storage-native-diagnostics-");
+            try {
+                Files.setPosixFilePermissions(destination,
+                    PosixFilePermissions.fromString("rwx------"));
+            } catch (UnsupportedOperationException ignored) {
+                // On Windows the directory retains OS-managed local ACLs.
+            }
+            Path[] sources = {designerLog, changeReport, stdout, stderr};
+            String[] names = {"1c-log.txt", "changes.txt", "stdout.txt", "stderr.txt"};
+            for (int i = 0; i < sources.length; i++) {
+                if (Files.isRegularFile(sources[i], LinkOption.NOFOLLOW_LINKS)
+                        && !Files.isSymbolicLink(sources[i])
+                        && Files.size(sources[i]) <= MAX_DIAGNOSTICS) {
+                    Files.copy(sources[i], destination.resolve(names[i]));
+                }
+            }
+            return destination;
+        } catch (IOException | SecurityException ex) {
+            if (destination != null) {
+                try { deleteRecursively(destination); }
+                catch (IOException ignored) { /* best effort */ }
+            }
+            return null;
+        }
     }
 
     /** Legacy list-only operation: immediately release its native patch. */
