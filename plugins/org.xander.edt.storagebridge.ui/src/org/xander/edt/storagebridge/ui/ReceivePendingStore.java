@@ -24,6 +24,9 @@ import org.osgi.service.prefs.Preferences;
 public final class ReceivePendingStore {
     private static final String ROOT = "org.xander.edt.storagebridge.ui";
     private static final String ITEM = "obj-";
+    // Remote changes deliberately reviewed but retained as local EDT code.
+    // They are NOT pending review, nor proof of an APPLIED repository mirror.
+    private static final String KEPT_LOCAL = "kept-";
     private static final String INTERMEDIARY = "boundIntermediary";
     private ReceivePendingStore() {}
 
@@ -74,6 +77,9 @@ public final class ReceivePendingStore {
         }
         for (String name : verifiedObjects) {
             node.remove(ITEM + digest(name));
+            // If a later repository revision is now exactly applied, clear
+            // the previous explicit keep-local decision for this identity.
+            node.remove(KEPT_LOCAL + digest(name));
         }
         node.flush();
     }
@@ -99,7 +105,47 @@ public final class ReceivePendingStore {
             }
         }
         for (String name : explicitlyReviewedNames) {
-            node.remove(ITEM + digest(name));
+            String key = digest(name);
+            node.put(KEPT_LOCAL + key, name);
+            node.remove(ITEM + key);
+        }
+        node.flush();
+    }
+
+    /**
+     * Actual locally-retained differences, separately persisted from PENDING.
+     * No further full review is forced just because a developer explicitly
+     * kept committed local changes on a previously reviewed remote revision.
+     */
+    public static Set<String> keptLocal(IProject project, String repositoryAddress,
+            String branch, String intermediaryIdentity) throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
+        Set<String> kept = new LinkedHashSet<>();
+        for (String key : node.keys()) {
+            if (key.startsWith(KEPT_LOCAL)) {
+                String name = node.get(key, "");
+                requireObject(name);
+                if (!key.equals(KEPT_LOCAL + digest(name))) {
+                    throw new IllegalStateException("Corrupt retained-local journal entry");
+                }
+                kept.add(name);
+            }
+        }
+        return Set.copyOf(kept);
+    }
+
+    /**
+     * Global EDT equality was proven against the full native source: there
+     * are no longer any known intentionally retained remote differences.
+     */
+    public static void clearKeptLocalAfterGlobalEquality(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity)
+            throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
+        for (String key : node.keys()) {
+            if (key.startsWith(KEPT_LOCAL)) {
+                node.remove(key);
+            }
         }
         node.flush();
     }
