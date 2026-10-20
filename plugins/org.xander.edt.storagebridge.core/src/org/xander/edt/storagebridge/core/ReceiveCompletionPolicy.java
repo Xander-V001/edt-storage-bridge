@@ -19,6 +19,8 @@ public final class ReceiveCompletionPolicy {
         REVIEWED_EXACT_SCOPE,
         /** The native EDT result contained no owners to inspect. */
         AUDIT_INCOMPLETE,
+        /** The full 1C native inventory was not materialized by the EDT importer. */
+        SOURCE_INCOMPLETE,
         /** All remaining pending objects were presented; explicit review needed. */
         REQUIRE_USER_CONFIRMATION,
         /** At least one remote change was not covered by this comparison. */
@@ -34,6 +36,7 @@ public final class ReceiveCompletionPolicy {
     public static Next decide(boolean nativeMergeFinished,
             boolean nativeSourceRevisionProven,
             boolean fullProjectCoverageVerified,
+            boolean fullSourceInventoryCovered,
             boolean allComparedOwnersIdentical,
             int auditedOwners,
             Set<String> pendingAfterReadOnlyAudit,
@@ -49,6 +52,11 @@ public final class ReceiveCompletionPolicy {
         if (auditedOwners <= 0) {
             // Never turn 0 of 0 matching resources into an accepted revision.
             return Next.AUDIT_INCOMPLETE;
+        }
+        if (!fullSourceInventoryCovered) {
+            // Full compare with missing native owners must not be
+            // acknowledged as a complete review or mirror of that HEAD.
+            return Next.SOURCE_INCOMPLETE;
         }
         if (pendingAfterReadOnlyAudit.isEmpty() && allComparedOwnersIdentical) {
             // A selective patch verifies just its covered owners. In no case
