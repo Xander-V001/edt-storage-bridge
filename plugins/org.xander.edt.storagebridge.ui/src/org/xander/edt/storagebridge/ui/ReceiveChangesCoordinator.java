@@ -1323,12 +1323,21 @@ public final class ReceiveChangesCoordinator {
                                                                 + "Версия не фиксируется.";
                                                     }
                                                 }
+                                                boolean fullSourceInventoryCovered =
+                                                    !effectiveFull.get()
+                                                    || EdtSelectiveReviewService
+                                                        .fullImportCoversNativeInventory(
+                                                            currentInventory,
+                                                            unindexedNativeNames.get(),
+                                                            fullyImportedOwners);
                                                 boolean entireProjectAudited =
                                                     effectiveFull.get()
+                                                        && fullSourceInventoryCovered
                                                         && verified.checkedOwners() > 0;
                                                 var completion = ReceiveCompletionPolicy.decide(
                                                     mergeConfirmed, finalHeadProven,
                                                     entireProjectAudited,
+                                                    fullSourceInventoryCovered,
                                                     allSourceVerified,
                                                     verified.checkedOwners(),
                                                     remainingAfterAudit, presented);
@@ -1434,6 +1443,17 @@ public final class ReceiveChangesCoordinator {
                                                                 + "не доказана. Журнал ожидающих "
                                                                 + "изменений оставлен без правок.";
                                                         }
+                                                    }
+                                                    case SOURCE_INCOMPLETE -> {
+                                                        // Full XML source was not fully
+                                                        // materialized by the EDT importer.
+                                                        // Never let a partial native source
+                                                        // certify the repository HEAD.
+                                                        reason = "Полная выгрузка 1С "
+                                                            + "не полностью представлена "
+                                                            + "объектами временного EDT-проекта. "
+                                                            + "Версия не отмечена, журнал "
+                                                            + "ожидающих изменений сохранён.";
                                                     }
                                                     case AUDIT_INCOMPLETE -> {
                                                         // Zero imported owners is never
