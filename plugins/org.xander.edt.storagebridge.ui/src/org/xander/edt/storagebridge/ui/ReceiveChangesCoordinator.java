@@ -530,7 +530,7 @@ public final class ReceiveChangesCoordinator {
                         // the patch itself is unusable, retain those names and
                         // use the separately documented -listFile transport.
                         // This NEVER repeats RepositoryUpdateCfg.
-                        final ChangedObjectsProbe.NativeChanges nativeDelta;
+                        ChangedObjectsProbe.NativeChanges nativeDelta;
                         try {
                             var nativeDump = new ChangedObjectsProbe().exportNative(
                                 detect, lastScanned, canceled);
