@@ -1465,43 +1465,20 @@ public final class ReceiveChangesCoordinator {
                                                             + "импорта, а не повторное "
                                                             + "побайтовое сравнение.";
                                                     } else {
-                                                        finishStage.set(
-                                                            "последняя проверка HEAD 1С");
+                                                        finishStage.set("запись рассмотренной версии");
                                                         long finalHead = revisionForReview.get();
-                                                        if (finalHead != revisionForReview.get()) {
-                                                            if (finalHead > 0) {
-                                                                ReceiveRevisionStore.recordObserved(
-                                                                    project, settings.address(),
-                                                                    intermediaryIdentity,
-                                                                    finalHead);
-                                                            }
-                                                            reason = "Версия хранилища "
-                                                                + "изменилась или недоступна "
-                                                                + "при итоговой проверке. "
-                                                                + "Результат EDT сохранён, "
-                                                                + "но отметка REVIEWED "
-                                                                + "не изменена.";
-                                                        } else {
-                                                            finishStage.set(
-                                                                "запись рассмотренной версии");
-                                                            GitReceiveGuard
-                                                                .requireSameBranchAndHead(
-                                                                    project, postMergeGit);
-                                                            ReceiveCompletionRecorder
-                                                                .reviewedGlobalNativeMerge(
-                                                                    project, settings.address(),
-                                                                    intermediaryIdentity, branch,
-                                                                    finalHead, journal,
-                                                                    initialFullReview);
-                                                            confirmedRevision = finalHead;
-                                                            reason = "Штатное полное объединение "
-                                                                + "EDT завершено. Все входящие "
-                                                                + "изменения рассмотрены; "
-                                                                + "REVIEWED = " + finalHead
-                                                                + ". Побайтовое совпадение "
-                                                                + "конфигураций не проверялось "
-                                                                + "и APPLIED не изменялся.";
-                                                        }
+                                                        GitReceiveGuard.requireSameBranchAndHead(
+                                                            project, postMergeGit);
+                                                        ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, branch,
+                                                            finalHead, journal, initialFullReview);
+                                                        confirmedRevision = finalHead;
+                                                        reason = "Штатное полное объединение EDT "
+                                                            + "завершено. РАССМОТРЕНА версия "
+                                                            + finalHead
+                                                            + ". Побайтовое совпадение не требуется; "
+                                                            + "APPLIED не менялся.";
                                                     }
                                                 } else {
                                                     // EDT's finished native MERGE is the
