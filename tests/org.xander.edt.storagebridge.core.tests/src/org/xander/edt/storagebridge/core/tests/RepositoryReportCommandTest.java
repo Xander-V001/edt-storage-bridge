@@ -34,6 +34,9 @@ public class RepositoryReportCommandTest {
         assertEquals("/F", argv.get(2));
         assertEquals("/workspace/ib", argv.get(3));
         assertTrue(argv.contains("/DisableStartupDialogs"));
+        assertEquals("ru", argv.get(argv.indexOf("/L") + 1));
+        assertEquals("ru", argv.get(argv.indexOf("/VL") + 1));
+        assertTrue(argv.indexOf("/L") < argv.indexOf("/ConfigurationRepositoryReport"));
         assertTrue(argv.contains("/ConfigurationRepositoryReport"));
         assertTrue(argv.contains("-ReportFormat"));
         assertTrue(argv.contains("txt"));
@@ -108,6 +111,8 @@ public class RepositoryReportCommandTest {
             cmd.get(cmd.indexOf("/ConfigurationRepositoryP") + 1));
         assertEquals("-1", cmd.get(cmd.indexOf("-NBegin") + 1));
         assertTrue(cmd.contains("-IncludeCommentLinesWithDoubleSlash"));
+        assertEquals("ru", cmd.get(cmd.indexOf("/L") + 1));
+        assertEquals("ru", cmd.get(cmd.indexOf("/VL") + 1));
         assertFalse(cmd.contains("-GroupByObject"));
         assertFalse(cmd.contains("-GroupByComment"));
         assertFalse(cmd.contains("-IncludeOnlyVersionsWithLabels"));
