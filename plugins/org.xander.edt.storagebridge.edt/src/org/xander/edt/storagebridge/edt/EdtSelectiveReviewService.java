@@ -570,41 +570,6 @@ public final class EdtSelectiveReviewService {
     }
 
     /**
-     * Minimal completeness proof for GLOBAL acceptance. Every metadata
-     * identity exported by the native full ConfigDumpInfo index must resolve
-     * to a top-level descriptor in the actual converted EDT project.
-     *
-     * Unknown native metadata types and incomplete imported owners fail
-     * closed: the merge may still be developer-reviewed, but cannot be
-     * certified as a fully mirrored repository configuration.
-     */
-    public static boolean fullImportCoversNativeInventory(
-            Set<String> currentNativeIdentities,
-            Set<String> unindexedNativeIdentities,
-            Set<String> importedEdtOwners) {
-        Objects.requireNonNull(currentNativeIdentities);
-        Objects.requireNonNull(unindexedNativeIdentities);
-        Objects.requireNonNull(importedEdtOwners);
-        if (importedEdtOwners.isEmpty() || currentNativeIdentities.isEmpty()) {
-            return false;
-        }
-        var nativeIdentities = new LinkedHashSet<>(currentNativeIdentities);
-        nativeIdentities.addAll(unindexedNativeIdentities);
-        for (String name : nativeIdentities) {
-            try {
-                if (!importedEdtOwners.contains(edtOwner(name))) {
-                    return false;
-                }
-            } catch (IOException | RuntimeException unsupported) {
-                // Missing/unrecognized native metadata is never proof of a
-                // complete EDT source; no filenames enter the normal log.
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
      * Identify only the main .mdo file of a top-level EDT metadata object.
      * Accepted layouts are src/<collection>/<name>.mdo and
      * src/<collection>/<name>/<name>.mdo. Child forms/modules, even if
