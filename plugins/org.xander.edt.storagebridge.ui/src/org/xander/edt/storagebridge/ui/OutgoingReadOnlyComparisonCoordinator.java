@@ -164,7 +164,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     // Compare the actual converted repository EDT tree with
                     // the real project. This finds candidates automatically
                     // across ALL object/resource types; Git commit history
-                    // or manually selected BSL files are not required.
+                    // or manually selected individual files are not required.
                     // A file change is NOT proof of a semantic EDT change
                     // and NEVER permits Lock/Load/Commit by itself.
                     monitor.subTask("Поиск отличий файлов EDT и хранилища");
