@@ -534,13 +534,14 @@ public final class ReceiveChangesCoordinator {
                     // Compare native NAME SETS only to recognize removals.
                     // Internal 1C configVersion/id values are not our diff API.
                     RemoteReceiveScopePlanner.Changes discovered;
-                    if (lastScanned == null) {
-                        // No proved baseline: compare the entire configuration,
-                        // but do not put EVERY metadata identity into pending.
-                        // Reviewed HEAD requires the finished EDT merge and
-                        // explicit developer confirmation, not a fake delta.
+                    if (selectAllRemote) {
+                        // The explicit FULL comparison is independent of the
+                        // incremental dump and change-list commands. Avoid
+                        // letting failures in -getChanges veto a valid native
+                        // global EDT comparison. FULL mode imports ALL remote
+                        // metadata; no invented per-object pending identities.
                         discovered = RemoteReceiveScopePlanner.fullInventory(
-                            null, remote.configDumpInfo());
+                            lastScanned, remote.configDumpInfo());
                     } else {
                         // Even when the user requested a FULL comparison,
                         // discover actual changed identities using native 1C.
