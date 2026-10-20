@@ -1,32 +1,20 @@
-# Build / IDE setup (target: 1C:EDT 2026.2)
+# Сборка, установка и подтверждение EDT Storage Bridge
 
-**Never trigger a build automatically.** A build must be explicitly requested by the user and manually launched via the GitHub Actions `workflow_dispatch` workflow.
+Цель — **1C:EDT 2026.2**. Отсутствие явного запроса пользователя = **не запускать** CI, Maven, установленную EDT или 1С. Для документационных правок выполнять только статическую сверку файлов/ссылок.
 
-## Proposed toolchain — NOT YET VERIFIED
+## Репозиторий и последняя известная проверка
 
-- **JDK 25 with JavaFX** (official EDT plugin sample uses Zulu 25 JDK FX).
-- **Eclipse 2025-12** and **1C:EDT 2026.2** p2 artifacts.
-- **Maven 3.9.9** and **Tycho 5.0.2**.
-- The target source is `targets/edt-2026.2/edt-2026.2.target`.
+- Рабочая ветка кода: `feature/edt-2026.2-integration` (проверять HEAD перед сборкой).
+- GitHub Actions: **Build and test (manual)** → **Run workflow** → выбрать целевую ветку. Файл `.github/workflows/ci.yml` использует `workflow_dispatch`.
+- Последний отмеченный успешный запуск: [№65, `494ff6b`](https://github.com/Xander-V001/edt-storage-bridge/actions/runs/39469832794). После него в ветке появились изменения до `931c846`, которые **ещё не покрыты этим CI**.
+- Для диагностики сбоев CI проверять jobs/logs и артефакты Tycho/JUnit. Success сборки доказывает компиляцию и запущенные тесты **конкретного SHA**, а не функциональный обмен на реальной 1С.
 
-**Authorization is mandatory for the official 1C:EDT p2 repository.** 1C states that access is for eligible registered 1C:ITS users/partners: https://edt.1c.ru/dev/ru/docs/plugins/dev/target-platform/ . Create GitHub repository **Actions secrets** `P2_USER` (ITS portal login) and `P2_TOKEN` (ITS portal password), using `Settings → Secrets and variables → Actions → New repository secret`. **Never send credentials in chat or commit them.** The manually dispatched workflow first checks only that both secrets exist; values are never printed. Then the supported `s4u/setup-maven-action` `settings-servers` input generates the Maven `dt_repository` credentials using `${env.P2_USER}` and `${env.P2_TOKEN}` environment references. If the secrets are absent, the workflow stops before Maven starts, instead of wasting build minutes. This does not automatically verify permissions: invalid credentials may still be rejected.
+## Структура сборки
 
-## Development in Eclipse PDE
+Maven/Tycho, target `targets/edt-2026.2/edt-2026.2.target`, модульные bundles `core`, `platform`, `edt`, `ui`, `feature`, `repository` (p2), `tests`. Конкретные версии JDK/Tycho/Maven сверять с `pom.xml`, workflow и target; не копировать старые предположения из удалённых планов. EDT 2026.2 использует Java 25 / Eclipse 2025-12; документация платформы 1С 8.3 относится к другому продукту.
 
-Import modules in `plugins/`, `targets/`, `tests/`, `features/`, `repository/` as existing projects, activate `targets/edt-2026.2/edt-2026.2.target`, and resolve the target. Use the product-compatible Java 25 installation. Do not use the obsolete Eclipse 2024-06 target — it is not a 2026.2 runtime.
+## Установка и проверки вручную
 
-## Authorized build command (reference only; DO NOT execute without explicit request)
+После **явного** разрешения и зелёного CI точного HEAD: получить p2-архив артефакта, установить через Help → Install New Software (или настроенный p2 update site), перезапустить EDT; проверить version/bundles. При обновлении UI или команды проверить контекстное меню проекта, настройки, Secure Storage и штатный compare. Только после этого переходить к тестовой ИБ и хранилищу по [VALIDATION.md](VALIDATION.md).
 
-```bash
-mvn -B -ntp clean verify
-```
-
-The CI workflow uses the same Maven command on manual dispatch. On success it publishes a short-retention p2 ZIP. It removes older artifacts using the manual artifact policy.
-
-## Runtime check (after build and user approval)
-
-Install p2 ZIP into a **disposable test installation of EDT 2026.2**. Run `EDT Storage Bridge → Inspect selected project` for an EDT configuration project and verify only model availability is read.
-
-**Important:** the old p2 ZIP created before the 2026.2 migration is not an EDT 2026.2 verified release. It must not be represented as such.
-
-No integration with the configuration repository is yet implemented.
+Отдельная публикация через GitHub Pages и автоматическое обновление p2 зависят от реальных настроек `.github/workflows` и удачного deploy; наличие URL само по себе **не** доказывает доступный update site. Не публиковать test-only запись как стабильно работающую функцию.
