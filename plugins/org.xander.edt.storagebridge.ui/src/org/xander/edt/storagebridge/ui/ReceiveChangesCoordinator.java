@@ -955,6 +955,14 @@ public final class ReceiveChangesCoordinator {
                 new AtomicReference<>(conversionRoot);
             final AtomicBoolean effectiveFull =
                 new AtomicBoolean(fullNativeComparison);
+            // Exactly one read-only native -listFile retry if an otherwise
+            // valid 1C incremental PATCH lacks the owner's files required
+            // by the native EDT XML importer. Do not loop or re-run the
+            // repository update. A previously listFile-based transport
+            // must never be retried indefinitely.
+            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(
+                nativePatchFailure.get() != null || retryPendingOnly
+                    || hadUnresolvedBefore);
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
@@ -972,15 +980,64 @@ public final class ReceiveChangesCoordinator {
                     if (effectiveFull.get()) {
                         throw ex;
                     }
+                    if (!selectiveTransportRetried.getAndSet(true)) {
+                        // -getChanges reports exact identities. The native
+                        // XML PATCH may still omit a parent .mdo needed
+                        // by EDT's four-argument importer. One documented
+                        // -listFile call requests only the affected owners
+                        // and separately developed native resources.
+                        var plan = SelectiveDumpPlanner.planIncludingRelated(
+                            selectedList, allCurrentMetadata);
+                        if (plan.deferred().isEmpty() && !plan.exportable().isEmpty()) {
+                            phase.set("Повторная штатная выборочная XML-выгрузка");
+                            if (!intermediaryInventoryUnchanged(
+                                    journal, detect, monitor)) {
+                                throw new IOException(
+                                    "База-посредник изменилась после получения "
+                                    + "выборочной дельты. Повторная выгрузка запрещена.");
+                            }
+                            GitReceiveGuard.requireUnchanged(project, git);
+                            cleanupQuietly(stagedExport.get(), stagedConversion.get());
+                            stagedExport.set(null);
+                            stagedConversion.set(null);
+                            var retrySource = new SelectiveDumpRunner().export(
+                                new SelectiveDumpRequest(executable, transport,
+                                    plan.exportable(), Duration.ofMinutes(30),
+                                    settings.infobaseUsername(),
+                                    settings.infobasePassword()),
+                                monitor::isCanceled);
+                            stagedExport.set(retrySource);
+                            var retryRoot = Files.createTempDirectory(
+                                "edt-storage-edt-selective-retry-");
+                            stagedConversion.set(retryRoot);
+                            Path retryTarget = Files.createDirectory(
+                                retryRoot.resolve("edt"));
+                            try {
+                                var retried = EdtPublicServiceBridge.prepare(
+                                    project, retrySource.xmlDirectory(),
+                                    retryTarget, selectedList, false, monitor);
+                                monitor.worked(2);
+                                return retried;
+                            } catch (EdtSelectiveReviewService.NativeEdtImportFailure
+                                    | EdtSelectiveReviewService.MissingConvertedOwnersException
+                                    | EdtSelectiveReviewService.MissingEmbeddedLanguagesException
+                                    secondFailure) {
+                                BridgeActivator.getDefault().getLog().warn(
+                                    "EDT rejected both native incremental PATCH "
+                                    + "and one native selective -listFile source");
+                                // An actual binary/importer limitation: only
+                                // an explicitly approved full review remains.
+                            }
+                        }
+                    }
                     boolean useFull = confirmOnUi(shell,
                         "EDT не смогла открыть выборочную выгрузку 1С",
-                        "Конфигуратор 1С сформировал изменения штатно, "
-                        + "но EDT не смогла преобразовать их в отдельный "
-                        + "источник для сравнения. Принудительно дополнять "
-                        + "XML или создавать собственный список объектов "
-                        + "плагин не будет.\n\n"
-                        + "Можно выгрузить конфигурацию полностью и "
-                        + "открыть штатное сравнение EDT. "
+                        "EDT не смогла преобразовать штатные выборочные "
+                        + "XML-данные в модель сравнения. Плагин ограничивает "
+                        + "повторную выгрузку одним вызовом -listFile по "
+                        + "подтверждённому списку объектов.\n\n"
+                        + "Можно отдельно разрешить ПОЛНУЮ XML-выгрузку "
+                        + "только для подготовки сравнения EDT. "
                         + "База-посредник из хранилища повторно "
                         + "не обновляется. Операция может занять долгое время.",
                         "Полная сверка");
