@@ -35,6 +35,33 @@ public final class ReceiveCompletionRecorder {
             project, repository, intermediary, branch, revision);
     }
 
+    /**
+     * Native EDT confirmed a FINISHED global comparison/merge and the 1C HEAD
+     * was attested. There are NO pending native changes to classify, and the
+     * full 1C metadata inventory was present in the imported EDT source.
+     *
+     * A byte-identical mirror is NOT implied by EDT's merge status: its
+     * serializer may produce different .mdo/.distr bytes. Therefore this
+     * records REVIEWED only, never APPLIED or artificial KEPT_LOCAL entries.
+     * It also avoids reading the entire 1C/EDT resource tree a second time.
+     */
+    public static void reviewedGlobalNativeMerge(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, ReceiveBaselineJournal journal,
+            boolean initialReview) throws IOException, BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        if (!ReceivePendingStore.get(project, repository, branch,
+                intermediary).isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot acknowledge an unreviewed native change by global merge alone");
+        }
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        if (initialReview) {
+            journal.markInitialReviewPrepared();
+        }
+    }
+
     public static int partial(IProject project, String repository, String intermediary,
             String branch, Set<String> exactlyVerified)
             throws BackingStoreException {
