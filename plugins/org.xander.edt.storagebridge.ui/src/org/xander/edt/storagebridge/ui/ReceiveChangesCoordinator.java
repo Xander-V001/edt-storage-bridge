@@ -33,7 +33,6 @@ import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
-import org.xander.edt.storagebridge.core.RepositoryHeadAttestation;
 import org.xander.edt.storagebridge.core.ReceiveConfirmationTexts;
 import org.xander.edt.storagebridge.core.ReceivePendingExplanation;
 import org.xander.edt.storagebridge.core.ReceiveReviewScope;
