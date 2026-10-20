@@ -13,10 +13,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 /**
- * Native 1C incremental transport follows GitConverter's two separate
- * Designer invocations: -update -force for XML, then -getChanges for names.
- * Both read the SAME untouched platform ConfigDumpInfo baseline. The native
- * XML patch is retained for the EDT importer, not rewritten by this plugin.
+ * Native 1C incremental transport uses one documented /DumpConfigToFiles
+ * invocation with -update, -configDumpInfoForChanges and -getChanges.
+ * The same native ConfigDumpInfo baseline yields both the patch and exact
+ * changed names; no second Designer invocation rewrites the patch.
  *
  * The comparison ConfigDumpInfo.xml is a real, unchanged platform snapshot.
  * No Git/EDT common ancestor or repository revision is inferred from its
@@ -49,36 +49,8 @@ public final class ChangedObjectsProbe {
         args.add("-force");
         args.add("-configDumpInfoForChanges");
         args.add(info.toString());
-        args.add("/Out");
-        args.add(serviceLog.toString());
-        return List.copyOf(args);
-    }
-
-    /** Separate native -getChanges call, using the same prior state. */
-    public List<String> changeListCommand(ChangeDetectionRequest request, Path info,
-            Path inspectionDirectory, Path changeFile, Path serviceLog) {
-        Objects.requireNonNull(request);
-        for (Path path : new Path[] {info, inspectionDirectory, changeFile, serviceLog}) {
-            if (path == null || !path.isAbsolute()) {
-                throw new IllegalArgumentException("Absolute files required");
-            }
-        }
-        var args = new ArrayList<String>();
-        args.add(request.executable().toString());
-        args.add("DESIGNER");
-        args.add(request.infobase().switchName());
-        args.add(request.infobase().address());
-        DesignerInfobaseAuth.addTo(args,
-            request.infobaseUsername(), request.infobasePassword());
-        args.add("/DisableStartupDialogs");
-        args.add("/DisableStartupMessages");
-        args.add("/DisableUnrecoverableErrorMessage");
-        args.add("/DumpConfigToFiles");
-        args.add(inspectionDirectory.toString());
         args.add("-getChanges");
         args.add(changeFile.toString());
-        args.add("-configDumpInfoForChanges");
-        args.add(info.toString());
         args.add("/Out");
         args.add(serviceLog.toString());
         return List.copyOf(args);
@@ -171,18 +143,10 @@ public final class ChangedObjectsProbe {
             Path output = work.resolve("stdout.txt");
             Path errors = work.resolve("stderr.txt");
 
-            // The first native process exports XML. The second retrieves the
-            // exact platform change list; do not combine them.
+            // Official one-pass Designer command writes the XML and the
+            // change list. No second dump into a nonempty XML directory.
             runDesigner(command(request, privateBaseline, inspection, changes, log),
                 work, output, errors, log, changes, request.timeout(), cancelled);
-            if (Files.mismatch(verifiedDumpInfo, privateBaseline) != -1) {
-                throw new IOException("1C changed the comparison baseline");
-            }
-            Path changesLog = work.resolve("changes-1c-log.txt");
-            runDesigner(changeListCommand(request, privateBaseline,
-                    inspection, changes, changesLog),
-                work, output, errors, changesLog, changes,
-                request.timeout(), cancelled);
             if (!Files.isRegularFile(changes, LinkOption.NOFOLLOW_LINKS)) {
                 throw new IOException("1C did not write the changes report");
             }
@@ -194,7 +158,7 @@ public final class ChangedObjectsProbe {
                 validateNativeStage(result, inspection);
             } catch (NativeStageIncomplete incomplete) {
                 incomplete.setDiagnosticsDirectory(
-                    preserveDiagnostics(changesLog, changes, output, errors));
+                    preserveDiagnostics(log, changes, output, errors));
                 throw incomplete;
             }
             ready = true;
