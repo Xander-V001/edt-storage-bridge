@@ -49,7 +49,8 @@ public class ConfigurationChangesParserTest {
             "Catalog.Товары", "Catalog.Товары.ObjectModule",
             "Role.Бухгалтер", "Role.Бухгалтер.Rights",
             "CommonModule.Утилиты", "CommonModule.Утилиты.Module",
-            "Report.ФормаП4", "Report.ФормаП4.Form.Основная"),
+            "Report.ФормаП4", "Report.ФормаП4.Form.Основная",
+            "Report.ФормаП4.Form.Основная.Form"),
             changes.objectsToExport());
     }
 
