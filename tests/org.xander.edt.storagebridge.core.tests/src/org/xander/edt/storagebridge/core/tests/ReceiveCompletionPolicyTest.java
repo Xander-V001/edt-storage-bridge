@@ -23,10 +23,10 @@ public final class ReceiveCompletionPolicyTest {
 
     @Test
     public void noOwnersAuditedDoesNotProofFullMirror() {
-        // The caller MUST pass globalCoverage=false when there are zero
-        // owner descriptors in the imported full staging project.
+        // Even an apparently complete full comparison cannot accept a
+        // repository version when not one metadata owner was audited.
         assertEquals(Next.AUDIT_INCOMPLETE, ReceiveCompletionPolicy.decide(
-            true, true, false, true, 0, Set.of(), Set.of()));
+            true, true, true, true, 0, Set.of(), Set.of()));
     }
 
     @Test
