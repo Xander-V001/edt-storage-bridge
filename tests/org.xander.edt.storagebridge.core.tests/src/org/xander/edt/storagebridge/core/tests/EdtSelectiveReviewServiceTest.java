@@ -170,6 +170,34 @@ public class EdtSelectiveReviewServiceTest {
     }
 
     @Test
+    public void postMergeVerificationMustUseNestedEdtProjectRoot()
+            throws Exception {
+        Path stage = Files.createTempDirectory("edt-post-merge-root-");
+        try {
+            Path descriptor = stage.resolve(
+                "edt/src/Documents/Документ1/Документ1.mdo");
+            Files.createDirectories(descriptor.getParent());
+            Files.writeString(descriptor, "test metadata");
+
+            // The outer disposable directory is not an EDT project:
+            // <stage>/src does not exist. The imported project is <stage>/edt.
+            assertThrows(IOException.class, () ->
+                EdtSelectiveReviewService.primaryDescriptors(stage));
+            assertEquals(List.of("Documents/Документ1"),
+                EdtSelectiveReviewService
+                    .primaryDescriptors(stage.resolve("edt"))
+                    .keySet().stream().toList());
+        } finally {
+            try (var files = Files.walk(stage)) {
+                for (Path entry : files.sorted(
+                        java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(entry);
+                }
+            }
+        }
+    }
+
+    @Test
     public void fullScopeIncludesAllRemoteAndLocalOnlyTopLevelOwners()
             throws Exception {
         Path local = Files.createTempDirectory("edt-full-local-");
