@@ -415,8 +415,14 @@ public final class ReceiveChangesCoordinator {
             // concurrent commit arrives while Designer updates the base,
             // the staged XML cannot prove it includes that newer revision.
             // Recovery/pending-only retries have no such provenance proof.
+            // SNAPSHOT_READY means Designer has NOT started the mutating
+            // update. On safe resume, read HEAD before starting it, exactly
+            // like a normal fresh receive. Without this proof the completed
+            // recovery can never advance REVIEWED.
+            final boolean freshNativeUpdate = !retryPendingOnly
+                && (!recovery || resumePrepared);
             final long revisionBeforeUpdate =
-                !retryPendingOnly && !recovery
+                freshNativeUpdate
                     ? readLatestRevisionOrUnknown(
                         executable, transport, settings, jobProgress::isCanceled)
                     : ReceiveRevisionStore.UNKNOWN;
@@ -424,15 +430,14 @@ public final class ReceiveChangesCoordinator {
             // Do not spend minutes updating the intermediary and merging in
             // EDT if the native repository HEAD cannot be proved at all.
             // Unknown HEAD must never be replaced with a ConfigDumpInfo token.
-            if (!retryPendingOnly && !recovery
-                    && revisionBeforeUpdate < 1) {
+            if (freshNativeUpdate && revisionBeforeUpdate < 1) {
                 informationOnUi(shell, "Версия хранилища недоступна",
                     "1С не подтвердила номер последней версии хранилища. "
                     + "Обновление базы-посредника и сравнение EDT НЕ запускались. "
                     + "Проверьте чтение штатного отчёта хранилища в настройках.");
                 return;
             }
-            if (!retryPendingOnly && !recovery
+            if (freshNativeUpdate
                     && previouslyReviewed > revisionBeforeUpdate) {
                 informationOnUi(shell, "Версия хранилища уменьшилась",
                     "Ранее рассмотрена версия " + previouslyReviewed
@@ -719,7 +724,7 @@ public final class ReceiveChangesCoordinator {
             // claim the new HEAD. Never spend another long EDT merge on it.
             // The intermediary scan and exact pending delta have already
             // been safely journaled; a fresh receive is the next action.
-            if (!retryPendingOnly && !recovery
+            if (freshNativeUpdate
                     && revisionBeforeUpdate > 0 && observedRevision > 0
                     && revisionBeforeUpdate != observedRevision) {
                 BridgeActivator.getDefault().getLog().warn(
