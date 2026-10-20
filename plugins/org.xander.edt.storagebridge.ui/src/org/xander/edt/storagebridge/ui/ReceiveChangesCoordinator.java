@@ -991,8 +991,13 @@ public final class ReceiveChangesCoordinator {
                                                 + "staging deliberately retained");
                                         }
                                         finishStage.set("проверка Git после Merge");
-                                        GitReceiveGuard.requireSameBranchAndHead(
-                                            project, git);
+                                        final GitReceiveGuard.Baseline postMergeGit =
+                                            GitReceiveGuard.requireSafePostMergeGit(
+                                                project, git);
+                                        BridgeActivator.getDefault().getLog().info(
+                                            "Post-merge Git: branchStable=true"
+                                            + "; headAdvancedOnBranch="
+                                            + !postMergeGit.head().equalsIgnoreCase(git.head()));
                                         int worktreeAfter = -1;
                                         try {
                                             worktreeAfter = GitReceiveGuard
@@ -1221,8 +1226,13 @@ public final class ReceiveChangesCoordinator {
                                                             .primaryDescriptors(
                                                                 retainedConvertedEdt).keySet()
                                                         : Set.of();
+                                                // No pending journal mutation may happen
+                                                // until Git's branch and HEAD have remained
+                                                // stable for this specific post-merge audit.
+                                                GitReceiveGuard.requireSameBranchAndHead(
+                                                    project, postMergeGit);
                                                 var verified = VerifiedReceiveContent
-                                                    .verifyAndClear(
+                                                    .inspect(
                                                         project,
                                                         settings.address(),
                                                         branch,
@@ -1233,8 +1243,8 @@ public final class ReceiveChangesCoordinator {
                                                         fullyImportedOwners,
                                                         retainedConvertedEdt,
                                                         retainedExport.xmlDirectory());
-                                                acknowledgedCount =
-                                                    verified.confirmedPending();
+                                                // This is only a candidate count; inspect
+                                                // must not clear any pending objects yet.
                                                 boolean allSourceVerified =
                                                     verified.remainingPending() == 0
                                                     && verified.identicalOwners()
@@ -1245,16 +1255,27 @@ public final class ReceiveChangesCoordinator {
                                                 // its confirmed HEAD may still be recorded as
                                                 // developer-reviewed. Never silently accept
                                                 // objects that were outside this comparison.
+                                                GitReceiveGuard.requireSameBranchAndHead(
+                                                    project, postMergeGit);
                                                 if (!inventoryOnly) {
-                                                    GitReceiveGuard.requireSameBranchAndHead(
-                                                        project, git);
                                                     Set<String> remainingAfterAudit =
-                                                        ReceivePendingStore.get(
-                                                            project, settings.address(),
-                                                            branch, intermediaryIdentity);
+                                                        new java.util.LinkedHashSet<>(
+                                                            ReceivePendingStore.get(
+                                                                project, settings.address(),
+                                                                branch, intermediaryIdentity));
+                                                    remainingAfterAudit.removeAll(
+                                                        verified.verifiedNames());
                                                     if (allSourceVerified) {
                                                         finishStage.set(
                                                             "сохранение обработанной версии хранилища");
+                                                        if (!verified.verifiedNames().isEmpty()) {
+                                                            ReceivePendingStore.clearVerified(
+                                                                project, settings.address(),
+                                                                branch, intermediaryIdentity,
+                                                                verified.verifiedNames());
+                                                        }
+                                                        acknowledgedCount =
+                                                            verified.confirmedPending();
                                                         ReceiveRevisionStore.recordReviewed(
                                                             project, settings.address(),
                                                             intermediaryIdentity, branch,
@@ -1281,18 +1302,18 @@ public final class ReceiveChangesCoordinator {
                                                                 + "Выберите «Нет», если редактор "
                                                                 + "был закрыт до завершения работы.");
                                                         if (confirmedByDeveloper) {
-                                                            GitReceiveGuard
-                                                                .requireSameBranchAndHead(
-                                                                    project, git);
-                                                            // Journal the confirmation first:
-                                                            // a crash must not silently forget
-                                                            // the user's deliberate local choices.
+                                                            GitReceiveGuard.requireSameBranchAndHead(
+                                                                project, postMergeGit);
                                                             finishStage.set(
                                                                 "сохранение обработанной версии хранилища");
-                                                            ReceiveRevisionStore.recordReviewed(
-                                                                project, settings.address(),
-                                                                intermediaryIdentity, branch,
-                                                                revisionForReview.get());
+                                                            if (!verified.verifiedNames().isEmpty()) {
+                                                                ReceivePendingStore.clearVerified(
+                                                                    project, settings.address(),
+                                                                    branch, intermediaryIdentity,
+                                                                    verified.verifiedNames());
+                                                            }
+                                                            acknowledgedCount =
+                                                                verified.confirmedPending();
                                                             if (!remainingAfterAudit.isEmpty()) {
                                                                 ReceivePendingStore.acknowledgeReviewed(
                                                                     project, settings.address(),
@@ -1301,6 +1322,10 @@ public final class ReceiveChangesCoordinator {
                                                             }
                                                             acknowledgedCount +=
                                                                 remainingAfterAudit.size();
+                                                            ReceiveRevisionStore.recordReviewed(
+                                                                project, settings.address(),
+                                                                intermediaryIdentity, branch,
+                                                                revisionForReview.get());
                                                             confirmedRevision =
                                                                 revisionForReview.get();
                                                             reason = "Версия обработана, "
@@ -1310,10 +1335,29 @@ public final class ReceiveChangesCoordinator {
                                                                 + "подтверждён разработчиком.";
                                                         }
                                                     } else {
+                                                        // Strictly identical objects can be
+                                                        // retired individually even when
+                                                        // a separate remote change was not
+                                                        // included in this comparison.
+                                                        if (!verified.verifiedNames().isEmpty()) {
+                                                            ReceivePendingStore.clearVerified(
+                                                                project, settings.address(),
+                                                                branch, intermediaryIdentity,
+                                                                verified.verifiedNames());
+                                                        }
+                                                        acknowledgedCount = verified.confirmedPending();
                                                         reason = "Часть ожидающих изменений "
                                                             + "отсутствовала в открытом сравнении. "
                                                             + "Версия пока не подтверждена.";
                                                     }
+                                                } else if (!verified.verifiedNames().isEmpty()) {
+                                                    // Source version is unavailable, but
+                                                    // exact matching native content was proven.
+                                                    ReceivePendingStore.clearVerified(
+                                                        project, settings.address(),
+                                                        branch, intermediaryIdentity,
+                                                        verified.verifiedNames());
+                                                    acknowledgedCount = verified.confirmedPending();
                                                 }
                                                 // Initial full review is complete only
                                                 // AFTER a proven HEAD, successful native
@@ -1408,10 +1452,13 @@ public final class ReceiveChangesCoordinator {
                                         logFailure("Завершение EDT: "
                                             + finishStage.get(), ex);
                                         String cause = ex instanceof
+                                                GitReceiveGuard.PostMergeGitMismatch
+                                            ? ex.getMessage()
+                                            : ex instanceof
                                                 ConfigVersionSnapshotRunner.SnapshotFailure
-                                            ? safeReason(ex)
-                                            : "Тип: " + ex.getClass().getSimpleName()
-                                                + "; место: " + ownFailureSite(ex);
+                                                ? safeReason(ex)
+                                                : "Тип: " + ex.getClass().getSimpleName()
+                                                    + "; место: " + ownFailureSite(ex);
                                         informationOnUi(shell, "Завершение объединения EDT",
                                             "EDT завершила операцию, но не удалось "
                                             + "закончить проверку её результата.\n"
