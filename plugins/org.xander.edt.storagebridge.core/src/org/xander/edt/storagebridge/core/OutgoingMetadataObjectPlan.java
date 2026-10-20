@@ -73,9 +73,28 @@ public final class OutgoingMetadataObjectPlan {
 
     public Map<String, Owner> owners() { return owners; }
 
+    /**
+     * Changes to the top-level membership are represented in 1C by the
+     * parent Configuration.xml: additions load parent + new object;
+     * removals load the parent without the removed object.
+     */
     public List<String> exportableOwners() {
-        return owners.values().stream().filter(Owner::exportable)
-            .map(Owner::path).toList();
+        var result = new java.util.LinkedHashSet<String>();
+        if (changesTopLevelMembership()) {
+            result.add("Configuration/Configuration");
+        }
+        owners.values().stream().filter(Owner::exportable)
+            .map(Owner::path).forEach(result::add);
+        return List.copyOf(result);
+    }
+
+    public boolean changesTopLevelMembership() {
+        return owners.values().stream().anyMatch(
+            owner -> owner.added() || owner.removed());
+    }
+
+    public boolean removesTopLevelOwners() {
+        return owners.values().stream().anyMatch(Owner::removed);
     }
 
     public List<String> removedOwners() {
