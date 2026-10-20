@@ -67,11 +67,9 @@ public final class RepositoryRevisionHistoryDelta {
     }
 
     /** Convert native revision HISTORY to a conservative changed-name scope. */
-    public static ChangedObjectsProbe.NativeChanges forCurrentInventory(
-            Candidates candidates, Set<String> oldNames, Set<String> currentNames) {
+    public static ChangedObjectsProbe.NativeChanges asNativeChangedNames(
+            Candidates candidates) {
         Objects.requireNonNull(candidates);
-        Objects.requireNonNull(oldNames);
-        Objects.requireNonNull(currentNames);
         // Keep every touched native identity, including one that existed
         // in the baseline but is now deleted. The receiver must notice its
         // absence in the CURRENT full inventory and request a global review
