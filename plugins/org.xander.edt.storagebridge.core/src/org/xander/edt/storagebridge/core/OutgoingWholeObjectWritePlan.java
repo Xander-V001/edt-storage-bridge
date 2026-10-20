@@ -22,8 +22,8 @@ import org.xander.edt.storagebridge.platform.OutgoingStorageObjectsXml;
  * validated. Only root owner XML goes in Designer listFile; subordinate
  * resources stay in the export tree for the platform to load.
  *
- * New / removed / root Configuration objects remain unsupported for WRITE;
- * they are ALWAYS present in the read-only object plan and diagnostic report.
+ * A top-level addition/deletion uses the Configuration parent XML.
+ * Root membership is loaded by the platform itself, not edited as text.
  */
 public final class OutgoingWholeObjectWritePlan {
     private final List<String> edtOwners;
@@ -32,10 +32,15 @@ public final class OutgoingWholeObjectWritePlan {
     // specified root and reads its children from that same directory.
     private final List<String> exportFiles;
     private final List<String> loadFiles;
+    private final List<String> lockNames;
+    private final boolean recursiveRoot;
 
     private OutgoingWholeObjectWritePlan(List<String> edtOwners,
             List<String> nativeNames, List<String> exportFiles,
-            List<String> loadFiles) {
+            List<String> loadFiles, List<String> lockNames,
+            boolean recursiveRoot) {
+        this.lockNames = List.copyOf(lockNames);
+        this.recursiveRoot = recursiveRoot;
         this.edtOwners = List.copyOf(edtOwners);
         this.nativeNames = List.copyOf(nativeNames);
         this.exportFiles = List.copyOf(exportFiles);
@@ -52,13 +57,10 @@ public final class OutgoingWholeObjectWritePlan {
                 || files.isEmpty() || files.size() > 500_000) {
             throw new IOException("Incomplete whole-object export");
         }
-        if (!delta.removedOwners().isEmpty()
-                || delta.owners().values().stream().anyMatch(x -> x.added())) {
-            throw new IOException("New and removed owners require separate qualified operation");
-        }
-        if (!new LinkedHashSet<>(exportedOwners).equals(delta.owners().keySet())
-                || exportedOwners.size() != delta.owners().size()) {
-            throw new IOException("Native export did not cover every selected owner");
+        if (!new LinkedHashSet<>(exportedOwners).equals(
+                new LinkedHashSet<>(delta.exportableOwners()))
+                || exportedOwners.size() != delta.exportableOwners().size()) {
+            throw new IOException("Native export did not cover all current owners and parent");
         }
         var roots = new LinkedHashMap<String, String>();
         var expectedNames = new LinkedHashSet<String>();
@@ -66,7 +68,12 @@ public final class OutgoingWholeObjectWritePlan {
             String owner = exportedOwners.get(i);
             String name = exportedNativeNames.get(i);
             if ("Configuration/Configuration".equals(owner)) {
-                throw new IOException("Configuration root requires its own write workflow");
+                if (!"Configuration".equals(name)) {
+                    throw new IOException("EDT root identity differs from 1C");
+                }
+                expectedNames.add("Configuration");
+                roots.put(owner, "Configuration.xml");
+                continue;
             }
             String[] parts = owner.split("/", -1);
             if (parts.length != 2 || !owner.matches(
@@ -81,7 +88,8 @@ public final class OutgoingWholeObjectWritePlan {
             roots.put(owner, owner + ".xml");
         }
         // The -Objects XML serializer independently validates native names.
-        OutgoingStorageObjectsXml.createWithSubordinates(Set.copyOf(expectedNames));
+        OutgoingStorageObjectsXml.createWithRoot(Set.copyOf(expectedNames),
+            delta.removesTopLevelOwners());
         var uniqueFiles = new LinkedHashSet<String>();
         var mainFiles = new LinkedHashSet<String>();
         for (String path : files) {
@@ -106,7 +114,9 @@ public final class OutgoingWholeObjectWritePlan {
                     break;
                 }
             }
-            if (!matched) {
+            // A native Configuration export can contain unrelated source
+            // resources. They remain on disk but are NOT in -listFile.
+            if (!matched && !expectedNames.contains("Configuration")) {
                 throw new IOException("Native export includes objects outside chosen scope");
             }
         }
@@ -116,28 +126,58 @@ public final class OutgoingWholeObjectWritePlan {
         // Official 1C partial import: specifying the owner XML imports
         // this owner with its subordinate objects from the export directory.
         // Do not request every module/form/resource as a separate operation.
+        var capture = new LinkedHashSet<String>();
+        if (expectedNames.contains("Configuration")) capture.add("Configuration");
+        for (var entry : delta.owners().entrySet()) {
+            if (entry.getValue().added()) continue; // No such object in storage yet.
+            String fullName = null;
+            for (int i = 0; i < exportedOwners.size(); i++) {
+                if (entry.getKey().equals(exportedOwners.get(i))) {
+                    fullName = exportedNativeNames.get(i);
+                    break;
+                }
+            }
+            if (fullName != null) capture.add(fullName);
+        }
+        if (delta.removesTopLevelOwners()) {
+            // Capture all children of Configuration so deleted children
+            // are captured before their parent XML removes them.
+            capture.add("Configuration");
+        }
         return new OutgoingWholeObjectWritePlan(exportedOwners,
             exportedNativeNames, new ArrayList<>(uniqueFiles),
-            new ArrayList<>(roots.values()));
+            new ArrayList<>(roots.values()), new ArrayList<>(capture),
+            delta.removesTopLevelOwners());
     }
 
     public List<String> edtOwners() { return edtOwners; }
     public List<String> nativeNames() { return nativeNames; }
     public List<String> loadFiles() { return loadFiles; }
+    public Set<String> lockOwners() {
+        return java.util.Collections.unmodifiableSet(new LinkedHashSet<>(lockNames));
+    }
+
+    public boolean capturesAllRootChildren() { return recursiveRoot; }
+
     public Set<String> classicOwners() {
         return java.util.Collections.unmodifiableSet(
             new LinkedHashSet<>(nativeNames));
     }
 
-    public void writeScopes(Path xmlObjects, Path loadList)
-            throws IOException {
-        if (xmlObjects == null || loadList == null
-                || !xmlObjects.isAbsolute() || !loadList.isAbsolute()
-                || xmlObjects.equals(loadList) || loadFiles.isEmpty()) {
-            throw new IOException("Invalid whole-object native load scope");
+    public void writeScopes(Path lockObjects, Path commitObjects,
+            Path loadList) throws IOException {
+        if (lockObjects == null || commitObjects == null || loadList == null
+                || !lockObjects.isAbsolute() || !commitObjects.isAbsolute()
+                || !loadList.isAbsolute()
+                || lockObjects.equals(loadList) || commitObjects.equals(loadList)
+                || lockObjects.equals(commitObjects) || loadFiles.isEmpty()) {
+            throw new IOException("Invalid native Lock / Load / Commit scope");
         }
-        Files.writeString(xmlObjects,
-            OutgoingStorageObjectsXml.createWithSubordinates(classicOwners()),
+        Files.writeString(lockObjects,
+            OutgoingStorageObjectsXml.createWithRoot(lockOwners(), recursiveRoot),
+            StandardCharsets.UTF_8);
+        Files.writeString(commitObjects,
+            OutgoingStorageObjectsXml.createWithRoot(classicOwners(), recursiveRoot),
             StandardCharsets.UTF_8);
         // Designer consistently recognizes UTF-8 BOM on Windows even for
         // metadata whose names are Cyrillic; keep CRLF like native dump lists.
