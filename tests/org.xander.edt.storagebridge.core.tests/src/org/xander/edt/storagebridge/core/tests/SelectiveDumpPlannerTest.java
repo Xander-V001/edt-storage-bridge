@@ -161,6 +161,30 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
+    public void selectiveXmlImportsNativeRootAndLanguagesButNotOtherObjects() {
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("DataProcessor.Assistant.Form.Форма.Form"),
+            List.of("Configuration", "Language.Русский",
+                "Language.Английский",
+                "DataProcessor.Assistant",
+                "DataProcessor.Assistant.Form.Форма",
+                "DataProcessor.Assistant.Form.Форма.Form",
+                "DataProcessor.Other",
+                "DataProcessor.Other.Form.Unrelated"));
+        var importNames = SelectiveDumpPlanner.withImportContext(
+            plan, List.of("Configuration", "Language.Русский",
+                "Language.Английский", "DataProcessor.Other"));
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form",
+            "Configuration", "Language.Русский", "Language.Английский"),
+            importNames);
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Форма",
+            "DataProcessor.Assistant.Form.Форма.Form"), plan.exportable());
+    }
+
+    @Test
     public void independentFormPayloadAndTemplatePayloadAreNotLostByListFile()
             throws Exception {
         var plan = SelectiveDumpPlanner.planIncludingRelated(
