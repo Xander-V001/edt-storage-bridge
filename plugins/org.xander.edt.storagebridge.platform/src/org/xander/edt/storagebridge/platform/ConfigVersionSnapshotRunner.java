@@ -215,7 +215,7 @@ public final class ConfigVersionSnapshotRunner {
         Files.writeString(saved.resolve("snapshot-failure.txt"),
             "1C Designer snapshot command failed." + System.lineSeparator()
             + "Process exit code: " + exitCode + System.lineSeparator()
-            + "Files: designer.log, stdout.txt, result.txt (if 1C created them)."
+            + "Files: designer.log, stdout.txt, stderr.txt, result.txt (if 1C created them)."
             + System.lineSeparator()
             + "These files may contain private environment data; review before sharing."
             + System.lineSeparator(), StandardCharsets.UTF_8);
