@@ -20,7 +20,6 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 
-import org.xander.edt.storagebridge.core.OutgoingBslWritePlan;
 import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.core.OutgoingWholeObjectWritePlan;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
@@ -44,7 +43,7 @@ public final class OutgoingMetadataExportCoordinator {
     public static void preview(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings,
             GitReceiveGuard.Baseline expectedGit, long reviewedRevision,
-            OutgoingMetadataObjectPlan plan, OutgoingBslWritePlan bslTestPlan) {
+            OutgoingMetadataObjectPlan plan) {
         Objects.requireNonNull(shell);
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
@@ -122,7 +121,7 @@ public final class OutgoingMetadataExportCoordinator {
                                 result.outputFiles());
                             event(log, "WRITE_QUALIFIED",
                                 "owners=" + qualifiedWrite.classicOwners().size()
-                                + " resources=" + qualifiedWrite.loadFiles().size());
+                                + " owners=" + qualifiedWrite.loadFiles().size());
                         } catch (IOException unsupported) {
                             event(log, "WRITE_REJECTED",
                                 "reason=" + unsupported.getClass().getSimpleName()
@@ -186,17 +185,6 @@ public final class OutgoingMetadataExportCoordinator {
                                     shell, project, settings, expectedGit,
                                     reviewedRevision, plan, approvedPlan);
                             }
-                        } else if (bslTestPlan != null && !shell.isDisposed()
-                                && MessageDialog.openQuestion(shell,
-                                    "Тестовый режим отдельных модулей",
-                                    "Полная объектная выгрузка не прошла "
-                                    + "квалификацию для помещения. "
-                                    + "Изменения отдельно подходят под "
-                                    + "старый узкий BSL-тест. "
-                                    + "Испытать только его с двумя подтверждениями?")) {
-                            OutgoingBslWriteCoordinator.confirmTestWrite(
-                                shell, project, settings, expectedGit,
-                                reviewedRevision, bslTestPlan);
                         } else if (approvedPlan == null && !shell.isDisposed()) {
                             MessageDialog.openInformation(shell,
                                 "Помещение объектов пока заблокировано",
