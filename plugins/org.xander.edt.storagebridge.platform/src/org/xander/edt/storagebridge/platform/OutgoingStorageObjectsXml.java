@@ -22,16 +22,24 @@ public final class OutgoingStorageObjectsXml {
     private OutgoingStorageObjectsXml() {}
 
     public static String create(Set<String> explicitClassicNames) {
-        return createInternal(explicitClassicNames, false);
+        return createInternal(explicitClassicNames, false, false);
     }
 
     /** For full-object operations that MUST include its subordinate objects. */
     public static String createWithSubordinates(Set<String> explicitClassicNames) {
-        return createInternal(explicitClassicNames, true);
+        return createInternal(explicitClassicNames, true, false);
+    }
+
+    /**
+     * Configuration is a distinct XML element in the official 1C object-list
+     * schema. A root capture including children is used for removal workflows.
+     */
+    public static String createWithRoot(Set<String> names, boolean rootChildren) {
+        return createInternal(names, true, rootChildren);
     }
 
     private static String createInternal(Set<String> explicitClassicNames,
-            boolean includeSubordinates) {
+            boolean includeSubordinates, boolean rootChildren) {
         Objects.requireNonNull(explicitClassicNames);
         if (explicitClassicNames.isEmpty()
                 || explicitClassicNames.size() > MAX_OBJECTS) {
@@ -45,12 +53,12 @@ public final class OutgoingStorageObjectsXml {
                         + "(\\.[\\p{L}_][\\p{L}\\p{N}_]*)+")) {
                 throw new IllegalArgumentException("Invalid classic metadata FQN");
             }
-            // Configuration-root selection can affect EVERYTHING. Handle it
-            // only in a separate explicitly designed safe workflow.
-            if (name.startsWith("Configuration.")
-                    || name.equals("Configuration")) {
-                throw new IllegalArgumentException(
-                    "Configuration root not supported in selective push");
+            if (name.equals("Configuration")) {
+                objects.add(name);
+                continue;
+            }
+            if (name.startsWith("Configuration.")) {
+                throw new IllegalArgumentException("Use Configuration root selector");
             }
             objects.add(name);
         }
@@ -59,6 +67,12 @@ public final class OutgoingStorageObjectsXml {
             .append("<Objects xmlns=\"").append(XML_NS)
             .append("\" version=\"1.0\">\n");
         for (String name : objects) {
+            if (name.equals("Configuration")) {
+                xml.append("  <Configuration includeChildObjects=\"")
+                    .append(rootChildren ? "true" : "false")
+                    .append("\"/>\n");
+                continue;
+            }
             // XML escaping is unnecessary by construction: the strict
             // metadata FQN alphabet contains no XML metacharacters.
             xml.append("  <Object fullName=\"").append(name)
