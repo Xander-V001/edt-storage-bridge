@@ -203,6 +203,47 @@ public final class SelectiveDumpPlannerTest {
     }
 
     @Test
+    public void officialIncrementalPatchKeepsChangedModuleAndOnlyAddsSiblings() {
+        var current = List.of("Configuration", "Language.Русский",
+            "Document.Order", "Document.Order.ObjectModule",
+            "Document.Order.Form.Main",
+            "Document.Order.Form.Main.Form",
+            "Document.Order.Template.Print",
+            "Document.Unrelated", "Document.Unrelated.Form.Main");
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("Document.Order.ObjectModule"), current);
+        var extras = SelectiveDumpPlanner.supplementsForNativePatch(
+            plan, current, java.util.Set.of("Document.Order.ObjectModule"));
+        assertEquals(List.of("Document.Order",
+            "Document.Order.Form.Main",
+            "Document.Order.Form.Main.Form",
+            "Document.Order.Template.Print",
+            "Configuration", "Language.Русский"), extras);
+        assertTrue(!extras.contains("Document.Order.ObjectModule"));
+        assertTrue(!extras.contains("Document.Unrelated"));
+    }
+
+    @Test
+    public void changedFormPayloadIsRetainedFromNativeDeltaNotExportedAgain() {
+        var current = List.of("Configuration", "Language.Русский",
+            "DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Main",
+            "DataProcessor.Assistant.Form.Main.Form",
+            "DataProcessor.Assistant.Form.Other",
+            "DataProcessor.Unrelated");
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("DataProcessor.Assistant.Form.Main.Form"), current);
+        var extras = SelectiveDumpPlanner.supplementsForNativePatch(
+            plan, current,
+            java.util.Set.of("DataProcessor.Assistant.Form.Main.Form"));
+        assertEquals(List.of("DataProcessor.Assistant",
+            "DataProcessor.Assistant.Form.Main",
+            "DataProcessor.Assistant.Form.Other",
+            "Configuration", "Language.Русский"), extras);
+        assertTrue(!extras.contains("DataProcessor.Unrelated"));
+    }
+
+    @Test
     public void changedCommandAloneStillRequestsItsOwner() {
         var plan = SelectiveDumpPlanner.plan(List.of(
             "Catalog.Items.Command.Pick",
