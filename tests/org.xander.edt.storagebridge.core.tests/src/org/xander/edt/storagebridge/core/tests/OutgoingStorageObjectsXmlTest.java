@@ -38,13 +38,17 @@ public final class OutgoingStorageObjectsXmlTest {
     }
 
     @Test
-    public void recursiveSelectionCannotAccidentallyLockConfigurationRoot() {
-        assertThrows(IllegalArgumentException.class, () ->
-            OutgoingStorageObjectsXml.createWithSubordinates(
-                Set.of("Configuration")));
-        assertThrows(IllegalArgumentException.class, () ->
-            OutgoingStorageObjectsXml.createWithSubordinates(
-                Set.of("Configuration.Configuration")));
+    public void rootIsOfficialConfigurationElementWithExplicitDepth() {
+        String shallow = OutgoingStorageObjectsXml.createWithRoot(
+            Set.of("Configuration", "Document.New"), false);
+        assertTrue(shallow.contains(
+            "<Configuration includeChildObjects=\"false\"/>"));
+        assertTrue(shallow.contains("fullName=\"Document.New\""));
+        String recursive = OutgoingStorageObjectsXml.createWithRoot(
+            Set.of("Configuration"), true);
+        assertTrue(recursive.contains(
+            "<Configuration includeChildObjects=\"true\"/>"));
+        assertFalse(recursive.contains("fullName=\"Configuration\""));
     }
 
     @Test
