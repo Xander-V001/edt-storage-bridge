@@ -31,16 +31,20 @@ public final class VerifiedReceiveContent {
     private VerifiedReceiveContent() {}
 
     public record Result(int checkedOwners, int identicalOwners,
-            int confirmedPending, int remainingPending, Path diagnosticFile) {
+            int confirmedPending, int remainingPending, Path diagnosticFile,
+            Set<String> verifiedNames) {
         public Result {
+            verifiedNames = Set.copyOf(verifiedNames);
             if (checkedOwners < 0 || identicalOwners < 0
                     || confirmedPending < 0 || remainingPending < 0
-                    || identicalOwners > checkedOwners) {
+                    || identicalOwners > checkedOwners
+                    || confirmedPending != verifiedNames.size()) {
                 throw new IllegalArgumentException("Invalid receive verification summary");
             }
         }
     }
 
+    /** Legacy helper with explicit mutation; receiving coordinator uses inspect. */
     public static Result verifyAndClear(IProject project,
             String repositoryAddress, String branch, String intermediaryIdentity,
             Set<String> selectedRoots, Set<String> selectedPendingNames,
@@ -61,6 +65,27 @@ public final class VerifiedReceiveContent {
     }
 
     public static Result verifyAndClear(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> selectedRoots, Set<String> selectedPendingNames,
+            Set<String> absentRemoteNames, Set<String> fullImportedOwners,
+            Path convertedEdt, Path originalDesignerXml)
+            throws IOException, BackingStoreException {
+        Result result = inspect(project, repositoryAddress, branch,
+            intermediaryIdentity, selectedRoots, selectedPendingNames,
+            absentRemoteNames, fullImportedOwners, convertedEdt,
+            originalDesignerXml);
+        if (!result.verifiedNames().isEmpty()) {
+            ReceivePendingStore.clearVerified(project, repositoryAddress,
+                branch, intermediaryIdentity, result.verifiedNames());
+        }
+        return result;
+    }
+
+    /**
+     * Read-only audit. Do not alter the pending ledger BEFORE the coordinator
+     * checks Git state and confirms the developer's final merge outcome.
+     */
+    public static Result inspect(IProject project,
             String repositoryAddress, String branch, String intermediaryIdentity,
             Set<String> selectedRoots, Set<String> selectedPendingNames,
             Set<String> absentRemoteNames, Set<String> fullImportedOwners,
@@ -185,13 +210,10 @@ public final class VerifiedReceiveContent {
                     + "или его вложенный ресурс ещё не подтверждён как удалённый");
             }
         }
-        if (!verifiedNames.isEmpty()) {
-            ReceivePendingStore.clearVerified(
-                project, repositoryAddress, branch, intermediaryIdentity,
-                verifiedNames);
-        }
-        Set<String> remainingNames = ReceivePendingStore.get(
-            project, repositoryAddress, branch, intermediaryIdentity);
+        Set<String> remainingNames = new LinkedHashSet<>(
+            ReceivePendingStore.get(project, repositoryAddress, branch,
+                intermediaryIdentity));
+        remainingNames.removeAll(verifiedNames);
         int remaining = remainingNames.size();
         Path report = null;
         if (unresolvedOwners > 0 || remaining > 0) {
@@ -243,7 +265,7 @@ public final class VerifiedReceiveContent {
             }
         }
         return new Result(owners.size(), matched,
-            verifiedNames.size(), remaining, report);
+            verifiedNames.size(), remaining, report, verifiedNames);
     }
 
     /** Compatibility bridge for existing callers; prefer Result diagnostics. */
