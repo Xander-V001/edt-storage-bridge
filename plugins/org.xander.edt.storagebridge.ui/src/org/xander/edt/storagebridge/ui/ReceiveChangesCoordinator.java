@@ -2037,7 +2037,12 @@ public final class ReceiveChangesCoordinator {
                 + "ConfigDumpInfo.xml в выгрузке: "
                 + (stage.manifestPresent() ? "есть" : "отсутствует")
                 + ". Сравнение EDT не запускалось, версия не записана. "
-                + "Для диагностики требуется журнал самой команды 1С. "
+                + (stage.diagnosticsDirectory() == null
+                    ? "Локальные диагностические файлы сохранить не удалось. "
+                    : "Локальные диагностические файлы: "
+                      + stage.diagnosticsDirectory()
+                      + " (1c-log.txt, changes.txt, stdout.txt, stderr.txt). "
+                      + "Перед передачей проверьте их на конфиденциальные данные. ")
                 + "Полную выгрузку плагин автоматически не запускает.";
         }
         if (failure instanceof SelectiveDumpRunner.DumpFailure dump) {
