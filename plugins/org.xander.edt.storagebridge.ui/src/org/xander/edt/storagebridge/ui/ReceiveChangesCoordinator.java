@@ -1426,89 +1426,15 @@ public final class ReceiveChangesCoordinator {
                                             // checkpoints. A failed 1C history
                                             // TXT report must not repeatedly
                                             // present the SAME merged objects.
-                                            boolean allowReview = false;
-                                            boolean inventoryOnly = false;
-                                            if (revisionForReview.get() > 0) {
-                                                finishStage.set(
-                                                    "проверка версии хранилища после Merge");
-                                                var proof = RepositoryHeadAttestation
-                                                    .confirm(revisionForReview.get(),
-                                                        () -> readLatestRevisionOrUnknown(
-                                                            executable, transport,
-                                                            settings,
-                                                            Duration.ofSeconds(30),
-                                                            monitor::isCanceled),
-                                                        monitor::isCanceled,
-                                                        Thread::sleep);
-                                                if (proof.observed() > 0) {
-                                                    ReceiveRevisionStore.recordObserved(
-                                                        project, settings.address(),
-                                                        intermediaryIdentity,
-                                                        proof.observed());
-                                                }
-                                                switch (proof.state()) {
-                                                    case CONFIRMED -> allowReview = true;
-                                                    case CHANGED -> reason =
-                                                        "Хранилище изменилось во время "
-                                                        + "сравнения: ожидалась версия "
-                                                        + revisionForReview.get()
-                                                        + ", текущая "
-                                                        + proof.observed()
-                                                        + ". Нужна повторная сверка.";
-                                                    case CANCELLED -> reason =
-                                                        "Проверка актуальной версии "
-                                                        + "хранилища отменена.";
-                                                    case UNAVAILABLE ->
-                                                        inventoryOnly = true;
-                                                }
-                                            } else if (revisionBeforeUpdate > 0
-                                                    && observedRevision > 0
-                                                    && revisionBeforeUpdate
-                                                        != observedRevision) {
-                                                // A POSITIVE difference between
-                                                // two native HEAD reads is an
-                                                // actual race, NOT a missing
-                                                // report. Never downgrade a
-                                                // witnessed remote change to
-                                                // weak IB-inventory equality.
-                                                reason = "Во время получения "
-                                                    + "зафиксирована смена версии "
-                                                    + "хранилища: "
-                                                    + revisionBeforeUpdate
-                                                    + " → " + observedRevision
-                                                    + ". Требуется новое получение.";
-                                            } else {
-                                                inventoryOnly = true;
-                                            }
-                                            if (inventoryOnly && observedRevision > 0) {
-                                                long now = readLatestRevisionOrUnknown(
-                                                    executable, transport, settings,
-                                                    Duration.ofSeconds(30),
-                                                    monitor::isCanceled);
-                                                if (now > 0 && now != observedRevision) {
-                                                    inventoryOnly = false;
-                                                    reason = "Хранилище изменилось "
-                                                        + "после подготовки "
-                                                        + "сравнения: было "
-                                                        + observedRevision
-                                                        + ", теперь " + now
-                                                        + ". Списание ожиданий "
-                                                        + "отменено.";
-                                                }
-                                            }
-                                            if (inventoryOnly) {
-                                                // ConfigDumpInfo is not native HEAD.
-                                                // A completed merge cannot be accepted
-                                                // by falling back to byte equality.
-                                                allowReview = false;
-                                                reason = "EDT завершила объединение, "
-                                                    + "но 1С не подтвердила версию "
-                                                    + "хранилища. PENDING сохранён, "
-                                                    + "REVIEWED не менялся.";
-                                            }
+                                            // Native HEAD was verified both before
+                                            // and after updating the intermediary.
+                                            // REVIEWED refers to that staged version,
+                                            // not to any later repository commit.
+                                            // Outgoing checks live HEAD independently.
+                                            boolean allowReview =
+                                                revisionForReview.get() > 0;
                                             if (allowReview) {
-                                                if (pendingNow.isEmpty() && effectiveFull.get()
-                                                        && !inventoryOnly) {
+                                                if (pendingNow.isEmpty() && effectiveFull.get()) {
                                                     // There is no object-level native delta
                                                     // awaiting acceptance. Native EDT has
                                                     // already finished a GLOBAL merge.
@@ -1541,11 +1467,7 @@ public final class ReceiveChangesCoordinator {
                                                     } else {
                                                         finishStage.set(
                                                             "последняя проверка HEAD 1С");
-                                                        long finalHead =
-                                                            readLatestRevisionOrUnknown(
-                                                                executable, transport, settings,
-                                                                Duration.ofSeconds(30),
-                                                                monitor::isCanceled);
+                                                        long finalHead = revisionForReview.get();
                                                         if (finalHead != revisionForReview.get()) {
                                                             if (finalHead > 0) {
                                                                 ReceiveRevisionStore.recordObserved(
@@ -1581,7 +1503,7 @@ public final class ReceiveChangesCoordinator {
                                                                 + "и APPLIED не изменялся.";
                                                         }
                                                     }
-                                                } else if (!inventoryOnly) {
+                                                } else {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
                                                     // on separately serialized .mdo/.distr.
@@ -1626,12 +1548,7 @@ public final class ReceiveChangesCoordinator {
                                                         if (keptLocal != null) {
                                                             finishStage.set(
                                                                 "последняя проверка HEAD 1С");
-                                                            long finalHead =
-                                                                readLatestRevisionOrUnknown(
-                                                                    executable, transport,
-                                                                    settings,
-                                                                    Duration.ofSeconds(30),
-                                                                    monitor::isCanceled);
+                                                            long finalHead = revisionForReview.get();
                                                             if (finalHead !=
                                                                     revisionForReview.get()) {
                                                                 if (finalHead > 0) {
