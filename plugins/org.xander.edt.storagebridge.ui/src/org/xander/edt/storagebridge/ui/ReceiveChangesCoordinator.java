@@ -1367,11 +1367,22 @@ public final class ReceiveChangesCoordinator {
                                                                 + "Версия не фиксируется.";
                                                     }
                                                 }
+                                                // The incremental index intentionally omits
+                                                // Metadata without configVersion (e.g. object
+                                                // attributes). A GLOBAL APPLIED proof must
+                                                // include those names and verify their EDT
+                                                // owner, otherwise an unversioned object could
+                                                // disappear without being counted.
+                                                Set<String> allNativeMetadata =
+                                                    effectiveFull.get()
+                                                        ? ConfigDumpInfoIndex.allMetadataNames(
+                                                            journal.lastScannedInfo())
+                                                        : currentInventory;
                                                 boolean fullSourceInventoryCovered =
                                                     !effectiveFull.get()
                                                     || EdtSelectiveReviewService
                                                         .fullImportCoversNativeInventory(
-                                                            currentInventory,
+                                                            allNativeMetadata,
                                                             unindexedNativeNames.get(),
                                                             fullyImportedOwners);
                                                 boolean entireProjectAudited =
