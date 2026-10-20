@@ -54,6 +54,7 @@ import org.xander.edt.storagebridge.platform.RepositoryUpdateRunner;
 import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 import org.xander.edt.storagebridge.platform.NativeRepositoryCompare;
+import org.xander.edt.storagebridge.platform.RepositoryRevisionHistoryDelta;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRequest;
 import org.xander.edt.storagebridge.platform.SelectiveDumpRunner;
 import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
@@ -196,6 +197,12 @@ public final class ReceiveChangesCoordinator {
         // never rebuild change identities from ConfigDumpInfo tokens.
         AtomicReference<ChangedObjectsProbe.NativeChanges> nativeChangeReport =
             new AtomicReference<>();
+        // Native version-history candidates can safely replace -getChanges
+        // discovery ONLY when SCANNED and REVIEWED refer to one exact HEAD.
+        // In that case source XML is exported using Designer -listFile.
+        AtomicReference<RepositoryRevisionHistoryDelta.Candidates>
+            nativeHistoryCandidates = new AtomicReference<>();
+        AtomicBoolean usingNativeHistory = new AtomicBoolean(false);
         AtomicReference<ChangedObjectsProbe.NativeStageIncomplete> nativePatchFailure =
             new AtomicReference<>();
         Path conversionRoot = null;
@@ -467,7 +474,32 @@ public final class ReceiveChangesCoordinator {
                         + compared.fromRevision() + "; to="
                         + compared.toRevision() + "; reportBytes="
                         + compared.reportBytes()
-                        + "; scope source remains native -getChanges");
+                        + "; metadata identities read separately from native history");
+                    if (previouslyScanned == previouslyReviewed
+                            && !hadUnresolvedBefore) {
+                        try {
+                            phase.set("Чтение штатной истории изменений 1С");
+                            var candidates = RepositoryRevisionHistoryDelta.read(
+                                executable, transport, settings.infobaseUsername(),
+                                settings.infobasePassword(), settings.address(),
+                                settings.username(), settings.password(),
+                                previouslyReviewed, revisionBeforeUpdate,
+                                Duration.ofMinutes(5), monitor::isCanceled);
+                            nativeHistoryCandidates.set(candidates);
+                            BridgeActivator.getDefault().getLog().info(
+                                "Native repository history candidate identities: "
+                                + candidates.touched().size());
+                        } catch (IOException ex) {
+                            // /CompareCfg still succeeded, but the 1C TXT
+                            // history format could be different or incomplete.
+                            // Keep the existing native -getChanges mechanism,
+                            // never infer an empty set from a failed parse.
+                            BridgeActivator.getDefault().getLog().warn(
+                                "Native history cannot be used as exact scope; "
+                                + "falling back to native -getChanges ("
+                                + ex.getClass().getSimpleName() + ")");
+                        }
+                    }
                     monitor.worked(1);
                     return null;
                 });
@@ -572,6 +604,26 @@ public final class ReceiveChangesCoordinator {
                         // explicit developer confirmation, not a fake delta.
                         discovered = RemoteReceiveScopePlanner.fullInventory(
                             null, remote.configDumpInfo());
+                    } else if (nativeHistoryCandidates.get() != null) {
+                        // Complete 1C native history covers each revision after
+                        // the reviewed HEAD; /CompareCfg independently compared
+                        // the exact first and last resulting configurations.
+                        // Use native history as a conservative superset (reverts
+                        // may remain), and transport using official -listFile.
+                        var historyDelta = RepositoryRevisionHistoryDelta
+                            .forCurrentInventory(nativeHistoryCandidates.get(),
+                                ConfigDumpInfoIndex.allMetadataNames(lastScanned),
+                                ConfigDumpInfoIndex.allMetadataNames(
+                                    remote.configDumpInfo()));
+                        nativeChangeReport.set(historyDelta);
+                        discovered = RemoteReceiveScopePlanner.reconcileNative(
+                            lastScanned, remote.configDumpInfo(), historyDelta);
+                        usingNativeHistory.set(true);
+                        BridgeActivator.getDefault().getLog().info(
+                            "Native revision history selected: touched="
+                            + nativeHistoryCandidates.get().touched().size()
+                            + "; present=" + discovered.present().size()
+                            + "; removed=" + discovered.removed().size());
                     } else {
                         // Even when the user requested a FULL comparison,
                         // discover actual changed identities using native 1C.
@@ -949,7 +1001,8 @@ public final class ReceiveChangesCoordinator {
                     export = new SelectiveDumpRunner.ExportResult(
                         ready.workingRoot(), ready.xmlDirectory());
                     nativePatch.set(null);
-                } else if (nativePatchFailure.get() != null
+                } else if (usingNativeHistory.get()
+                        || nativePatchFailure.get() != null
                         || retryPendingOnly || hadUnresolvedBefore) {
                     // Fallback and retained PENDING: use the documented
                     // -listFile transport for the union of exactly known
