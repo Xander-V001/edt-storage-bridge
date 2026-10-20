@@ -52,6 +52,23 @@ public final class ReceiveCompletionPolicy {
             && nativeDeltaEmpty && pendingEmpty;
     }
 
+    /**
+     * Recovery after the intermediary has already been updated and a native
+     * -getChanges probe failed. A previous REVIEWED+SCANNED certificate,
+     * byte-identical full native inventory and an empty new 1C delta prove
+     * there is nothing new for EDT to merge. No second repository update.
+     * The caller must re-read and match native HEAD before checkpoint write.
+     */
+    public static boolean canAcknowledgeRecoveredEmptyDelta(
+            long previouslyReviewed, long previouslyScanned,
+            long observedHead, boolean exactInventoryUnchanged,
+            boolean nativeDeltaEmpty, boolean pendingEmpty) {
+        return previouslyReviewed > 0
+            && previouslyReviewed == previouslyScanned
+            && observedHead >= previouslyReviewed
+            && exactInventoryUnchanged && nativeDeltaEmpty && pendingEmpty;
+    }
+
     public static Next decide(boolean nativeMergeFinished,
             boolean nativeSourceRevisionProven,
             boolean fullProjectCoverageVerified,
