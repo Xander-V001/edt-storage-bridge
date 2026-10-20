@@ -533,9 +533,10 @@ public final class ReceiveChangesCoordinator {
                     // intermediary still has the saved exact ConfigDumpInfo.
                     // HEAD may have advanced since staging: preserve the
                     // proven OLDER source revision, not the new HEAD.
-                    long stagedRevision = journal.scannedRevision();
-                    if (stagedRevision > 0
-                            && stagedRevision <= observedRevision) {
+                    long stagedRevision = RepositoryHeadAttestation
+                        .attestedPendingRetrySource(
+                            journal.scannedRevision(), observedRevision);
+                    if (stagedRevision > 0) {
                         revisionForReview.set(stagedRevision);
                         BridgeActivator.getDefault().getLog().info(
                             "Pending-only retry uses attested staged source; "
