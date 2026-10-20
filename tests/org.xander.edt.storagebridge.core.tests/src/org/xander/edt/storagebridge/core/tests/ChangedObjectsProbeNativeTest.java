@@ -83,6 +83,65 @@ public final class ChangedObjectsProbeNativeTest {
     }
 
     @Test
+    public void nativeEmptyChangeReportNeedsNoXmlOrManifest()
+            throws Exception {
+        Path root = Files.createTempDirectory("1c-native-empty-delta-");
+        try {
+            var noChanges = ChangedObjectsProbe.parseNativeText("");
+            assertFalse(noChanges.fullDump());
+            assertTrue(noChanges.exactNames().isEmpty());
+            ChangedObjectsProbe.validateNativeStage(noChanges, root);
+        } finally {
+            Files.deleteIfExists(root);
+        }
+    }
+
+    @Test
+    public void changedNativeItemsWithoutManifestRemainUnsafeToImport()
+            throws Exception {
+        Path root = Files.createTempDirectory("1c-native-missing-index-");
+        try {
+            Files.writeString(root.resolve("Document.xml"), "<Document/>");
+            var changed = ChangedObjectsProbe.parseNativeText(
+                "Modified:Document.Payroll.Form.Main\\n");
+            var ex = assertThrows(ChangedObjectsProbe.NativeStageIncomplete.class,
+                () -> ChangedObjectsProbe.validateNativeStage(changed, root));
+            assertEquals(1, ex.reportedChanges());
+            assertFalse(ex.manifestPresent());
+        } finally {
+            Files.deleteIfExists(root.resolve("Document.xml"));
+            Files.deleteIfExists(root);
+        }
+    }
+
+    @Test
+    public void emptyReportWithUnexpectedXmlIsNotSilentlyAccepted()
+            throws Exception {
+        Path root = Files.createTempDirectory("1c-native-contradictory-");
+        try {
+            Files.writeString(root.resolve("Document.xml"), "<Document/>");
+            var noChanges = ChangedObjectsProbe.parseNativeText("");
+            assertThrows(ChangedObjectsProbe.NativeStageIncomplete.class,
+                () -> ChangedObjectsProbe.validateNativeStage(noChanges, root));
+        } finally {
+            Files.deleteIfExists(root.resolve("Document.xml"));
+            Files.deleteIfExists(root);
+        }
+    }
+
+    @Test
+    public void fullDumpNeverRequiresPartialXmlManifest()
+            throws Exception {
+        Path root = Files.createTempDirectory("1c-native-fulldump-");
+        try {
+            var fullDump = ChangedObjectsProbe.parseNativeText("FullDump\\n");
+            ChangedObjectsProbe.validateNativeStage(fullDump, root);
+        } finally {
+            Files.deleteIfExists(root);
+        }
+    }
+
+    @Test
     public void prepareNativeUpdateKeepsItsDumpTargetEmptyAndBaselineUntouched()
             throws Exception {
         Path work = Files.createTempDirectory("native-update-stage-");
