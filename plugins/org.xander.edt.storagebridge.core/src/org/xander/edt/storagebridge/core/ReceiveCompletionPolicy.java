@@ -33,6 +33,25 @@ public final class ReceiveCompletionPolicy {
 
     private ReceiveCompletionPolicy() {}
 
+    /**
+     * A version-only repository commit can be acknowledged without EDT merge,
+     * but ONLY when the exact previous native snapshot was already reviewed
+     * for this same branch, and the latest native 1C delta is genuinely empty.
+     * No first-time synchronization or unreviewed changes are acknowledged.
+     */
+    public static boolean canAcknowledgeEmptyNativeDelta(
+            long priorReviewed, long priorScanned, long beforeUpdate,
+            long stagedRevision, long currentHead, boolean nativeDeltaEmpty,
+            boolean pendingEmpty) {
+        return priorReviewed > 0
+            && priorReviewed == priorScanned
+            && beforeUpdate > 0
+            && beforeUpdate == stagedRevision
+            && stagedRevision == currentHead
+            && stagedRevision >= priorReviewed
+            && nativeDeltaEmpty && pendingEmpty;
+    }
+
     public static Next decide(boolean nativeMergeFinished,
             boolean nativeSourceRevisionProven,
             boolean fullProjectCoverageVerified,
