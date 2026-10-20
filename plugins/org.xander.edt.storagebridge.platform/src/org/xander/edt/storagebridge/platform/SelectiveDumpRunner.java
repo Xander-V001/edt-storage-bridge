@@ -51,6 +51,12 @@ public final class SelectiveDumpRunner {
         }
         Path diagnostics = Files.createTempDirectory("edt-storage-supplement-");
         boolean success = false;
+        Path manifest = nativeXml.resolve("ConfigDumpInfo.xml");
+        // GitConverter preserves the native -update ConfigDumpInfo separately
+        // before the supplementary -listFile operation. The latter may write
+        // its OWN manifest, which must not replace the incremental baseline.
+        Path originalManifest = diagnostics.resolve("original-ConfigDumpInfo.xml");
+        Files.copy(manifest, originalManifest);
         try {
             Path objects = diagnostics.resolve("objects.txt");
             Path log = diagnostics.resolve("designer.txt");
@@ -113,6 +119,10 @@ public final class SelectiveDumpRunner {
             }
             success = true;
         } finally {
+            // Restore the actual platform-generated -update manifest. This is
+            // a byte-identical copy, not a synthetic ConfigDumpInfo.xml.
+            Files.copy(originalManifest, manifest,
+                StandardCopyOption.REPLACE_EXISTING);
             if (success) {
                 deleteTree(diagnostics);
             }
