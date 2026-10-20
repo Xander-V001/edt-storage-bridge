@@ -113,18 +113,26 @@ public final class ReceivePendingStore {
     }
 
     /**
-     * The user confirmed that all presented changes in native EDT's finished
-     * selective merge were reviewed. The EDT comparison API does NOT return
-     * per-checkbox acceptance outcomes here, so do NOT label all remaining
-     * identities KEPT_LOCAL based on file bytes. Keep any prior, separately
-     * confirmed KEPT_LOCAL decisions untouched.
+     * After EDT Merge, the user explicitly identifies which presented
+     * 1C changes were intentionally retained locally. Persist those choices
+     * by exact native identity, not serialized EDT bytes. The remaining
+     * presented identities were explicitly confirmed as reviewed and accepted.
+     * On a NEW native delta, an earlier kept-local marker is superseded only
+     * by the user's current choice for that SAME native metadata identity.
      */
     public static void acknowledgeNativeReviewedScope(IProject project,
             String repositoryAddress, String branch, String intermediaryIdentity,
-            Set<String> presentedNames) throws BackingStoreException {
+            Set<String> presentedNames, Set<String> explicitlyKeptLocal)
+            throws BackingStoreException {
         Objects.requireNonNull(presentedNames);
+        Objects.requireNonNull(explicitlyKeptLocal);
+        if (!presentedNames.containsAll(explicitlyKeptLocal)) {
+            throw new IllegalArgumentException(
+                "Local choices must belong to the native EDT review scope");
+        }
         Preferences node = node(project, repositoryAddress, branch,
             intermediaryIdentity);
+        // Validate all entries before the FIRST preference modification.
         for (String name : presentedNames) {
             requireObject(name);
             if (!name.equals(node.get(ITEM + digest(name), ""))) {
@@ -133,9 +141,28 @@ public final class ReceivePendingStore {
             }
         }
         for (String name : presentedNames) {
-            node.remove(ITEM + digest(name));
+            String id = digest(name);
+            if (explicitlyKeptLocal.contains(name)) {
+                // Preserve a real human choice even though we cannot inspect
+                // individual EDT Merge checkboxes after its session closes.
+                node.put(KEPT_LOCAL + id, name);
+            } else {
+                // Explicitly reviewed as received; clear a previously kept
+                // local decision for this newer 1C change.
+                node.remove(KEPT_LOCAL + id);
+            }
+            node.remove(ITEM + id);
         }
         node.flush();
+    }
+
+    /** Legacy no-keep convenience; only call when the user explicitly chose
+     * zero locally retained changes, never based on serialized EDT equality. */
+    public static void acknowledgeNativeReviewedScope(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> presentedNames) throws BackingStoreException {
+        acknowledgeNativeReviewedScope(project, repositoryAddress, branch,
+            intermediaryIdentity, presentedNames, Set.of());
     }
 
     /**
