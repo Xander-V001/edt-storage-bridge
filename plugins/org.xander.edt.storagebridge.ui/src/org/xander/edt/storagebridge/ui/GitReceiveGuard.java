@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.core.resources.IProject;
+import org.xander.edt.storagebridge.core.ReceiveGitStatePolicy;
 
 /** Check an EDT task branch without changing Git repository state. */
 public final class GitReceiveGuard {
@@ -15,6 +16,57 @@ public final class GitReceiveGuard {
     }
 
     public record Baseline(String branch, String head) {}
+
+    /** Vetted Git-only text, safe to show without exposing repository paths. */
+    public static final class PostMergeGitMismatch extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        public PostMergeGitMismatch(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * EDT may change files, and a developer may commit during a long native
+     * merge. Preserve the same task BRANCH and require the original HEAD to
+     * remain in the new commit's ancestry. A reset/rebase or branch switch
+     * is an actual safety conflict. This check NEVER proves EDT acceptance.
+     */
+    public static Baseline requireSafePostMergeGit(IProject project,
+            Baseline before) throws IOException, InterruptedException {
+        if (before == null || project == null || project.getLocation() == null) {
+            throw new PostMergeGitMismatch(
+                "Не удалось подтвердить исходную ветку Git проекта EDT.");
+        }
+        Path root = Path.of(project.getLocation().toOSString());
+        String branch = call(root, "branch", "--show-current").trim();
+        String head = call(root, "rev-parse", "HEAD").trim();
+        boolean ancestor = false;
+        if (before.branch().equals(branch)
+                && !before.head().equalsIgnoreCase(head)
+                && head.matches("(?i)[0-9a-f]{40}([0-9a-f]{24})?")) {
+            ancestor = isAncestor(root, before.head(), head);
+        }
+        final ReceiveGitStatePolicy.Result decision;
+        try {
+            decision = ReceiveGitStatePolicy.assess(
+                before.branch(), before.head(), branch, head, ancestor);
+        } catch (IllegalArgumentException ex) {
+            throw new PostMergeGitMismatch(
+                "Git не вернул достоверную ветку и HEAD после Merge EDT.");
+        }
+        switch (decision) {
+            case SWITCHED_BRANCH -> throw new PostMergeGitMismatch(
+                "Во время Merge EDT изменилась ветка Git. "
+                + "Результат нельзя записывать в журнал другой ветки.");
+            case REWRITTEN_HISTORY -> throw new PostMergeGitMismatch(
+                "Во время Merge EDT история Git была переписана "
+                + "(reset, rebase либо непродолжение прежнего HEAD). "
+                + "Результат не подтверждён.");
+            case UNCHANGED, ADVANCED_ON_SAME_BRANCH -> { }
+        }
+        return new Baseline(branch, head);
+    }
 
     /** Branch lookup only; never require a clean working copy to show status. */
     public static String currentBranch(IProject project)
@@ -68,9 +120,15 @@ public final class GitReceiveGuard {
         Path root = Path.of(project.getLocation().toOSString());
         String branch = call(root, "branch", "--show-current").trim();
         String head = call(root, "rev-parse", "HEAD").trim();
-        if (!before.branch().equals(branch) || !before.head().equals(head)) {
-            throw new IOException("Git branch or HEAD changed during EDT merge;"
-                + " pending remote objects are preserved.");
+        if (!before.branch().equals(branch)) {
+            throw new PostMergeGitMismatch(
+                "Ветка Git сменилась после проверки результата EDT. "
+                + "Принятие изменений не подтверждено.");
+        }
+        if (!before.head().equalsIgnoreCase(head)) {
+            throw new PostMergeGitMismatch(
+                "Git HEAD изменился во время проверки результата EDT. "
+                + "Сведения о принятии изменений не записаны.");
         }
     }
 
@@ -90,6 +148,33 @@ public final class GitReceiveGuard {
             "status", "--porcelain=v1", "--untracked-files=normal");
         if (porcelain.isBlank()) return 0;
         return (int) porcelain.lines().filter(x -> !x.isBlank()).count();
+    }
+
+    private static boolean isAncestor(Path root, String ancestor, String descendant)
+            throws IOException, InterruptedException {
+        Path output = Files.createTempFile("edt-storage-git-ancestry-", ".txt");
+        try {
+            Process process = new ProcessBuilder("git", "-C", root.toString(),
+                    "merge-base", "--is-ancestor", ancestor, descendant)
+                .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+            try {
+                if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    process.waitFor(2, TimeUnit.SECONDS);
+                    throw new IOException("Истекло время проверки истории Git.");
+                }
+                return switch (process.exitValue()) {
+                    case 0 -> true;
+                    case 1 -> false;
+                    default -> throw new IOException(
+                        "Не удалось проверить непрерывность истории Git.");
+                };
+            } finally {
+                if (process.isAlive()) process.destroyForcibly();
+            }
+        } finally {
+            Files.deleteIfExists(output);
+        }
     }
 
     public static void requireUnchanged(IProject project, Baseline before)
