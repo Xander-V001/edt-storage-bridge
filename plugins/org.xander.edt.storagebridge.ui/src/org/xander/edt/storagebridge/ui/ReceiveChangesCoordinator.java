@@ -463,18 +463,31 @@ public final class ReceiveChangesCoordinator {
                 progress(jobProgress, 8, monitor -> {
                     phase.set("Штатное сравнение версий хранилища 1С");
                     monitor.beginTask("Сравнение ревизий конфигурации", 1);
-                    var compared = NativeRepositoryCompare.compare(
-                        executable, transport,
-                        settings.infobaseUsername(), settings.infobasePassword(),
-                        settings.address(), settings.username(), settings.password(),
-                        previouslyReviewed, revisionBeforeUpdate,
-                        Duration.ofMinutes(10), monitor::isCanceled);
-                    BridgeActivator.getDefault().getLog().info(
-                        "Native CompareCfg completed: from="
-                        + compared.fromRevision() + "; to="
-                        + compared.toRevision() + "; reportBytes="
-                        + compared.reportBytes()
-                        + "; metadata identities read separately from native history");
+                    try {
+                        var compared = NativeRepositoryCompare.compare(
+                            executable, transport,
+                            settings.infobaseUsername(), settings.infobasePassword(),
+                            settings.address(), settings.username(), settings.password(),
+                            previouslyReviewed, revisionBeforeUpdate,
+                            Duration.ofMinutes(10), monitor::isCanceled);
+                        BridgeActivator.getDefault().getLog().info(
+                            "Native CompareCfg completed: from="
+                            + compared.fromRevision() + "; to="
+                            + compared.toRevision() + "; reportBytes="
+                            + compared.reportBytes()
+                            + "; metadata identities read separately from native history");
+                    } catch (IOException ex) {
+                        // Native CompareCfg may be unsupported or fail to
+                        // produce a nonempty TXT for identical versions.
+                        // No intermediary mutation has occurred. The existing
+                        // native -getChanges path remains a safe alternative.
+                        BridgeActivator.getDefault().getLog().warn(
+                            "Native CompareCfg is unavailable; use native "
+                            + "-getChanges instead ("
+                            + ex.getClass().getSimpleName() + ")");
+                        monitor.worked(1);
+                        return null;
+                    }
                     if (previouslyScanned == previouslyReviewed
                             && !hadUnresolvedBefore) {
                         try {
