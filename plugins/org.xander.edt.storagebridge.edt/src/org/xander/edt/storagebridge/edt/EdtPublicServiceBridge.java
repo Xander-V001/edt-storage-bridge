@@ -47,18 +47,6 @@ public final class EdtPublicServiceBridge {
             .hasConfigurationModel(project);
     }
 
-    /** Explicit read-only native BSL export preview; no Designer or storage writes. */
-    public static EdtNativeOutgoingExportService.Preview previewNativeBslExport(
-            IProject project, List<String> selectedFiles, Path target,
-            IProgressMonitor monitor) throws IOException {
-        return new EdtNativeOutgoingExportService(
-            ServiceAccess.get(IV8ProjectManager.class),
-            ServiceAccess.get(IBmModelManager.class),
-            ServiceAccess.get(IQualifiedNameFilePathConverter.class),
-            ServiceAccess.get(IExportOperationFactory.class))
-            .preview(project, selectedFiles, target, monitor);
-    }
-
     /** Read-only whole-owner export for ALL native EDT metadata kinds. */
     public static EdtNativeOutgoingExportService.MetadataPreview
             previewNativeMetadataExport(IProject project, List<String> owners,
