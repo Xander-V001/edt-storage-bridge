@@ -28,6 +28,20 @@ public final class ReceiveCompletionRecorder {
         return exactlyVerified.size();
     }
 
+    /**
+     * Every presented changed owner matches native 1C content, but the
+     * comparison covered only the change set, not the whole configuration.
+     * Never write APPLIED from this method.
+     */
+    public static int reviewedExactScope(IProject project, String repository,
+            String intermediary, String branch, long revision,
+            Set<String> exactlyVerified) throws BackingStoreException {
+        clearExact(project, repository, intermediary, branch, exactlyVerified);
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        return exactlyVerified.size();
+    }
+
     public static int fullyApplied(IProject project, String repository,
             String intermediary, String branch, long revision,
             Set<String> exactlyVerified, ReceiveBaselineJournal journal,
