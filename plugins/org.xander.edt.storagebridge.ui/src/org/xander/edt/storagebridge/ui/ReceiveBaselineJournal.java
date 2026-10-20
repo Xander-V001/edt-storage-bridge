@@ -56,6 +56,11 @@ public final class ReceiveBaselineJournal {
         this.intermediaryFingerprint = digest(intermediaryIdentity.trim());
     }
 
+    /** Exact workspace-local directory of this source+project+branch state. */
+    Path stateDirectory() {
+        return baselineFile.getParent();
+    }
+
     /**
      * A fresh or legacy receiving branch has no proven initial review. A
      * successful initial XML conversion alone is not enough: mark only after
