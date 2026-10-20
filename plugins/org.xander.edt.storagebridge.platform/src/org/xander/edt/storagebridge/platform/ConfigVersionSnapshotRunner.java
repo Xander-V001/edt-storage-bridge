@@ -202,7 +202,7 @@ public final class ConfigVersionSnapshotRunner {
         // Avoid ever publishing paths, login/password arguments or raw
         // diagnostic text to the regular EDT error log. The user inspects
         // the private files explicitly before sharing them.
-        for (String name : List.of("designer.log", "stdout.txt", "result.txt")) {
+        for (String name : List.of("designer.log", "stdout.txt", "stderr.txt", "result.txt")) {
             Path source = stagingRoot.resolve(name);
             if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) {
                 if (Files.size(source) > 8L * 1024 * 1024) {
