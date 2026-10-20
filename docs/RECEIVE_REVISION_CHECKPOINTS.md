@@ -232,3 +232,67 @@ its full native staging source, so an unfinished review cannot be certified
 retroactively from the modal result alone. A new controlled comparison may
 be required. There is still no proof from an installed EDT of the newly
 changed code. CI builds must be requested explicitly.
+
+## 2026-10-20: remove fake full-inventory debt and provide a backed-up reset
+
+The old `fullInventory` path put EVERY ConfigDumpInfo metadata identity into
+`ReceivePendingStore` and later reported 23,408 "pending changes". This was
+not an actual 1C change-set: it was the entire baseline inventory. A later
+receive inherited these entries and needlessly switched back to full import.
+
+Source-level fix:
+
+- A full EDT comparison remains an explicit option, but it never manufactures
+  a "new change" entry for every metadata object.
+- If a trusted earlier ConfigDumpInfo exists, the **native 1C -getChanges**
+  still supplies actual changed names, including when the user selects full
+  comparison. The full option affects EDT scope, not delta accounting.
+- Without a previous snapshot, a FULL global compare establishes an INITIAL
+  baseline through the native merge. No object-delta list can be inferred.
+- `initial-full-review-prepared` is no longer created when the editor opens.
+  The initial review marker is committed only after a proven native revision,
+  completed EDT merge, and explicit review (or strict content equality).
+  Skipped, canceled or unconfirmed reviews require review again.
+- A new `recordScannedInfo` invalidates the old native revision certificate
+  **before** replacing the snapshot. Even identical XML bytes cannot silently
+  preserve a stale revision certificate.
+- A fresh update checks native HEAD on both sides of Designer's update and
+  after Merge. An already saved snapshot is **NOT** interpreted as the newer
+  current repository HEAD. If 1C changed concurrently, checkpoint recording
+  stops instead of falsely accepting a newer version.
+
+### Clean reset
+
+The settings dialog contains **"Очистить историю получения…"**. It is opt-in,
+for the currently selected EDT project, repository, intermediary and Git
+branch. It preserves the connection settings and encrypted credentials, and
+never calls Designer or changes the Git project. It uses the same active
+receive/merge exclusion guard. It refuses to erase a phase journal describing
+an unfinished 1C mutation.
+
+Before resetting, the plugin archives:
+
+- the branch-specific `receive/<digest>` directory (including old XML and
+  any status marker) under its workspace state directory in
+  `receive-reset-backups/<UUID>/receive-files`;
+- the pending and source/branch revision Eclipse preferences as text files,
+  under the same private local backup folder.
+
+The active pending node and branch revision checkpoint are then removed.
+The last-observed source-wide revision is cleared (it can be read again from
+a native report). Connection settings and Eclipse Secure Storage are untouched.
+
+After a clean reset, start **one fresh full comparison** to establish a trusted
+initial source checkpoint. This may be expensive for a very large configuration.
+A reset is not proof that the EDT project already matches the remote revision.
+
+Manual fallback when the new plugin is not yet installed: close EDT; archive
+`<EDT workspace>/.metadata/.plugins/org.xander.edt.storagebridge.ui/receive/`
+and the Eclipse instance preference file for
+`org.xander.edt.storagebridge.ui`. That fallback is WORKSPACE-WIDE and can
+remove all project connection preferences, unlike the new scoped button.
+Never delete all workspace `.metadata` or the user Git directory.
+
+No build, CI, user IB or real storage actions were launched for these edits.
+Their correctness in installed EDT 2026.2 remains to be tested after a
+separately approved build.
