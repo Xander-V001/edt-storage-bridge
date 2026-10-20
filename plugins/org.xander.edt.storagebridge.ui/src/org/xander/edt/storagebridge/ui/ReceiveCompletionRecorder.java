@@ -13,10 +13,12 @@ import org.osgi.service.prefs.BackingStoreException;
  * Git branch/HEAD, finished a read-only audit, and (for review rather than
  * equality) obtained explicit developer confirmation.
  *
- * Crash-safe ordering: remove only proven/explicitly-reviewed pending names,
- * then persist the reviewed revision, then the stricter applied revision,
- * then mark the initial full review complete. A failure may require a retry,
- * but cannot claim a HEAD that was not reviewed.
+ * Safety of checkpoint updates: require a verified native HEAD and a
+ * completed EDT merge BEFORE any persistence. In the new selective-review
+ * path, persist the explicit REVIEWED checkpoint before clearing PENDING
+ * identities, so a crash never silently loses the only list of unresolved
+ * changes. Other legacy completion paths have separate stricter proofs;
+ * their multi-node preference writes are not a single atomic transaction.
  */
 public final class ReceiveCompletionRecorder {
     private ReceiveCompletionRecorder() {}
