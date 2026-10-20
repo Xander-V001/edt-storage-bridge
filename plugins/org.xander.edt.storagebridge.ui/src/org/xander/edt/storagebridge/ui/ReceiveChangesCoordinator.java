@@ -818,6 +818,9 @@ public final class ReceiveChangesCoordinator {
             // The native editor and its part listener MUST be created on
             // SWT UI, never from the Eclipse background Job.
             final Path retainedConverted = conversionRoot;
+            // The stage contains an actual EDT project at <stage>/edt/src.
+            // Keep the parent root only for cleanup, never for verification.
+            final Path retainedConvertedEdt = conversionRoot.resolve("edt");
             final SelectiveDumpRunner.ExportResult retainedExport = export;
             uiCall(shell, parent -> {
                 phase.set("Открытие редактора сравнения EDT");
@@ -1149,11 +1152,23 @@ public final class ReceiveChangesCoordinator {
                                                 // the native imported source.
                                                 finishStage.set(
                                                     "проверка файлов после Merge EDT");
+                                                Path stageSrc = retainedConvertedEdt.resolve("src");
+                                                Path projectSrc = project.getLocation()
+                                                    .toFile().toPath().resolve("src");
+                                                BridgeActivator.getDefault().getLog().info(
+                                                    "Post-merge audit roots: stageSrcIsDirectory="
+                                                    + Files.isDirectory(stageSrc)
+                                                    + "; stageSrcIsLink="
+                                                    + Files.isSymbolicLink(stageSrc)
+                                                    + "; projectSrcIsDirectory="
+                                                    + Files.isDirectory(projectSrc)
+                                                    + "; projectSrcIsLink="
+                                                    + Files.isSymbolicLink(projectSrc));
                                                 Set<String> fullyImportedOwners =
                                                     effectiveFull.get()
                                                         ? EdtSelectiveReviewService
                                                             .primaryDescriptors(
-                                                                retainedConverted).keySet()
+                                                                retainedConvertedEdt).keySet()
                                                         : Set.of();
                                                 var verified = VerifiedReceiveContent
                                                     .verifyAndClear(
@@ -1165,7 +1180,7 @@ public final class ReceiveChangesCoordinator {
                                                         selectedPendingNames,
                                                         absentFromRemote,
                                                         fullyImportedOwners,
-                                                        retainedConverted,
+                                                        retainedConvertedEdt,
                                                         retainedExport.xmlDirectory());
                                                 acknowledgedCount =
                                                     verified.confirmedPending();
@@ -1490,6 +1505,16 @@ public final class ReceiveChangesCoordinator {
                     .append("; import nested statuses=").append(nativeFailure.descendants());
                 // Native EDT exception messages remain ONLY in the local
                 // diagnostic file. Never log them together with credentials.
+            }
+            // Include vetted own error reasons. Arbitrary Java/Designer
+            // exception messages may contain paths or account credentials.
+            String ownMessage = current.getMessage();
+            if (ownMessage != null
+                    && (ownMessage.equals("EDT source root is missing or unsafe")
+                        || ownMessage.equals("Full EDT import has no primary metadata descriptors")
+                        || ownMessage.equals("EDT project is not available for verification")
+                        || ownMessage.equals("Invalid receive staging root"))) {
+                diagnostic.append("; internalReason=").append(ownMessage);
             }
             int count = 0;
             for (StackTraceElement frame : current.getStackTrace()) {
