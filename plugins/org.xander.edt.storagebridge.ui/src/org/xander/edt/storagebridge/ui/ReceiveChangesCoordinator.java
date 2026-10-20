@@ -928,73 +928,52 @@ public final class ReceiveChangesCoordinator {
                     return result;
                 });
             } else {
-                var ready = nativePatch.get();
-                if (ready != null && !hadUnresolvedBefore && !retryPendingOnly) {
-                    // Fast path: retain the exact native one-pass XML patch.
-                    export = new SelectiveDumpRunner.ExportResult(
-                        ready.workingRoot(), ready.xmlDirectory());
-                    nativePatch.set(null);
-                } else if (nativePatchFailure.get() != null
-                        || retryPendingOnly || hadUnresolvedBefore) {
-                    // Fallback and retained PENDING: use the documented
-                    // -listFile transport for the union of exactly known
-                    // current/previous native changed identities.
-                    phase.set("Штатная выборочная выгрузка 1С по списку изменений");
-                    // The existing native listFile planner expands changed
-                    // owners with their independently developed descendants
-                    // from the CURRENT complete ConfigDumpInfo inventory.
-                    // Unsupported Configuration/Language roots are NOT
-                    // silently discarded or marked reviewed.
-                    // The full 1C inventory also includes embedded and
-                    // independently developed resources without their own
-                    // configVersion token. Do not accidentally omit those
-                    // related Form/Template/Module transport units.
-                    var listPlan = SelectiveDumpPlanner.planIncludingRelated(
-                        selectedList, allCurrentMetadata);
-                    if (!listPlan.deferred().isEmpty()) {
-                        throw new IOException(
-                            "Выборочная выгрузка содержит "
-                            + listPlan.deferred().size()
-                            + " изменений корневой конфигурации/языков, "
-                            + "которые EDT не может импортировать отдельно. "
-                            + "Они сохранены в PENDING; требуется "
-                            + "явно подтверждённая полная сверка.");
-                    }
-                    var transportNames = listPlan.exportable();
-                    var unusedPatch = nativePatch.getAndSet(null);
-                    if (unusedPatch != null) {
-                        unusedPatch.close();
-                    }
-                    var selective = new SelectiveDumpRequest(
-                        executable, transport, transportNames,
-                        Duration.ofMinutes(30),
-                        settings.infobaseUsername(), settings.infobasePassword());
-                    export = progress(jobProgress, 20, monitor -> {
-                        var result = new SelectiveDumpRunner().export(
-                            selective, monitor::isCanceled);
-                        // A separate Designer -listFile command does not
-                        // prove the intermediary remained unchanged during
-                        // export. Compare two COMPLETE 1C-created snapshots,
-                        // never the patch manifest or opaque version tokens.
-                        boolean stable;
-                        try {
-                            stable = intermediaryInventoryUnchanged(
-                                journal, detect, monitor);
-                        } catch (IOException | InterruptedException failure) {
-                            result.close();
-                            throw failure;
-                        }
-                        if (!stable) {
-                            result.close();
-                            throw new IOException(
-                                "База-посредник изменилась во время "
-                                + "выборочной XML-выгрузки 1С");
-                        }
-                        return result;
-                    });
-                } else {
-                    throw new IOException("Native 1C incremental XML was lost");
+                // The native -update patch can contain ONLY a changed form
+                // payload, without the owning descriptor and its unchanged
+                // independently developed siblings. Importing such a partial
+                // owner into EDT used to fail (or offer false deletions).
+                //
+                // Use native -getChanges ONLY to discover the exact scope;
+                // export each affected COMPLETE OWNER through documented
+                // -listFile. This is still selective: other metadata owners
+                // are not exported, converted or compared.
+                phase.set("Выборочная выгрузка полных изменённых объектов 1С");
+                var listPlan = SelectiveDumpPlanner.planIncludingRelated(
+                    selectedList, allCurrentMetadata);
+                if (!listPlan.deferred().isEmpty()
+                        || listPlan.exportable().isEmpty()) {
+                    throw new IOException(
+                        "Штатная выборочная выгрузка не покрывает "
+                        + "некоторые корневые или неподдерживаемые объекты 1С. "
+                        + "Для них требуется полная сверка.");
                 }
+                var nativeStage = nativePatch.getAndSet(null);
+                if (nativeStage != null) {
+                    nativeStage.close();
+                }
+                var selective = new SelectiveDumpRequest(
+                    executable, transport, listPlan.exportable(),
+                    Duration.ofMinutes(30),
+                    settings.infobaseUsername(), settings.infobasePassword());
+                export = progress(jobProgress, 20, monitor -> {
+                    var result = new SelectiveDumpRunner().export(
+                        selective, monitor::isCanceled);
+                    boolean stable;
+                    try {
+                        stable = intermediaryInventoryUnchanged(
+                            journal, detect, monitor);
+                    } catch (IOException | InterruptedException failure) {
+                        result.close();
+                        throw failure;
+                    }
+                    if (!stable) {
+                        result.close();
+                        throw new IOException(
+                            "База-посредник изменилась во время "
+                            + "выборочной XML-выгрузки 1С");
+                    }
+                    return result;
+                });
             }
             // Converted EDT files, like native 1C XML, stay OUTSIDE Git.
             phase.set("Создание временных файлов сравнения EDT");
@@ -1015,9 +994,9 @@ public final class ReceiveChangesCoordinator {
             // by the native EDT XML importer. Do not loop or re-run the
             // repository update. A previously listFile-based transport
             // must never be retried indefinitely.
-            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(
-                nativePatchFailure.get() != null || retryPendingOnly
-                    || hadUnresolvedBefore);
+            // Incoming source already used the complete-owner -listFile
+            // transport. Retrying identical XML would not repair it.
+            final AtomicBoolean selectiveTransportRetried = new AtomicBoolean(true);
             GitReceiveGuard.requireUnchanged(project, git);
 
             phase.set("Конвертация объектов и подготовка сравнения EDT");
