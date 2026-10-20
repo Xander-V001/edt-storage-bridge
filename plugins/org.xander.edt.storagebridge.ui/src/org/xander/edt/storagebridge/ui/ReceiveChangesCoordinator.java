@@ -528,13 +528,20 @@ public final class ReceiveChangesCoordinator {
                     // repository update may establish a NEW snapshot proof.
                     journal.recordScannedRevision(observedRevision);
                     revisionForReview.set(observedRevision);
-                } else if (retryPendingOnly && !recovery
-                        && journal.scannedRevision() == observedRevision) {
-                    // An earlier fresh update already tied this exact
-                    // ConfigDumpInfo inventory to the native revision.
-                    // Pending-only retry has independently verified that
-                    // the intermediary content did not change.
-                    revisionForReview.set(observedRevision);
+                } else if (retryPendingOnly && !recovery) {
+                    // The read-only pending retry ALREADY checked that the
+                    // intermediary still has the saved exact ConfigDumpInfo.
+                    // HEAD may have advanced since staging: preserve the
+                    // proven OLDER source revision, not the new HEAD.
+                    long stagedRevision = journal.scannedRevision();
+                    if (stagedRevision > 0
+                            && stagedRevision <= observedRevision) {
+                        revisionForReview.set(stagedRevision);
+                        BridgeActivator.getDefault().getLog().info(
+                            "Pending-only retry uses attested staged source; "
+                            + "staged=" + stagedRevision
+                            + "; latest=" + observedRevision);
+                    }
                 }
             }
             if (revisionForReview.get() < 1) {
