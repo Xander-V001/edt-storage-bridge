@@ -22,7 +22,7 @@ public final class SelectiveDumpPlannerTest {
                 "Document.Unrelated", "Document.Unrelated.Form.Main"));
         assertEquals(List.of("Document.Order", "Document.Order.Form.Main",
                 "CommonModule.Tools", "CommonModule.Tools.Module",
-                "Document.Order.Form.Print", "Document.Order.ObjectModule"),
+                "Document.Order.Form.Print"),
             plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
@@ -141,8 +141,7 @@ public final class SelectiveDumpPlannerTest {
         assertEquals(List.of(
             "Document.Invoice", "Document.Invoice.ObjectModule",
             "Document.Invoice.Form.Main", "Document.Invoice.Form.Print",
-            "Document.Invoice.Template.InvoiceMxl",
-            "Document.Invoice.ManagerModule"), plan.exportable());
+            "Document.Invoice.Template.InvoiceMxl"), plan.exportable());
         assertTrue(plan.deferred().isEmpty());
     }
 
@@ -213,6 +212,28 @@ public final class SelectiveDumpPlannerTest {
             java.util.Set.of("CommonModule.Utilities.Module"));
         assertEquals(List.of("CommonModule.Utilities",
             "Configuration", "Language.Русский"), additions);
+    }
+
+    @Test
+    public void unchangedOwnerModuleAndAttributeAreNotIndependentDumpObjects() {
+        var inventory = List.of(
+            "Document.Order",
+            "Document.Order.ObjectModule",
+            "Document.Order.ManagerModule",
+            "Document.Order.Attribute.Number",
+            "Document.Order.Form.Main",
+            "Document.Order.Form.Main.Form",
+            "Document.Order.Template.Print");
+        var plan = SelectiveDumpPlanner.planIncludingRelated(
+            List.of("Document.Order.ObjectModule"), inventory);
+        var supplements = SelectiveDumpPlanner.supplementsForNativePatch(
+            plan, inventory,
+            java.util.Set.of("Document.Order.ObjectModule"));
+        assertEquals(List.of("Document.Order",
+            "Document.Order.Form.Main",
+            "Document.Order.Form.Main.Form",
+            "Document.Order.Template.Print",
+            "Configuration"), supplements);
     }
 
     @Test
