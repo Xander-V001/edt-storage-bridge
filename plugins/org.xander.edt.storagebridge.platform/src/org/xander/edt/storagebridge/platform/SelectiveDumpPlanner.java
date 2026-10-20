@@ -30,11 +30,11 @@ public final class SelectiveDumpPlanner {
     }
 
     /**
-     * Expand each changed top-level owner with EVERY independently versioned
-     * descendant recorded by the CURRENT native ConfigDumpInfo inventory.
-     * E.g. changing Document.X.ObjectModule still exports its unchanged
-     * Form, Template and other separate development files: EDT receives a
-     * complete owner rather than a partial surrogate model.
+     * Complete each changed owner using its root and independently developed
+     * descendants from the current native ConfigDumpInfo inventory.
+     * E.g. changing Document.X.ObjectModule also exports its unchanged
+     * Form/Template objects. Other module properties are emitted with the
+     * parent and should NOT become extra standalone -listFile entries.
      *
      * The final -listFile uses only names produced by the same canonical
      * native names mapper used for change records (embedded properties map
@@ -67,7 +67,13 @@ public final class SelectiveDumpPlanner {
             int secondDot = firstDot < 0 ? -1 : name.indexOf('.', firstDot + 1);
             if (firstDot > 0) {
                 String owner = secondDot < 0 ? name : name.substring(0, secondDot);
-                if (requestedOwners.contains(owner)) {
+                if (requestedOwners.contains(owner)
+                        && (secondDot < 0 || isSeparatelyDevelopedChild(name,
+                            secondDot + 1))) {
+                    // As in 1C-Company/GitConverter: complete the
+                    // parent and separately developed Form, Template,
+                    // Recalculation, Subsystem descendants only. Plain
+                    // properties/modules of the owner arrive with it.
                     included.add(name);
                 }
             }
@@ -97,6 +103,15 @@ public final class SelectiveDumpPlanner {
             }
         }
         return new Plan(List.copyOf(exportable), List.copyOf(deferred));
+    }
+
+    private static boolean isSeparatelyDevelopedChild(
+            String fullName, int childOffset) {
+        int nextDot = fullName.indexOf('.', childOffset);
+        String kind = nextDot < 0 ? fullName.substring(childOffset)
+            : fullName.substring(childOffset, nextDot);
+        return "Form".equals(kind) || "Template".equals(kind)
+            || "Recalculation".equals(kind) || "Subsystem".equals(kind);
     }
 
     /**
