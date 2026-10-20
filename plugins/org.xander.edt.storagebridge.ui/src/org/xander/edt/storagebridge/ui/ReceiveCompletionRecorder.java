@@ -36,6 +36,8 @@ public final class ReceiveCompletionRecorder {
     public static int reviewedExactScope(IProject project, String repository,
             String intermediary, String branch, long revision,
             Set<String> exactlyVerified) throws BackingStoreException {
+        requireCompleteCheckpoint(project, repository, intermediary, branch,
+            revision, exactlyVerified);
         clearExact(project, repository, intermediary, branch, exactlyVerified);
         ReceiveRevisionStore.recordReviewed(
             project, repository, intermediary, branch, revision);
@@ -46,6 +48,8 @@ public final class ReceiveCompletionRecorder {
             String intermediary, String branch, long revision,
             Set<String> exactlyVerified, ReceiveBaselineJournal journal,
             boolean initialReview) throws IOException, BackingStoreException {
+        requireCompleteCheckpoint(project, repository, intermediary, branch,
+            revision, exactlyVerified);
         clearExact(project, repository, intermediary, branch, exactlyVerified);
         ReceiveRevisionStore.recordReviewed(
             project, repository, intermediary, branch, revision);
@@ -80,6 +84,8 @@ public final class ReceiveCompletionRecorder {
             throw new IllegalStateException(
                 "Cannot record a complete review while changes remain outside it");
         }
+        requireCheckpointVersion(project, repository, intermediary, branch,
+            revision);
         // Both groups are known to be drawn from the same native comparison.
         // One has byte-equality proof; the other has explicit user acceptance.
         clearExact(project, repository, intermediary, branch, exactlyVerified);
@@ -94,6 +100,34 @@ public final class ReceiveCompletionRecorder {
             journal.markInitialReviewPrepared();
         }
         return accepted.size();
+    }
+
+    private static void requireCompleteCheckpoint(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, Set<String> exactlyVerified)
+            throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        var pending = ReceivePendingStore.get(
+            project, repository, branch, intermediary);
+        if (!pending.equals(exactlyVerified)) {
+            throw new IllegalStateException(
+                "Complete review scope and pending objects changed before persistence");
+        }
+    }
+
+    /** Validate all version rules before clearing the first pending object. */
+    private static void requireCheckpointVersion(IProject project,
+            String repository, String intermediary, String branch,
+            long revision) {
+        if (revision < 1 || ReceiveRevisionStore.observed(
+                project, repository, intermediary) != revision
+                || ReceiveRevisionStore.reviewed(
+                    project, repository, intermediary, branch) > revision
+                || ReceiveRevisionStore.applied(
+                    project, repository, intermediary, branch) > revision) {
+            throw new IllegalStateException(
+                "Repository HEAD or checkpoint changed before receive persistence");
+        }
     }
 
     private static void clearExact(IProject project, String repository,
