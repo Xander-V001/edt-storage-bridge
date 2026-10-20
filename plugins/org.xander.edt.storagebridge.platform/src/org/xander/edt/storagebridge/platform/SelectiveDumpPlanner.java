@@ -115,43 +115,19 @@ public final class SelectiveDumpPlanner {
     }
 
     /**
-     * Native EDT XML import needs the Configuration root and independent
-     * Language files even when the actual comparison is only Document.X.
-     * This is a SOURCE-ONLY dependency like in GitConverter: do not add
-     * these identities to the pending journal or EDT comparison scope.
-     * Never use a project-created or synthetic Configuration.xml.
-     */
-    public static List<String> withImportContext(Plan plan,
-            Iterable<String> nativeCurrentInventory) {
-        Objects.requireNonNull(plan);
-        Objects.requireNonNull(nativeCurrentInventory);
-        var export = new LinkedHashSet<String>(plan.exportable());
-        // GitConverter exports the native configuration root for EDT even
-        // when ConfigDumpInfo names it Configuration.<ActualName>. A bare
-        // Configuration index entry is not guaranteed to exist.
-        export.add("Configuration");
-        for (String name : nativeCurrentInventory) {
-            if (name != null && name.startsWith("Language.")
-                    && name.indexOf('.', "Language.".length()) < 0) {
-                export.add(name);
-            }
-        }
-        return List.copyOf(export);
-    }
-
-    /**
-     * Official GitConverter algorithm: after Designer -update has written
-     * the changed objects, request ONLY the unchanged siblings/owner files
-     * needed to import the affected objects into EDT, plus real root/languages.
-     * The changed identities already present in -getChanges stay in the
-     * existing native patch and must not be exported again.
+     * The platform -update already emitted these changed XML objects.
+     * Complete only unchanged independent metadata dependencies in place.
+     *
+     * Configuration.xml, Ext and Languages are supplied separately by
+     * SelectiveDumpRunner.completeNativeRoot(), exactly as GitConverter does.
      */
     public static List<String> supplementsForNativePatch(Plan plan,
             Iterable<String> currentInventory,
             java.util.Set<String> nativeChangedNames) {
+        Objects.requireNonNull(plan);
+        Objects.requireNonNull(currentInventory);
         Objects.requireNonNull(nativeChangedNames);
-        var supplement = new LinkedHashSet<>(
-            withImportContext(plan, currentInventory));
+        var supplement = new LinkedHashSet<>(plan.exportable());
         supplement.removeAll(nativeChangedNames);
         return List.copyOf(supplement);
     }
