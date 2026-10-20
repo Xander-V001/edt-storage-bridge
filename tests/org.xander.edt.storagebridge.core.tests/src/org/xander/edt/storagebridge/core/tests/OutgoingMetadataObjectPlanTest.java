@@ -50,8 +50,9 @@ public final class OutgoingMetadataObjectPlanTest {
                 OutgoingDeltaScanner.compare(old, edt));
             assertEquals(Set.of("Catalogs/Obsolete"),
                 Set.copyOf(plan.removedOwners()));
-            assertEquals(Set.of("Documents/New"),
+            assertEquals(Set.of("Configuration/Configuration", "Documents/New"),
                 Set.copyOf(plan.exportableOwners()));
+            assertTrue(plan.removesTopLevelOwners());
             assertTrue(plan.owners().get("Documents/New").added());
         } finally {
             delete(old);
