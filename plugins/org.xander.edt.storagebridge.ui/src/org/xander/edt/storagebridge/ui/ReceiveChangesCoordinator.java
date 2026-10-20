@@ -40,6 +40,7 @@ import org.xander.edt.storagebridge.edt.EdtSelectiveReviewService;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
+import org.xander.edt.storagebridge.platform.ConfigurationChangesParser;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
@@ -769,13 +770,14 @@ public final class ReceiveChangesCoordinator {
             // resources, not an entire metadata owner. We pass it directly
             // to EDT's native importer and NEVER manufacture a -listFile.
             //
-            // A PREVIOUS pending review has no durable native XML patch.
-            // Reconstructing it by guessing objects loses data. Re-review
-            // requires one global native source instead. This occurs only
-            // for unfinished reviews, NOT for the normal fast path.
+            // An earlier PENDING review can be replayed with the native
+            // -listFile transport over EXACT known 1C names. It does not
+            // require a 23k-object full XML dump. Deletions, unknown types
+            // and truly unproven recovery still require a separately
+            // approved full review.
             boolean requiresFull = fullReview
-                || retryPendingOnly || recovery || hadUnresolvedBefore
-                || changeScopeRequiresFull.get() || !absentFromRemote.isEmpty();
+                || recovery || changeScopeRequiresFull.get()
+                || !absentFromRemote.isEmpty();
             if (requiresFull && !fullReview) {
                 boolean accept = confirmOnUi(shell,
                     "Требуется полное сравнение EDT",
@@ -801,9 +803,7 @@ public final class ReceiveChangesCoordinator {
                     deferredDuringReview, fullNativeComparison));
             // The exact names listed by native -getChanges can include
             // embedded properties which do not have their own version token.
-            if (fullNativeComparison) {
-                sourceCovered.addAll(unindexedNativeNames.get());
-            }
+            sourceCovered.addAll(unindexedNativeNames.get());
             final Set<String> selectedPendingNames = Set.copyOf(sourceCovered);
             List<String> selectedList = new ArrayList<>();
             Set<String> selected;
@@ -811,15 +811,22 @@ public final class ReceiveChangesCoordinator {
                 selected = Set.of();
             } else {
                 var delta = nativeChangeReport.get();
-                if (delta == null || delta.fullDump()) {
+                if ((delta == null && !retryPendingOnly)
+                        || (delta != null && delta.fullDump())) {
                     throw new IOException(
                         "Нет достоверного списка изменений 1С");
                 }
-                // Native change names are EDT comparison scope, NOT
-                // automatically an XML file list. In the fallback the
-                // documented ChangeSet.objectsToExport() makes the
-                // separately-developed children explicit for -listFile.
-                selectedList.addAll(delta.exactNames());
+                var exactNames = new java.util.LinkedHashSet<String>();
+                if (delta != null) {
+                    exactNames.addAll(delta.exactNames());
+                }
+                // Previously saved PENDING identities are sourced from the
+                // native report, not fabricated from the full inventory.
+                // The intermediary snapshot was independently verified.
+                if (hadUnresolvedBefore || retryPendingOnly) {
+                    exactNames.addAll(pending);
+                }
+                selectedList.addAll(exactNames);
                 if (selectedList.isEmpty()) {
                     // The version-only native export is not a merge source.
                     informationOnUi(shell, "Новых изменений нет",
@@ -855,18 +862,23 @@ public final class ReceiveChangesCoordinator {
                 });
             } else {
                 var ready = nativePatch.get();
-                if (ready != null) {
+                if (ready != null && !hadUnresolvedBefore && !retryPendingOnly) {
                     // Fast path: retain the exact native one-pass XML patch.
                     export = new SelectiveDumpRunner.ExportResult(
                         ready.workingRoot(), ready.xmlDirectory());
                     nativePatch.set(null);
-                } else if (nativePatchFailure.get() != null) {
-                    // 1C provided a real list of changes but its first XML
-                    // output was incomplete. A separate, native -listFile
-                    // export contains only those objects, not 23k metadata.
+                } else if (nativePatchFailure.get() != null
+                        || retryPendingOnly || hadUnresolvedBefore) {
+                    // Fallback and retained PENDING: use the documented
+                    // -listFile transport for the union of exactly known
+                    // current/previous native changed identities.
                     phase.set("Штатная выборочная выгрузка 1С по списку изменений");
-                    var transportNames = nativeChangeReport.get()
-                        .changes().objectsToExport();
+                    var transportNames = new ConfigurationChangesParser.ChangeSet(
+                        List.of(), selectedList).objectsToExport();
+                    var unusedPatch = nativePatch.getAndSet(null);
+                    if (unusedPatch != null) {
+                        unusedPatch.close();
+                    }
                     var selective = new SelectiveDumpRequest(
                         executable, transport, transportNames,
                         Duration.ofMinutes(30),
