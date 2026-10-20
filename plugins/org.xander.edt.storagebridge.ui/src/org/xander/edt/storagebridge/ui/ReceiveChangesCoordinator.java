@@ -2009,6 +2009,16 @@ public final class ReceiveChangesCoordinator {
 
     /** Only explicitly vetted own error messages may appear in the dialog. */
     private static String safeReason(Throwable failure) {
+        if (failure instanceof ChangedObjectsProbe.NativeStageIncomplete stage) {
+            return "Штатная 1С сообщила об изменённых объектах ("
+                + stage.reportedChanges() + "), но не сформировала "
+                + "полноценную выборочную XML-выгрузку. "
+                + "ConfigDumpInfo.xml в выгрузке: "
+                + (stage.manifestPresent() ? "есть" : "отсутствует")
+                + ". Сравнение EDT не запускалось, версия не записана. "
+                + "Для диагностики требуется журнал самой команды 1С. "
+                + "Полную выгрузку плагин автоматически не запускает.";
+        }
         if (failure instanceof SelectiveDumpRunner.DumpFailure dump) {
             return "Конфигуратор 1С не выполнил XML-выгрузку. "
                 + "Код завершения: " + dump.exitCode()
