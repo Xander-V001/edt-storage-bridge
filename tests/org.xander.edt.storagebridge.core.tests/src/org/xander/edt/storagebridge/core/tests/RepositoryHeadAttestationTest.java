@@ -75,6 +75,20 @@ public final class RepositoryHeadAttestationTest {
     }
 
     @Test
+    public void pendingRetryKeepsAttested29432EvenWhenHeadBecomes29434() {
+        assertEquals(29432L,
+            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29434));
+        assertEquals(29432L,
+            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29432));
+        assertEquals(-1L,
+            RepositoryHeadAttestation.attestedPendingRetrySource(-1, 29434));
+        assertEquals(-1L,
+            RepositoryHeadAttestation.attestedPendingRetrySource(29432, -1));
+        assertEquals(-1L,
+            RepositoryHeadAttestation.attestedPendingRetrySource(29432, 29431));
+    }
+
+    @Test
     public void rejectUnknownExpectedRevisionAndDoNotFakeCheckpoint() {
         assertThrows(IllegalArgumentException.class,
             () -> RepositoryHeadAttestation.confirm(-1L, () -> 29405L,
