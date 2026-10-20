@@ -32,17 +32,16 @@ import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 
 /**
- * One test-only outgoing path for existing top-level metadata objects.
+ * One test-only outgoing path for modified, added and removed top-level metadata.
  *
  * 1. Review the actual 1C baseline and choose the changed EDT owners.
  * 2. Export each complete owner by the official EDT export API.
  * 3. Lock owners with children, partially load their root XML files from
  *    the complete export tree, then commit the selected owners.
  *
- * Native 1C owns the import semantics; we do not reconstruct or manually
- * merge individual form/module/attribute resources. New/deleted owners and
- * the Configuration root remain disabled until their distinct 1C rules
- * have been tested. The repository revision and Git baseline are checked
+ * Native 1C owns the import semantics; additions and removals carry the
+ * Configuration parent, with separate Lock/Commit object selection. The
+ * repository revision and Git baseline are checked
  * before the first mutation and again before Commit. A possibly executed
  * native command is never automatically retried.
  */
@@ -142,7 +141,8 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         reviewedGit.head(), reviewedRevision);
                     Path root = journal.directory();
                     Path exportRoot = Files.createDirectory(root.resolve("export"));
-                    Path ownersXml = root.resolve("objects.xml");
+                    Path lockXml = root.resolve("lock-objects.xml");
+                    Path commitXml = root.resolve("commit-objects.xml");
                     Path loadList = root.resolve("load-list.txt");
 
                     phase = "EDT_EXPORT";
@@ -158,8 +158,8 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         throw new IOException("Selected owners changed after preview");
                     }
                     plan.verifyFiles(exportRoot);
-                    plan.writeScopes(ownersXml, loadList);
-                    journal.selectedScope(plan.classicOwners().size(),
+                    plan.writeScopes(lockXml, commitXml, loadList);
+                    journal.selectedScope(plan.lockOwners().size(),
                         plan.loadFiles().size(), sha256(plan.nativeNames().toString()));
 
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
@@ -177,7 +177,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     monitor.subTask("Захват выбранных объектов с подчинёнными");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOCK,
-                        ownersXml, exportRoot, loadList, "", TIMEOUT,
+                        lockXml, exportRoot, loadList, "", TIMEOUT,
                         journal, monitor::isCanceled);
                     requireHead(connection, reviewedRevision, monitor);
 
@@ -185,7 +185,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     monitor.subTask("Частичная загрузка объектов из XML");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOAD,
-                        ownersXml, exportRoot, loadList, "", TIMEOUT,
+                        lockXml, exportRoot, loadList, "", TIMEOUT,
                         journal, monitor::isCanceled);
                     GitReceiveGuard.requireUnchanged(project, reviewedGit);
                     requireHead(connection, reviewedRevision, monitor);
@@ -197,7 +197,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     monitor.subTask("Помещение выбранных объектов в хранилище");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.COMMIT,
-                        ownersXml, exportRoot, loadList,
+                        commitXml, exportRoot, loadList,
                         "EDT Storage Bridge: metadata objects",
                         TIMEOUT, journal, monitor::isCanceled);
 
