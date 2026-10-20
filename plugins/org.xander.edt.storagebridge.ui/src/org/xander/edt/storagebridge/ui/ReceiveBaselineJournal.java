@@ -153,6 +153,11 @@ public final class ReceiveBaselineJournal {
         verifyIntermediary();
         ConfigDumpInfoIndex.exportableNames(currentInfo);
         Files.createDirectories(lastScannedFile.getParent());
+        // The saved HEAD certificate belongs to the PREVIOUS inventory.
+        // Replacing the inventory is a new receive attempt even if its XML
+        // happens to have exactly the same bytes (e.g. comment-only commit).
+        // Invalidate the old proof BEFORE replacing the source snapshot.
+        Files.deleteIfExists(lastScannedRevisionFile);
         Path partial = lastScannedFile.resolveSibling("last-scanned.part");
         try {
             Files.copy(currentInfo, partial, StandardCopyOption.REPLACE_EXISTING);
