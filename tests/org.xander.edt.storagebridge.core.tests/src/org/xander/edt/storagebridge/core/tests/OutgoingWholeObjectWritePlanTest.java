@@ -64,6 +64,22 @@ public final class OutgoingWholeObjectWritePlanTest {
     }
 
     @Test
+    public void objectModuleChangeLoadsWholeCatalogByItsRootXmlOnly()
+            throws Exception {
+        var plan = selected(List.of(modified(
+            "src/Catalogs/Products/Ext/ObjectModule.bsl",
+            "Catalogs/Products")));
+        var publish = OutgoingWholeObjectWritePlan.qualify(plan,
+            List.of("Catalogs/Products"), List.of("Catalog.Products"),
+            List.of("Catalogs/Products.xml",
+                "Catalogs/Products/Ext/ObjectModule.bsl",
+                "Catalogs/Products/Forms/List.xml",
+                "Catalogs/Products/Forms/List/Ext/Form.xml"));
+        assertEquals(List.of("Catalogs/Products.xml"), publish.loadFiles());
+        assertEquals(Set.of("Catalog.Products"), publish.classicOwners());
+    }
+
+    @Test
     public void rejectsMissingOwnerAndOutOfScopeNativeArtifacts() throws Exception {
         var plan = selected(List.of(
             modified("src/Catalogs/People/People.mdo", "Catalogs/People")));
