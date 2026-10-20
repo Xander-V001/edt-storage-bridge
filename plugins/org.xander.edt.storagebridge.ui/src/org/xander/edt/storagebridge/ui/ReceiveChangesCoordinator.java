@@ -1267,6 +1267,81 @@ public final class ReceiveChangesCoordinator {
                                                 }
                                             }
                                             if (allowReview) {
+                                                if (pendingNow.isEmpty() && effectiveFull.get()
+                                                        && !inventoryOnly) {
+                                                    // There is no object-level native delta
+                                                    // awaiting acceptance. Native EDT has
+                                                    // already finished a GLOBAL merge.
+                                                    // Verify that the full native inventory
+                                                    // made it into the EDT source, but DO NOT
+                                                    // compare 6000+ owner byte trees and infer
+                                                    // rejected changes from .mdo/.distr bytes.
+                                                    finishStage.set(
+                                                        "проверка полноты источника EDT");
+                                                    Set<String> nativeNames =
+                                                        ConfigDumpInfoIndex.allMetadataNames(
+                                                            journal.lastScannedInfo());
+                                                    Set<String> importedOwners =
+                                                        EdtSelectiveReviewService
+                                                            .primaryDescriptors(
+                                                                retainedConvertedEdt).keySet();
+                                                    boolean complete =
+                                                        EdtSelectiveReviewService
+                                                            .fullImportCoversNativeInventory(
+                                                                nativeNames,
+                                                                unindexedNativeNames.get(),
+                                                                importedOwners);
+                                                    if (!complete) {
+                                                        reason = "Штатный импорт EDT не "
+                                                            + "представил все объекты метаданных "
+                                                            + "из полного снимка 1С. Версия "
+                                                            + "не отмечена; нужна диагностика "
+                                                            + "импорта, а не повторное "
+                                                            + "побайтовое сравнение.";
+                                                    } else {
+                                                        finishStage.set(
+                                                            "последняя проверка HEAD 1С");
+                                                        long finalHead =
+                                                            readLatestRevisionOrUnknown(
+                                                                executable, transport, settings,
+                                                                Duration.ofSeconds(30),
+                                                                monitor::isCanceled);
+                                                        if (finalHead != revisionForReview.get()) {
+                                                            if (finalHead > 0) {
+                                                                ReceiveRevisionStore.recordObserved(
+                                                                    project, settings.address(),
+                                                                    intermediaryIdentity,
+                                                                    finalHead);
+                                                            }
+                                                            reason = "Версия хранилища "
+                                                                + "изменилась или недоступна "
+                                                                + "при итоговой проверке. "
+                                                                + "Результат EDT сохранён, "
+                                                                + "но отметка REVIEWED "
+                                                                + "не изменена.";
+                                                        } else {
+                                                            finishStage.set(
+                                                                "запись рассмотренной версии");
+                                                            GitReceiveGuard
+                                                                .requireSameBranchAndHead(
+                                                                    project, postMergeGit);
+                                                            ReceiveCompletionRecorder
+                                                                .reviewedGlobalNativeMerge(
+                                                                    project, settings.address(),
+                                                                    intermediaryIdentity, branch,
+                                                                    finalHead, journal,
+                                                                    initialFullReview);
+                                                            confirmedRevision = finalHead;
+                                                            reason = "Штатное полное объединение "
+                                                                + "EDT завершено. Все входящие "
+                                                                + "изменения рассмотрены; "
+                                                                + "REVIEWED = " + finalHead
+                                                                + ". Побайтовое совпадение "
+                                                                + "конфигураций не проверялось "
+                                                                + "и APPLIED не изменялся.";
+                                                        }
+                                                    }
+                                                } else {
                                                 // A finished native EDT MERGE is
                                                 // NOT proof that each checkbox
                                                 // was selected. Never erase a
@@ -1545,6 +1620,7 @@ public final class ReceiveChangesCoordinator {
                                                     + "/" + verified.checkedOwners()
                                                     + "; headAttested="
                                                     + !inventoryOnly);
+                                                }
                                             }
                                         }
 
