@@ -242,7 +242,7 @@ public final class ChangedObjectsProbe {
             if (hasMetadata) {
                 throw new NativeStageIncomplete(
                     "1C returned an empty changes report but emitted metadata files",
-                    changes, hasManifest);
+                    changes, hasManifest, true);
             }
             // 1C documents generation of a NEW ConfigDumpInfo.xml for
             // -update -configDumpInfoForChanges, even when the changed-object
@@ -251,7 +251,7 @@ public final class ChangedObjectsProbe {
             if (!hasManifest) {
                 throw new NativeStageIncomplete(
                     "1C emitted an empty change report but no new version manifest",
-                    changes, false);
+                    changes, false, false);
             }
             ConfigDumpInfoIndex.exportableNames(manifest);
             return;
@@ -259,7 +259,7 @@ public final class ChangedObjectsProbe {
         if (!hasManifest || !hasMetadata) {
             throw new NativeStageIncomplete(
                 "1C reported changed objects without an importable XML patch",
-                changes, hasManifest);
+                changes, hasManifest, hasMetadata);
         }
         // Only the 1C platform creates the manifest; never synthesize one.
         ConfigDumpInfoIndex.exportableNames(manifest);
@@ -270,19 +270,34 @@ public final class ChangedObjectsProbe {
         private static final long serialVersionUID = 1L;
         private final NativeChanges nativeChanges;
         private final boolean manifestPresent;
+        private final boolean metadataPresent;
         private Path diagnosticsDirectory;
 
         public NativeStageIncomplete(String reason, NativeChanges nativeChanges,
-                boolean manifestPresent) {
+                boolean manifestPresent, boolean metadataPresent) {
             super(reason);
             this.nativeChanges = Objects.requireNonNull(nativeChanges);
             this.manifestPresent = manifestPresent;
+            this.metadataPresent = metadataPresent;
         }
 
         /** The actual, parsed 1C change list; never inferred from the inventory. */
         public NativeChanges nativeChanges() { return nativeChanges; }
         public int reportedChanges() { return nativeChanges.exactNames().size(); }
         public boolean manifestPresent() { return manifestPresent; }
+        public boolean metadataPresent() { return metadataPresent; }
+
+        /**
+         * A Designer no-delta report with no payload at all can only be
+         * acknowledged by the COORDINATOR, which independently proves an
+         * unchanged complete 1C inventory and stable repository HEAD.
+         * Never use this property alone as proof.
+         */
+        public boolean emptyDeltaMissingOnlyManifest() {
+            return !nativeChanges.fullDump()
+                && nativeChanges.exactNames().isEmpty()
+                && !manifestPresent && !metadataPresent;
+        }
         public Path diagnosticsDirectory() { return diagnosticsDirectory; }
 
         private void setDiagnosticsDirectory(Path directory) {
