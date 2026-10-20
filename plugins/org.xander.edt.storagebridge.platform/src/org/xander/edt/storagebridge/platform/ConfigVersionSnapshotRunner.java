@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -46,6 +48,11 @@ public final class ConfigVersionSnapshotRunner {
         command.add("-configDumpInfoOnly");
         command.add("/Out");
         command.add(log.toString());
+        // Native Designer also exposes its numerical batch result.
+        // Keep it alongside the platform log; never infer success from
+        // absence of messages in /Out.
+        command.add("/DumpResult");
+        command.add(log.resolveSibling("result.txt").toString());
         return List.copyOf(command);
     }
 
@@ -60,9 +67,14 @@ public final class ConfigVersionSnapshotRunner {
             throw new IOException("Config version snapshot cancelled");
         }
 
-        Path work = Files.createTempDirectory("edt-storage-configversions-");
+        // Keep the native 1C XML path short: long nested paths in %TEMP%
+        // can exceed Designer's restrictions even when only a versions
+        // manifest is requested. Diagnostics are copied separately to a
+        // stable, user-visible application data directory on failure.
+        Path work = Files.createTempDirectory("1ci-");
         boolean succeeded = false;
         boolean launched = false;
+        boolean diagnosticsPreserved = false;
         try {
             Path output = Files.createDirectory(work.resolve("dump"));
             Path log = work.resolve("designer.log");
@@ -92,10 +104,13 @@ public final class ConfigVersionSnapshotRunner {
                     throw new IOException("Config version snapshot cancelled");
                 }
                 if (process.exitValue() != 0) {
-                    // Do not delete the only native 1C diagnostic output.
-                    // The UI exposes only this intentionally generated
-                    // directory, never raw potentially sensitive log text.
-                    throw new SnapshotFailure(process.exitValue(), work);
+                    // /Out may contain the ONLY explanation of exit=1
+                    // (authorization, 1C version, infobase lock, bad path).
+                    // Preserve BEFORE cleanup and report ONLY a verified
+                    // durable path, not a transient %TEMP% directory.
+                    Path saved = saveFailureDiagnostics(work, process.exitValue());
+                    diagnosticsPreserved = true;
+                    throw new SnapshotFailure(process.exitValue(), saved);
                 }
             } finally {
                 if (process.isAlive()) {
@@ -125,13 +140,69 @@ public final class ConfigVersionSnapshotRunner {
             succeeded = true;
             return new Snapshot(work, info);
         } finally {
-            if (!succeeded && !launched) {
-                deleteTree(work);
+            if (!succeeded && (!launched || diagnosticsPreserved)) {
+                // Never override the original Designer failure with a
+                // secondary temporary-directory cleanup exception.
+                try {
+                    deleteTree(work);
+                } catch (IOException ignored) {
+                    // Diagnostics have already been preserved independently.
+                }
             }
-            // Failed launched operations retain /Out and stdout locally,
-            // matching the previous working 1C-Updater troubleshooting model.
-            // A successful Snapshot.close() still deletes the temporary files.
+            // If process startup/collection failed before a durable copy
+            // could be created, keep the original temporary data untouched.
+            // Successful Snapshot.close() deletes its own temporary data.
         }
+    }
+
+    /**
+     * Preserve only native diagnostic files, NEVER exported configuration
+     * XML or infobase credentials. Failures are kept in the current user's
+     * non-temporary profile directory where Explorer can find them.
+     *
+     * Exposed for offline regression tests. No Designer process is started.
+     */
+    public static Path saveFailureDiagnostics(Path stagingRoot, int exitCode)
+            throws IOException {
+        Objects.requireNonNull(stagingRoot);
+        if (!Files.isDirectory(stagingRoot, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("No native snapshot staging directory");
+        }
+        String appData = System.getenv("LOCALAPPDATA");
+        Path base = appData != null && !appData.isBlank()
+            ? Path.of(appData)
+            : Path.of(System.getProperty("user.home"),
+                ".local", "share");
+        Path diagnostics = base.resolve("EDTStorageBridge")
+            .resolve("diagnostics");
+        Files.createDirectories(diagnostics);
+        Path saved = Files.createDirectory(
+            diagnostics.resolve("snapshot-" + UUID.randomUUID()));
+        // Avoid ever publishing paths, login/password arguments or raw
+        // diagnostic text to the regular EDT error log. The user inspects
+        // the private files explicitly before sharing them.
+        for (String name : List.of("designer.log", "stdout.txt", "result.txt")) {
+            Path source = stagingRoot.resolve(name);
+            if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) {
+                if (Files.size(source) > 8L * 1024 * 1024) {
+                    throw new IOException("Native 1C diagnostics exceed size limit");
+                }
+                Files.copy(source, saved.resolve(name));
+            }
+        }
+        Files.writeString(saved.resolve("snapshot-failure.txt"),
+            "1C Designer snapshot command failed." + System.lineSeparator()
+            + "Process exit code: " + exitCode + System.lineSeparator()
+            + "Files: designer.log, stdout.txt, result.txt (if 1C created them)."
+            + System.lineSeparator()
+            + "These files may contain private environment data; review before sharing."
+            + System.lineSeparator(), StandardCharsets.UTF_8);
+        // Never advertise a directory before its existence is verified.
+        if (!Files.isDirectory(saved)
+                || !Files.isRegularFile(saved.resolve("snapshot-failure.txt"))) {
+            throw new IOException("Native snapshot diagnostics could not be saved");
+        }
+        return saved.toRealPath();
     }
 
     public static final class SnapshotFailure extends IOException {
