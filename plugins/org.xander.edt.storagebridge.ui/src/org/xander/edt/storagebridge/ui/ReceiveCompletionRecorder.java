@@ -90,12 +90,18 @@ public final class ReceiveCompletionRecorder {
             throw new IllegalStateException(
                 "Not all pending changes were present in native EDT comparison");
         }
+        // Once native Merge and the complete presented scope were confirmed
+        // by the developer, REVIEWED is the authoritative checkpoint.
+        // Persist it BEFORE removing pending names: if the process dies
+        // between preference flushes, stale PENDING can be safely reviewed
+        // again, while deleting PENDING first could irrevocably lose the
+        // only trace of an unfinished checkpoint.
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
         if (!current.isEmpty()) {
             ReceivePendingStore.acknowledgeNativeReviewedScope(
                 project, repository, branch, intermediary, current);
         }
-        ReceiveRevisionStore.recordReviewed(
-            project, repository, intermediary, branch, revision);
         return current.size();
     }
 
