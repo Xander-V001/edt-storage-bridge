@@ -36,9 +36,10 @@ public final class OutgoingWholeObjectWritePlanTest {
         assertEquals(4, publish.loadFiles().size());
         Path scopeDir = Files.createTempDirectory("edt-object-scopes-");
         try {
-            Path lockList = scopeDir.resolve("selected-objects.xml");
+            Path lockList = scopeDir.resolve("lock-objects.xml");
+            Path commitList = scopeDir.resolve("commit-objects.xml");
             Path loadList = scopeDir.resolve("selected-files.txt");
-            publish.writeScopes(lockList, loadList);
+            publish.writeScopes(lockList, commitList, loadList);
             String locks = Files.readString(lockList);
             assertTrue(locks.contains("includeChildObjects=\"true\""));
             assertTrue(locks.contains("fullName=\"AccumulationRegister.Balance\""));
@@ -94,34 +95,77 @@ public final class OutgoingWholeObjectWritePlanTest {
     }
 
     @Test
-    public void rejectsNewAndRemovedObjectsForUnsafeBlindWrite() throws Exception {
+    public void addedOwnerImportsItAndConfigurationParent() throws Exception {
         var newObject = selected(List.of(new OutgoingDeltaScanner.Change(
             Path.of("src/Documents/New/New.mdo"), "Documents/New",
             OutgoingDeltaScanner.Kind.ADDED)));
-        assertThrows(IOException.class, () ->
-            OutgoingWholeObjectWritePlan.qualify(newObject,
-                List.of("Documents/New"), List.of("Document.New"),
-                List.of("Documents/New.xml")));
-        var removed = selected(List.of(new OutgoingDeltaScanner.Change(
-            Path.of("src/Catalogs/Old/Old.mdo"), "Catalogs/Old",
-            OutgoingDeltaScanner.Kind.DELETED)));
-        assertThrows(IOException.class, () ->
-            OutgoingWholeObjectWritePlan.qualify(removed,
-                List.of("Catalogs/Old"), List.of("Catalog.Old"),
-                List.of("Catalogs/Old.xml")));
+        var publish = OutgoingWholeObjectWritePlan.qualify(newObject,
+            List.of("Configuration/Configuration", "Documents/New"),
+            List.of("Configuration", "Document.New"),
+            List.of("Configuration.xml", "Documents/New.xml"));
+        assertEquals(List.of("Configuration.xml", "Documents/New.xml"),
+            publish.loadFiles());
+        assertEquals(Set.of("Configuration"), publish.lockOwners());
+        assertEquals(Set.of("Configuration", "Document.New"),
+            publish.classicOwners());
+        Path root = Files.createTempDirectory("new-metadata-scope-");
+        try {
+            Path lock = root.resolve("lock.xml");
+            Path commit = root.resolve("commit.xml");
+            Path files = root.resolve("files.txt");
+            publish.writeScopes(lock, commit, files);
+            assertFalse(Files.readString(lock).contains("Document.New"));
+            assertTrue(Files.readString(commit).contains("Document.New"));
+            assertTrue(Files.readString(lock).contains(
+                "<Configuration includeChildObjects=\"false\"/>"));
+        } finally {
+            try (var walk = Files.walk(root)) {
+                for (var path : walk.sorted(java.util.Comparator.reverseOrder()).toList())
+                    Files.deleteIfExists(path);
+            }
+        }
     }
 
     @Test
-    public void rootConfigurationIsNotMistakenForAnOrdinaryChildObject()
+    public void deletedOwnerLoadsConfigurationParentWithoutDeletedXml()
+            throws Exception {
+        var removed = selected(List.of(new OutgoingDeltaScanner.Change(
+            Path.of("src/Catalogs/Old/Old.mdo"), "Catalogs/Old",
+            OutgoingDeltaScanner.Kind.DELETED)));
+        var publish = OutgoingWholeObjectWritePlan.qualify(removed,
+            List.of("Configuration/Configuration"),
+            List.of("Configuration"), List.of("Configuration.xml"));
+        assertEquals(List.of("Configuration.xml"), publish.loadFiles());
+        assertTrue(publish.capturesAllRootChildren());
+        Path root = Files.createTempDirectory("removed-metadata-scope-");
+        try {
+            Path lock = root.resolve("lock.xml");
+            Path commit = root.resolve("commit.xml");
+            publish.writeScopes(lock, commit, root.resolve("files.txt"));
+            assertTrue(Files.readString(lock).contains(
+                "<Configuration includeChildObjects=\"true\"/>"));
+            assertTrue(Files.readString(commit).contains(
+                "<Configuration includeChildObjects=\"true\"/>"));
+        } finally {
+            try (var walk = Files.walk(root)) {
+                for (var path : walk.sorted(java.util.Comparator.reverseOrder()).toList())
+                    Files.deleteIfExists(path);
+            }
+        }
+    }
+
+    @Test
+    public void modifiedConfigurationRootLoadsNativeConfigurationXml()
             throws Exception {
         var plan = selected(List.of(modified(
             "src/Configuration/Configuration.mdo",
             "Configuration/Configuration")));
-        assertThrows(IOException.class, () ->
-            OutgoingWholeObjectWritePlan.qualify(plan,
-                List.of("Configuration/Configuration"),
-                List.of("Configuration"),
-                List.of("Configuration.xml")));
+        var publish = OutgoingWholeObjectWritePlan.qualify(plan,
+            List.of("Configuration/Configuration"),
+            List.of("Configuration"),
+            List.of("Configuration.xml"));
+        assertEquals(List.of("Configuration.xml"), publish.loadFiles());
+        assertFalse(publish.capturesAllRootChildren());
     }
 
     private static OutgoingDeltaScanner.Change modified(String file, String owner) {
