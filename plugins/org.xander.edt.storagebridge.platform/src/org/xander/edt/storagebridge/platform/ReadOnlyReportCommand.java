@@ -9,9 +9,10 @@ import java.util.Objects;
  * The sole allowed Designer operation in this adapter is the documented
  * /ConfigurationRepositoryReport. No arbitrary arguments or mutating switches.
  *
- * <p>Command-line credentials are deliberately unsupported: exposing passwords
- * in a process command line or logs is unacceptable. Initial prototype relies
- * on an already connected infobase whose credentials are available to 1C.
+ * <p>Authentication is injected by ReadOnlyReportRunner, not by this
+ * argument-only builder. Never write command-line credentials to diagnostics.
+ * The native TXT report parser expects Russian headings, so the platform
+ * language and interface language are pinned to ru.
  */
 public final class ReadOnlyReportCommand {
 
@@ -32,6 +33,13 @@ public final class ReadOnlyReportCommand {
         args.add(request.infobase().switchName());
         args.add(request.infobase().address());
         args.add("/DisableStartupDialogs");
+        // 1C-Company/GitConverter explicitly sets /L ru /VL ru for native
+        // Designer batch operations. Without these switches, our strict
+        // Russian repository TXT report parser depends on user-local defaults.
+        args.add("/L");
+        args.add("ru");
+        args.add("/VL");
+        args.add("ru");
         args.add("/ConfigurationRepositoryReport");
         args.add(reportFile.toString());
         args.add("-NBegin");
