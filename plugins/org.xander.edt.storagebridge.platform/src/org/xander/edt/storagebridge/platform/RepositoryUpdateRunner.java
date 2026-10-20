@@ -37,9 +37,10 @@ public final class RepositoryUpdateRunner {
             } catch (UnsupportedOperationException ignored) {
                 // Windows uses filesystem ACLs.
             }
-            Path log = directory.resolve("designer-log.txt");
+            Path log = directory.resolve("designer.log");
             Path stdout = directory.resolve("stdout.txt");
             Path stderr = directory.resolve("stderr.txt");
+            try {
             Process process = new ProcessBuilder(
                 RepositoryUpdateCommand.arguments(request, log))
                 .directory(directory.toFile())
@@ -81,12 +82,42 @@ public final class RepositoryUpdateRunner {
                     }
                 }
             }
+            } catch (IOException original) {
+                // This operation has already attempted to mutate the
+                // intermediary: a nonzero Designer exit/timeout is NOT
+                // safe to retry blindly. Keep only bounded /Out/stdout in
+                // the user's private diagnostics directory, not XML or
+                // credentials. Reuse the tested private snapshot copier.
+                Path evidence = null;
+                try {
+                    evidence = ConfigVersionSnapshotRunner
+                        .saveFailureDiagnostics(directory, -1);
+                } catch (IOException ignored) {
+                    // The original update failure stays authoritative.
+                }
+                throw new UpdateFailure(evidence, original);
+            }
         } finally {
-            deleteQuietly(directory.resolve("designer-log.txt"));
+            deleteQuietly(directory.resolve("designer.log"));
             deleteQuietly(directory.resolve("stdout.txt"));
             deleteQuietly(directory.resolve("stderr.txt"));
             deleteQuietly(directory);
         }
+    }
+
+    /** The intermediary state may be uncertain. Logs stay on the user's
+     * machine and can contain sensitive project paths, usernames or text.
+     * Do NOT write their contents to EDT error logs or Git. */
+    public static final class UpdateFailure extends IOException {
+        private static final long serialVersionUID = 1L;
+        private final Path diagnosticsDirectory;
+
+        public UpdateFailure(Path diagnosticsDirectory, IOException cause) {
+            super("1C repository update failed; intermediary requires verification", cause);
+            this.diagnosticsDirectory = diagnosticsDirectory;
+        }
+
+        public Path diagnosticsDirectory() { return diagnosticsDirectory; }
     }
 
     private static boolean tooLarge(Path... logs) throws IOException {
