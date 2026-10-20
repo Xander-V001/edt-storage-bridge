@@ -2214,12 +2214,22 @@ public final class ReceiveChangesCoordinator {
     /** Only explicitly vetted own error messages may appear in the dialog. */
     private static String safeReason(Throwable failure) {
         if (failure instanceof ChangedObjectsProbe.NativeStageIncomplete stage) {
-            return "Штатная 1С сообщила об изменённых объектах ("
-                + stage.reportedChanges() + "), но не сформировала "
-                + "полноценную выборочную XML-выгрузку. "
-                + "ConfigDumpInfo.xml в выгрузке: "
+            String nativeIssue = stage.reportedChanges() == 0
+                ? "1С вернула ПУСТОЙ список изменений, но инкрементальная "
+                  + "XML-выгрузка не соответствует ожидаемому результату. "
+                  + "По независимому полному снимку 1С отсутствие изменений "
+                  + "не подтверждено; нельзя считать версию обработанной. "
+                : "1С вернула " + stage.reportedChanges()
+                  + " изменённых объектов, но их инкрементальная XML-выгрузка "
+                  + "непригодна для EDT. "
+                  + "Нужно проверить журнал платформы и отдельный "
+                  + "выборочный транспорт -listFile. ";
+            return nativeIssue
+                + "ConfigDumpInfo.xml: "
                 + (stage.manifestPresent() ? "есть" : "отсутствует")
-                + ". Сравнение EDT не запускалось, версия не записана. "
+                + "; XML-ресурсы: "
+                + (stage.metadataPresent() ? "есть" : "отсутствуют")
+                + ". Сравнение EDT не запускалось, REVIEWED не менялся. "
                 + (stage.diagnosticsDirectory() == null
                     ? "Локальные диагностические файлы сохранить не удалось. "
                     : "Локальные диагностические файлы: "
