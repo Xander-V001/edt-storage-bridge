@@ -74,14 +74,25 @@ public final class RemoteReceiveScopePlanner {
         var currentNames = ConfigDumpInfoIndex.exportableNames(currentInfo);
         var deleted = new LinkedHashSet<>(oldNames);
         deleted.removeAll(currentNames);
+        // Some forms/attributes have no independent version token. Distinguish
+        // their deletion using the complete platform-owned metadata inventory
+        // instead of labeling them "unindexed, presumably present".
+        var oldAll = ConfigDumpInfoIndex.allMetadataNames(oldInfo);
+        var currentAll = ConfigDumpInfoIndex.allMetadataNames(currentInfo);
         if (nativeResult.fullDump()) {
-            // Designer did not provide a trustworthy item delta. Request a
-            // complete EDT review instead of fabricating 20k pending changes.
             return new Changes(Set.of(), deleted, Set.of(), true);
         }
         var nativeNames = nativeResult.exactNames();
+        for (String name : nativeNames) {
+            if (oldAll.contains(name) && !currentAll.contains(name)) {
+                deleted.add(name);
+            }
+        }
         var unindexed = new LinkedHashSet<>(nativeNames);
-        unindexed.removeAll(currentNames);
+        unindexed.removeAll(currentAll);
+        // Never conceal a real deletion as an unindexed present object. The
+        // receiver must open global EDT comparison to review its removal.
+        unindexed.removeAll(deleted);
         return new Changes(nativeNames, deleted, unindexed, false);
     }
 
