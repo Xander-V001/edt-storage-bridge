@@ -120,6 +120,24 @@ public final class ReceiveRevisionStore {
     }
 
     /**
+     * Persist only the provenance-proven staged source revision. The newer
+     * HEAD can remain pending independently; never upgrade to that HEAD.
+     */
+    public static void recordReviewedForSource(IProject project,
+            String repository, String intermediary, String branch,
+            long sourceRevision, long latestObserved) throws BackingStoreException {
+        if (latestObserved == sourceRevision) {
+            recordReviewed(project, repository, intermediary, branch, sourceRevision);
+        } else if (latestObserved > sourceRevision) {
+            recordReviewedOlderSnapshot(project, repository, intermediary, branch,
+                sourceRevision, latestObserved);
+        } else {
+            throw new IllegalStateException(
+                "Cannot review a future or unverified repository source revision");
+        }
+    }
+
+    /**
      * Caller MUST already have proved every remote object accepted and no
      * later remote revision was observed during the staged comparison.
      */
