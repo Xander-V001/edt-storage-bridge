@@ -144,7 +144,8 @@ public final class OutgoingManualHandoffCoordinator {
 
                     stage = "Создание временной базы из исходной конфигурации";
                     monitor.subTask(stage);
-                    Files.createDirectory(scratch);
+                    // CREATEINFOBASE creates the isolated directory itself.
+                    // Never pre-create a partially initialised infobase.
                     runNative(List.of(exe.toString(), "CREATEINFOBASE",
                         "File=\"" + scratch.toString() + "\"",
                         "/UseTemplate", baselineCf.toString()),
