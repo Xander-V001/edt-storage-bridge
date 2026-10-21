@@ -59,10 +59,16 @@ public class NativeEdtMergeChoiceObserverTest {
             choice("Document.X.Form.Y", true, "GetFromOther", true, false))
             .recheckKeptLocal(Set.of("Document.X.Form.Y"));
         assertTrue(nested.remaining().isEmpty());
-        var custom = snapshot(true,
+        // EDT's CUSTOM BSL module settings coexist with fully accepted
+        // GetFromOther procedure choices: CUSTOM alone is not KEPT_LOCAL.
+        var customAccepted = snapshot(true,
             choice("Document.X.Form.Y", true, "GetFromOther", false, true))
             .recheckKeptLocal(Set.of("Document.X.Form.Y"));
-        assertEquals(Set.of("Document.X.Form.Y"), custom.remaining());
+        assertTrue(customAccepted.remaining().isEmpty());
+        var unknownRule = snapshot(true,
+            choice("Document.X.Form.Y", true, "CustomMerge", false, true))
+            .recheckKeptLocal(Set.of("Document.X.Form.Y"));
+        assertEquals(Set.of("Document.X.Form.Y"), unknownRule.remaining());
     }
 
     @Test
