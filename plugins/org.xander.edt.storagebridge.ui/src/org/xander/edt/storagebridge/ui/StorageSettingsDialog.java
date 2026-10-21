@@ -347,6 +347,18 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             return;
         }
         try {
+            // The dialog may have stayed open while another settings window
+            // changed the saved connection. Reset only the exact connection
+            // whose marker count was displayed when this dialog opened.
+            StorageProjectSettings.Snapshot current =
+                StorageProjectSettings.load(project);
+            if (!saved.address().equals(current.address())
+                    || saved.infobaseType() != current.infobaseType()
+                    || !saved.infobaseAddress().equals(current.infobaseAddress())) {
+                setErrorMessage("Сохранённое подключение изменилось. "
+                    + "Откройте настройки заново перед очисткой отметок.");
+                return;
+            }
             String actualBranch = GitReceiveGuard.currentBranch(project);
             if (!activeBranch.equals(actualBranch)) {
                 setErrorMessage("Ветка Git изменилась. Откройте настройки "
