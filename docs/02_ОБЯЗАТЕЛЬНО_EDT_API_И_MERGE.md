@@ -1,6 +1,6 @@
 # ⛔ ОБЯЗАТЕЛЬНО ПЕРЕЧИТАТЬ ПЕРЕД КАЖДЫМ ОТВЕТОМ И ДЕЙСТВИЕМ: API EDT, ИМПОРТ, СРАВНЕНИЕ, MERGE
 
-> **Текущий статус кода:** ветка `feature/edt-2026.2-integration`, срез `931c846` (20.10.2026). Этот технический справочник описывает контракт команд/EDT API или карту методов. **Единственные актуальные статусы и ограничения** находятся в [IMPLEMENTATION_CURRENT.md](IMPLEMENTATION_CURRENT.md), [RECEIVE_PIPELINE_CONTRACT.md](RECEIVE_PIPELINE_CONTRACT.md), [OUTGOING_IMPLEMENTATION_STATUS.md](OUTGOING_IMPLEMENTATION_STATUS.md). При конфликте текста и кода верить HEAD и результатам испытания, не ранней пометке «не реализовано».
+> **Технический справочник:** ветка `feature/edt-2026.2-integration`, код `4fab919` (21.10.2026, до документационных изменений). Текущую готовность и ограничения смотреть в [IMPLEMENTATION_CURRENT.md](IMPLEMENTATION_CURRENT.md), [RECEIVE_PIPELINE_CONTRACT.md](RECEIVE_PIPELINE_CONTRACT.md), [OUTGOING_IMPLEMENTATION_STATUS.md](OUTGOING_IMPLEMENTATION_STATUS.md). Код и конкретное испытание важнее исторического описания.
 
 
 > **СТОП.** Разработчик не имеет права говорить «EDT не приняла изменения» только потому, что `*.mdo` или `*.distr` отличается ПО БАЙТАМ от независимого импорта XML.
@@ -196,7 +196,7 @@ ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
 
 **[ЗАПРЕТ]** НЕ создавать `KEPT_LOCAL` из одного `Files.mismatch` двух разных EDT-каталогов. Нужен явный выбор пользователя/достоверные записи Merge. Не заявлять, что после native FINISHED все объекты стали побайтно равны.
 
-**[КОД 2026-10-20]** После native selective `MERGE_PROCESS_FINISHED` используется штатный `org.eclipse.ui.dialogs.ListSelectionDialog` с полным списком предъявленных native `PENDING`-идентичностей. Человек отмечает изменённые объекты, которые сознательно оставил локальными полностью/частично; они сохраняются как `KEPT_LOCAL` (`ReceivePendingStore.acknowledgeNativeReviewedScope`), остальные считаются принятыми после явного ОК. Отмена не подтверждает `REVIEWED`. Настройки BSL/галочек не реконструируются по файловым байтам. API чтения `IComparisonSession.getSerializableNodeMergeSettings` документирован для 2025.2, но надёжное чтение всех таких решений до удаления сессии в EDT 2026.2 пока **[?]** и не используется для фиксации.
+**[КОД 21.10.2026, `4fab919`]** Повторный `ListSelectionDialog` **отключён** (`LEGACY_KEEP_LOCAL_DIALOG_ENABLED=false`). `NativeEdtMergeChoiceObserver` читает нативную `IComparisonSession` и `MergeSettings` в read-only BM task, фильтруя только реально отличающиеся узлы `hasDiffsMainOther()`. `Snapshot.classifyPending` на основе `[x] GetFromOther` либо изменённого `[ ]/DoNotMerge` группирует принятые и оставленные локально решения **по идентификаторам изменений 1С**, а неопределённые оставляет `unclassified`. После подтверждённого native Merge и проверок Git/HEAD/ИБ `ReceiveCompletionRecorder.reviewedNativeObserved` записывает результат. `APPLIED` не повышается. **[?]** Этот новый код ещё не испытан в установленной EDT. Хранимая классификация не управляет последующим быстрым получением и помещением, не ведёт историю каждой процедуры.
 
 ## 13. Дополнительные EDT API подготовки публикации (НЕ ПРИМЕНЯТЬ В RECEIVE)
 
