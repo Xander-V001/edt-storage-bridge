@@ -27,6 +27,8 @@ public final class ReceivePendingStore {
     // Remote changes deliberately reviewed but retained as local EDT code.
     // They are NOT pending review, nor proof of an APPLIED repository mirror.
     private static final String KEPT_LOCAL = "kept-";
+    // Native Merge finished but EDT individual selection was not proven.
+    private static final String CHOICE_UNKNOWN = "unknown-choice-";
     private static final String INTERMEDIARY = "boundIntermediary";
     private ReceivePendingStore() {}
 
@@ -53,6 +55,7 @@ public final class ReceivePendingStore {
         for (String name : names) {
             requireObject(name);
             node.put(ITEM + digest(name), name);
+            node.remove(CHOICE_UNKNOWN + digest(name));
         }
         node.flush();
     }
@@ -80,6 +83,7 @@ public final class ReceivePendingStore {
             // If a later repository revision is now exactly applied, clear
             // the previous explicit keep-local decision for this identity.
             node.remove(KEPT_LOCAL + digest(name));
+            node.remove(CHOICE_UNKNOWN + digest(name));
         }
         node.flush();
     }
@@ -152,8 +156,56 @@ public final class ReceivePendingStore {
                 node.remove(KEPT_LOCAL + id);
             }
             node.remove(ITEM + id);
+            node.remove(CHOICE_UNKNOWN + id);
         }
         node.flush();
+    }
+
+
+    /**
+     * Native EDT Merge completed and all pending identities were presented.
+     * Exact per-object accepted/retained choices are unavailable; record
+     * UNKNOWN rather than inventing a zero kept-local count. Store UNKNOWN
+     * before removing PENDING so crashes cannot silently lose the only trace.
+     */
+    public static void acknowledgeNativeReviewedUnknown(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> names) throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        for (String name : names) {
+            requireObject(name);
+            if (!name.equals(node.get(ITEM + digest(name), ""))) {
+                throw new IllegalStateException("EDT review scope differs from PENDING");
+            }
+        }
+        for (String name : names) {
+            String id = digest(name);
+            node.put(CHOICE_UNKNOWN + id, name);
+            node.remove(KEPT_LOCAL + id);
+        }
+        node.flush();
+        for (String name : names) node.remove(ITEM + digest(name));
+        node.flush();
+    }
+
+    public static Set<String> unknownChoices(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity)
+            throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        Set<String> result = new LinkedHashSet<>();
+        for (String key : node.keys()) {
+            if (key.startsWith(CHOICE_UNKNOWN)) {
+                String name = node.get(key, "");
+                requireObject(name);
+                if (!key.equals(CHOICE_UNKNOWN + digest(name))) {
+                    throw new IllegalStateException("Corrupt unknown EDT choice entry");
+                }
+                result.add(name);
+            }
+        }
+        return Set.copyOf(result);
     }
 
     /** Legacy no-keep convenience; only call when the user explicitly chose
@@ -196,7 +248,7 @@ public final class ReceivePendingStore {
             throws BackingStoreException {
         Preferences node = node(project, repositoryAddress, branch, intermediaryIdentity);
         for (String key : node.keys()) {
-            if (key.startsWith(KEPT_LOCAL)) {
+            if (key.startsWith(KEPT_LOCAL) || key.startsWith(CHOICE_UNKNOWN)) {
                 node.remove(key);
             }
         }

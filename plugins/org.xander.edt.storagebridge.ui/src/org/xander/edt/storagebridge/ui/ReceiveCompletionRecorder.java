@@ -117,6 +117,30 @@ public final class ReceiveCompletionRecorder {
      * comparison covered only the change set, not the whole configuration.
      * Never write APPLIED from this method.
      */
+    /**
+     * Native merge finished, all pending items were presented and HEAD/Git/IB
+     * were independently checked by coordinator. Choices per object UNKNOWN;
+     * REVIEWED is not APPLIED or a claim everything was accepted.
+     */
+    public static int reviewedNativeSelectiveUnknown(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, Set<String> presentedPending)
+            throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        Set<String> pending = ReceivePendingStore.get(
+            project, repository, branch, intermediary);
+        if (!pending.equals(presentedPending)) {
+            throw new IllegalStateException("Native EDT review scope incomplete");
+        }
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        if (!pending.isEmpty()) {
+            ReceivePendingStore.acknowledgeNativeReviewedUnknown(
+                project, repository, branch, intermediary, pending);
+        }
+        return pending.size();
+    }
+
     public static int reviewedExactScope(IProject project, String repository,
             String intermediary, String branch, long revision,
             Set<String> exactlyVerified) throws BackingStoreException {
