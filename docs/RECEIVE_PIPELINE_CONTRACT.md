@@ -81,7 +81,7 @@
 ## Наблюдатель выбора штатного EDT Merge [КОД]
 
 - `NativeEdtMergeChoiceObserver` подписывается на события нативного дерева сравнения `IComparisonSession`, читает ID узлов, их `MergeSettings` и владельцев через read-only BM task. Только узлы с `hasDiffsMainOther()` считаются реальными отличиями; неизменённый `DoNotMerge` не трактуется как отказ.
-- После успешного native Merge `Snapshot.classifyPending` группирует по native идентификаторам изменений 1С: все подходящие `[x] GetFromOther` → accepted; изменённый `[ ]` / `DoNotMerge` / `nestedExcluded` → keptLocal; отсутствие узлов или иные правила → unclassified.
+- После успешного native Merge `Snapshot.classifyPending` группирует по native идентификаторам изменений 1С: все подходящие `[x] GetFromOther` → accepted; изменённый `[ ]` / `DoNotMerge` → keptLocal; отсутствие узлов или иные правила → unclassified.
 - `ReceivePendingStore.acknowledgeNativeObservedChoices` записывает решение перед удалением `PENDING`; `REVIEWED` фиксируется после прежних проверок Git/HEAD/ИБ. `APPLIED` не повышается. Нет побайтовой сверки файлов EDT. Повторный список выбора `chooseKeptLocalOnUi` отключён, временное окно событий наблюдателя — тоже.
 - Старые `unknown-choice-*` не архивируются и не объявляются принятыми после полного Merge. В Error Log остаётся техническая диагностика. В обычном окне — факт native Merge, оставшиеся ожидания и обработанная версия.
 
