@@ -143,7 +143,10 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     || status.endsWith("_FINISHED"))
                 || "COMPARISON_MERGE_PROCESS_CANCELLED".equals(status)) {
             mergeStarted = true;
-            finishedCapture = queued.isEmpty() && failures == 0
+            // An empty event queue is NOT evidence unless EDT provided a
+            // session and at least one native baseline was captured.
+            finishedCapture = sessionAvailable && initialBaselineCaptured
+                && queued.isEmpty() && failures == 0
                 && captureJob.getState() == Job.NONE;
             captureJob.cancel();
             return;
