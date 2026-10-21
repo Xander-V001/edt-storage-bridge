@@ -1430,18 +1430,15 @@ public final class ReceiveChangesCoordinator {
                                             "Штатное объединение EDT: ")
                                             .append(nativeFinished
                                                 ? "завершено."
-                                                : "не подтверждено.")
-                                            .append("\nПодтверждено записей учёта: ")
-                                            .append(acknowledgedCount)
-                                            .append(".\nОжидают проверки: ")
+                                                : "не подтверждено.");
+                                        if (!effectiveFull) {
+                                            report.append("\nПодтверждено записей учёта: ")
+                                                .append(acknowledgedCount).append(".");
+                                        }
+                                        report.append("\nОжидают проверки: ")
                                             .append(pendingAfter).append(".")
                                             .append("\nСознательно сохранены локальные версии объектов: ")
                                             .append(retainedLocally.size()).append(".");
-                                        if (effectiveFull) {
-                                            report.append("\nПолная сверка: записи учёта "
-                                                + "могут охватывать весь каталог метаданных. "
-                                                + "Это не число НОВЫХ изменений.");
-                                        }
                                         if (pendingAfter > 0) {
                                             report.append(
                                                 ReceivePendingExplanation.format(
