@@ -78,3 +78,12 @@
 - [ ] One-sided added/deleted nodes still appear if `hasDiffsMainOther()` reports a difference.
 - [ ] Summary distinguishes number of delivered tree events, included differing nodes, filtered non-differing nodes, and unread events.
 - [ ] No effects on native merge execution, `PENDING`, `REVIEWED`, `KEPT_LOCAL` or `APPLIED`; no byte comparison.
+
+
+### Причина принудительного полного сравнения EDT (21.10.2026)
+
+- [ ] Если штатный `-getChanges` возвращает `FullDump`, диалог прямо сообщает, что полную выгрузку запросила платформа 1С; `changed=0` при этом не означает отсутствие изменений.
+- [ ] Если в `exactNames` есть `Configuration` или `Language`, отображается отдельная причина.
+- [ ] При восстановлении попытки или отсутствии объектов из источника отображаются соответствующие причины.
+- [ ] Текст не меняет `requiresFull`, ветку выгрузки, `PENDING`, `REVIEWED` или порядок обновления базы-посредника.
+- [ ] В `Error Log` записываются только безопасные признаки причин, без имён метаданных и паролей.
