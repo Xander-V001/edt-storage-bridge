@@ -10,6 +10,8 @@ Require-Bundle: org.eclipse.core.resources,
  org.xander.edt.storagebridge.platform,
  org.xander.edt.storagebridge.core
 Import-Package: com._1c.g5.v8.bm.core,
+ com._1c.g5.v8.bm.integration,
+ com._1c.g5.v8.dt.compare.model,
  com._1c.g5.v8.dt.export,
  com._1c.g5.v8.dt.compare.core,
  com._1c.g5.v8.dt.compare.datasource,

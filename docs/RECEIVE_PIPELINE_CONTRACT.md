@@ -75,3 +75,21 @@
 [ДОК] Описание [incremental XML export](https://kb.1ci.com/1C_Enterprise_Platform/What___s_New/Functional_Highlights/Incremental_export_of_configurations_to_XML_files/), [Designer batch configuration](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.4._Configurations_and_extensions/) и [EDT API](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/compare/core/IComparisonManager.html). Это описание API, **не** доказательство работы SDK 2026.2.
 
 [КОД] классы выше. [?] Сборка и корректность последнего HEAD после №65, полнота преобразования native patch в EDT на конкретном релизе платформы, формы/права/удаления, поведение выбора локального кода, реальный UX после сбоя. Приёмка: [VALIDATION.md](VALIDATION.md).
+
+
+## 2026-10-21: эксперимент native Merge choices (не подтвержден runtime)
+
+- `NativeEdtMergeChoiceObserver` подписывается на штатные события
+  `IComparisonSession.IComparisonTreeListener` и читает настройки выбранных
+  узлов внутри `runComparisonTreeReadonlyTask`, пока не начат Merge.
+  Его результаты диагностические; последний пользовательский флажок может
+  измениться уже после снимка. Вне Native EDT модели ничего не сравнивается.
+- Прежняя форма `chooseKeptLocalOnUi` оставлена в коде и отключена
+  `LEGACY_KEEP_LOCAL_DIALOG_ENABLED=false`: она дублировала выбор EDT;
+  «Отмена» ошибочно оставляла старую очередь PENDING.
+- Только завершённый EDT Merge + проверка HEAD, Git, состава PENDING и
+  неизменности посредника разрешают REVIEWED. Если отдельный выбор EDT
+  не доказан, сохраняется `unknown-choice-*`, а не ACCEPTED или KEPT_LOCAL.
+  APPLIED не повышается. Снимки observer не могут обходить охранные проверки.
+- Обязательны сборка текущего SHA и испытания EDT 2026.2 (BSL, вложенные
+  изменения форм, отмена, перепроверка `unknown-choice`).

@@ -21,14 +21,17 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
     private final IComparisonManager manager;
     private final IComparisonManager.ICompareMergeStatusListener listener;
     private final NativeEdtMergeEvidence evidence;
+    private final NativeEdtMergeChoiceObserver choices;
     private boolean closed;
 
     private NativeEdtMergeWitness(IComparisonManager manager,
             IComparisonManager.ICompareMergeStatusListener listener,
-            NativeEdtMergeEvidence evidence) {
+            NativeEdtMergeEvidence evidence,
+            NativeEdtMergeChoiceObserver choices) {
         this.manager = manager;
         this.listener = listener;
         this.evidence = evidence;
+        this.choices = choices;
     }
 
     public static NativeEdtMergeWitness observe(
@@ -36,12 +39,14 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
         Objects.requireNonNull(manager);
         Objects.requireNonNull(handle);
         var state = new NativeEdtMergeEvidence();
+        var choices = new NativeEdtMergeChoiceObserver(manager, handle);
         var listener = new IComparisonManager.ICompareMergeStatusListener() {
             @Override
             public void statusChanged(ComparisonProcessHandle updated,
                     ComparisonProcessStatus status) {
                 if (handle.equals(updated) && status != null) {
                     state.observe(status.name());
+                    choices.onStatus(status.name());
                 }
             }
 
@@ -54,17 +59,25 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
         manager.addStatusListener(listener);
         try {
             ComparisonProcessStatus current = manager.getStatus(handle);
-            if (current != null) state.observe(current.name());
+            if (current != null) {
+                state.observe(current.name());
+                choices.onStatus(current.name());
+            }
         } catch (RuntimeException ex) {
             // Not started yet, or EDT has no current session.
         }
-        return new NativeEdtMergeWitness(manager, listener, state);
+        return new NativeEdtMergeWitness(manager, listener, state, choices);
     }
 
     /** Marker when the EDT public manager cannot be connected. */
     public static NativeEdtMergeWitness unavailable() {
         return new NativeEdtMergeWitness(null, null,
-            new NativeEdtMergeEvidence());
+            new NativeEdtMergeEvidence(), null);
+    }
+
+    public String choiceSummary() {
+        return choices == null
+            ? "недоступно; решения UNKNOWN" : choices.summary();
     }
 
     public NativeEdtMergeEvidence.Snapshot snapshot() {
@@ -88,6 +101,7 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
     public synchronized void close() {
         if (!closed) {
             closed = true;
+            if (choices != null) choices.close();
             if (manager != null && listener != null) {
                 try {
                     manager.removeStatusListener(listener);
