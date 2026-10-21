@@ -40,7 +40,7 @@
 
 `NativeEdtMergeChoiceObserver` подписывается на `IComparisonSession.IComparisonTreeListener`; по ID изменённых узлов читает в штатной `runComparisonTreeReadonlyTask` флажки, `MergeRule`, признаки вложенных исключений и `TopComparisonNode`. Дополнительно читает начальные настройки через `getNodesWithChangedMergeSettings()`. Узлы без различий `ComparisonFlags.hasDiffsMainOther()` отбрасываются — неизменённый дочерний `DoNotMerge` не означает, что пользователь оставил изменение локально. Нет побайтовой сверки `.mdo/.bsl/.distr` и нет собственного Merge.
 
-**Сохранение результата:** после подтверждённого native Merge `Snapshot.classifyPending` сопоставляет FQN верхних EDT-объектов с идентификаторами изменений 1С из `PENDING`. Все соответствующие различающиеся узлы `[x] GetFromOther` → `accepted`; хотя бы один изменённый снятый флажок / `DoNotMerge` / `nestedExcluded` → `keptLocal`; отсутствие подходящего узла или неподдержанное правило → `unclassified`. `ReceiveCompletionRecorder.reviewedNativeObserved` записывает решения в `ReceivePendingStore`, снимает рассмотренные `PENDING`, повышает `REVIEWED`, **но не `APPLIED`**.
+**Сохранение результата:** после подтверждённого native Merge `Snapshot.classifyPending` сопоставляет FQN верхних EDT-объектов с идентификаторами изменений 1С из `PENDING`. Все соответствующие различающиеся узлы `[x] GetFromOther` → `accepted`; хотя бы один изменённый снятый флажок / `DoNotMerge` → `keptLocal`; отсутствие подходящего узла или неподдержанное правило → `unclassified`. `ReceiveCompletionRecorder.reviewedNativeObserved` записывает решения в `ReceivePendingStore`, снимает рассмотренные `PENDING`, повышает `REVIEWED`, **но не `APPLIED`**.
 
 Принятое изменение снимает старые метки `KEPT_LOCAL/UNKNOWN`; сохранённое локально получает `KEPT_LOCAL`, неопределённое — служебное `unknown-choice-*`. Исторические `unknown-choice-*` не архивируются и не изменяются задним числом. Второй диалог выбора и прежнее диагностическое окно **отключены**; сведения наблюдателя остаются в Error Log.
 
@@ -72,3 +72,6 @@
 - [Платформа 1С](01_ОБЯЗАТЕЛЬНО_1С_КОМАНДЫ_И_ФАЙЛЫ.md), [EDT API](02_ОБЯЗАТЕЛЬНО_EDT_API_И_MERGE.md), [карта кода](03_ОБЯЗАТЕЛЬНО_МАРШРУТ_ДАННЫХ_И_ПРОВЕРКИ.md)
 
 Без отдельного разрешения не запускать CI/сборку, EDT, 1С, хранилище, ИБ или VPS. Только изменение документации.
+
+
+**Уточнение проверки (21.10.2026):** флаг `nestedExcluded` **сам по себе** не создаёт `KEPT_LOCAL` и не удерживает старую запись после полного Merge. Для этого нужен действительно отличающийся узел со снятым флажком/`DoNotMerge` либо неоднозначное/custom-правило, которое пока нельзя считать принятым. Синтетические JUnit-тесты политики добавлены, но **не запускались**.
