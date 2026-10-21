@@ -69,3 +69,12 @@
 - [ ] При пустых событиях окно честно сообщает, что ничего не получено. Не считать это доказательством успешного Merge.
 - [ ] Проверить события `INITIAL/UPDATED/ADDED/REMOVED`, поздние события и отмену Merge.
 - [ ] Временное окно **только для просмотра** после быстрого Merge; в нём нет повторного выбора и оно не влияет на REVIEWED/PENDING.
+
+
+### 2026-10-21 — Native comparison flag filter (diagnostic)
+- [ ] With 4 changed owners but many unchanged nested forms/modules, read-only choice dialog contains only nodes whose native EDT `ComparisonFlags.hasDiffsMainOther()` is true; unchanged `DoNotMerge` descendants are absent.
+- [ ] A changed unchecked node stays visible as a legitimate candidate for keeping local; never filter solely by unchecked/`DoNotMerge`.
+- [ ] An EDT recomputation that removes MAIN/OTHER differences removes the previously observed node from the report (no stale state).
+- [ ] One-sided added/deleted nodes still appear if `hasDiffsMainOther()` reports a difference.
+- [ ] Summary distinguishes number of delivered tree events, included differing nodes, filtered non-differing nodes, and unread events.
+- [ ] No effects on native merge execution, `PENDING`, `REVIEWED`, `KEPT_LOCAL` or `APPLIED`; no byte comparison.
