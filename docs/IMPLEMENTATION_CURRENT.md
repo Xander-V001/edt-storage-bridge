@@ -86,3 +86,29 @@ REVIEWED после существующих проверок Git/HEAD/ИБ/об
 объекты фиксирует как `unknown-choice-*`, **не** как принятые или
 оставленные локальными. APPLIED не меняется. Обязательна сборка и проверка
 в установленной EDT 2026.2 прежде чем считать механизм успешным.
+
+
+### Первая итерация точных событий выбора EDT (21.10.2026)
+
+В `NativeEdtMergeChoiceObserver` вместо агрегированного подсчёта введён
+обработчик `IComparisonSession.IComparisonTreeListener.notify(Collection<ComparisonTreeNodeEvent>)`.
+Для каждого события сохраняется `getNodeId()`; в read-only BM task через
+`session.getNode(nodeId)` читаются `MergeSettings.isMustBeMerged()`,
+`getMergeRule()`, `isMergeRuleSetByUser()`, флаг вложенных исключений,
+а через `getTopNodeOf(node)` и `getOtherSymlink()/getMainSymlink()` —
+верхний объект EDT. `REMOVED` удаляет устаревший узел из снимка.
+Дополнительно делается исходный проход по `getNodesWithChangedMergeSettings()`
+для первоначальных настроек, которые не породили событий после подписки.
+
+`ReceiveChangesCoordinator` временно показывает эти строки в
+`ListDialog` в режиме просмотра после успешного **выборочного** native Merge.
+Прежняя форма `ListSelectionDialog` сохранена отключённой: флаг
+`LEGACY_KEEP_LOCAL_DIALOG_ENABLED=false`. Текущее окно не запрашивает
+повторного выбора и не влияет на записи учёта.
+
+**Ограничение:** события изменения дерева могут порождаться EDT без щелчка
+пользователя; подписка может не увидеть изначальные состояния или самое
+последнее изменение перед началом Merge. До проверки EDT 2026.2 наблюдения
+не используются для автоматической классификации ACCEPTED/KEPT_LOCAL,
+`APPLIED` по-прежнему не меняется, решения остаются UNKNOWN.
+Побайтовое сравнение не вводилось; экспорт, импорт и native Merge не менялись.
