@@ -71,6 +71,14 @@ import org.xander.edt.storagebridge.platform.RemoteReceiveScopePlanner;
  */
 public final class ReceiveChangesCoordinator {
     private static final Duration TIMEOUT = Duration.ofMinutes(30);
+    /**
+     * TEMPORARILY DISABLED (21.10.2026): duplicate checkbox dialog shown
+     * AFTER native EDT Merge. Cancel left a false PENDING queue, while OK
+     * could falsely imply all changes accepted. Retain the original dialog
+     * and method for rollback until session observation is proven in EDT 2026.2.
+     * Never replace it with byte-level EDT resource comparison.
+     */
+    private static final boolean LEGACY_KEEP_LOCAL_DIALOG_ENABLED = false;
     /** Prevent overlapping native editors and repository operations per EDT project. */
     private static final java.util.Set<String> ACTIVE =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -1369,6 +1377,43 @@ public final class ReceiveChangesCoordinator {
                                                         // checkboxes. An explicit per-identity
                                                         // user decision is required to preserve
                                                         // genuine KEPT_LOCAL without byte audits.
+                                                        if (!LEGACY_KEEP_LOCAL_DIALOG_ENABLED) {
+                                                            // Native Merge itself is the acceptance
+                                                            // boundary. Per-object choices cannot
+                                                            // yet be proven: record UNKNOWN, never
+                                                            // silently assume "accepted".
+                                                            long finalHead = revisionForReview.get();
+                                                            if (!intermediaryInventoryUnchanged(
+                                                                    journal, detect, monitor)) {
+                                                                reason = "Конфигурация базы-посредника "
+                                                                    + "изменилась во время EDT Merge. "
+                                                                    + "PENDING сохранён, REVIEWED не менялся.";
+                                                            } else {
+                                                                finishStage.set(
+                                                                    "фиксация рассмотренной версии");
+                                                                GitReceiveGuard
+                                                                    .requireSameBranchAndHead(
+                                                                        project, postMergeGit);
+                                                                acknowledgedCount =
+                                                                    ReceiveCompletionRecorder
+                                                                        .reviewedNativeSelectiveUnknown(
+                                                                            project,
+                                                                            settings.address(),
+                                                                            intermediaryIdentity,
+                                                                            branch, finalHead,
+                                                                            pendingNow);
+                                                                if (effectiveFull && initialFullReview) {
+                                                                    journal.markInitialReviewPrepared();
+                                                                }
+                                                                confirmedRevision = finalHead;
+                                                                reason = "EDT Merge завершён; REVIEWED = "
+                                                                    + finalHead
+                                                                    + ". Индивидуальные решения EDT "
+                                                                    + "учтены как UNKNOWN. APPLIED не менялся.";
+                                                            }
+                                                        } else {
+                                                        // Legacy second checklist retained for
+                                                        // controlled rollback; NOT currently shown.
                                                         Set<String> keptLocal =
                                                             chooseKeptLocalOnUi(shell, pendingNow);
                                                         if (keptLocal != null) {
@@ -1411,6 +1456,7 @@ public final class ReceiveChangesCoordinator {
                                                                 + "объединения отменено; "
                                                                 + "PENDING сохранён.";
                                                         }
+                                                        } // legacy dialog disabled
                                                     }
                                                 }
                                             }
@@ -1426,6 +1472,9 @@ public final class ReceiveChangesCoordinator {
                                             ReceivePendingStore.keptLocal(
                                                 project, settings.address(),
                                                 branch, intermediaryIdentity);
+                                        int unknownChoices = ReceivePendingStore.unknownChoices(
+                                            project, settings.address(), branch,
+                                            intermediaryIdentity).size();
                                         StringBuilder report = new StringBuilder(
                                             "Штатное объединение EDT: ")
                                             .append(nativeFinished
@@ -1438,7 +1487,13 @@ public final class ReceiveChangesCoordinator {
                                         report.append("\nОжидают проверки: ")
                                             .append(pendingAfter).append(".")
                                             .append("\nСознательно сохранены локальные версии объектов: ")
-                                            .append(retainedLocally.size()).append(".");
+                                            .append(retainedLocally.size()).append(".")
+                                            .append("\nИндивидуальные решения EDT неизвестны: ")
+                                            .append(unknownChoices).append(".");
+                                        // Native observation is advisory, not a
+                                        // per-object choice receipt or APPLIED proof.
+                                        report.append("\nНаблюдение настроек EDT: ")
+                                            .append(nativeMergeWitness.choiceSummary());
                                         if (pendingAfter > 0) {
                                             report.append(
                                                 ReceivePendingExplanation.format(
@@ -1611,6 +1666,10 @@ public final class ReceiveChangesCoordinator {
     }
 
     /**
+     * LEGACY DISABLED: the second selection dialog is intentionally kept
+     * for rollback while native session choice observation is validated.
+     * Repeating EDT decisions here caused ambiguous PENDING after Cancel.
+     *
      * AFTER native EDT confirmed a completed selective Merge, ask the
      * developer to identify exactly which presented native 1C metadata
      * identities they intentionally kept local, including partial BSL/form
