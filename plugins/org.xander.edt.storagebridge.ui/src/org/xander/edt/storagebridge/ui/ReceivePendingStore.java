@@ -60,7 +60,6 @@ public final class ReceivePendingStore {
             requireObject(name);
             node.put(ITEM + digest(name), name);
             node.remove(CHOICE_UNKNOWN + digest(name));
-            node.remove(FULL_REVIEWED_UNKNOWN + digest(name));
         }
         node.flush();
     }
@@ -89,7 +88,6 @@ public final class ReceivePendingStore {
             // the previous explicit keep-local decision for this identity.
             node.remove(KEPT_LOCAL + digest(name));
             node.remove(CHOICE_UNKNOWN + digest(name));
-            node.remove(FULL_REVIEWED_UNKNOWN + digest(name));
         }
         node.flush();
     }
