@@ -149,7 +149,9 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
          * GetFromOther choices also resolve it. An actual differing excluded
          * child keeps the identity local. A parent's nestedExcluded flag
          * alone is NOT proof: an unchanged child can also be excluded.
-         * Unknown/custom settings preserve the old marker.
+         * Nor is a CUSTOM-settings marker by itself proof of retention:
+         * EDT uses it for procedure-level BSL merging with accepted choices.
+         * Unknown merge rules still preserve the old marker.
          */
         public KeptLocalReview recheckKeptLocal(Set<String> candidates) {
             if (!complete) return new KeptLocalReview(candidates, false);
@@ -164,7 +166,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     continue;
                 }
                 boolean allAccepted = relevant.stream().allMatch(n ->
-                    n.checked() && !n.customMerge()
+                    n.checked()
                         && "GetFromOther".equals(n.mergeRule()));
                 if (!allAccepted) remaining.add(identity);
             }
