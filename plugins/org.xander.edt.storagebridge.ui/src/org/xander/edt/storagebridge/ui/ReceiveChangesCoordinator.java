@@ -1348,7 +1348,6 @@ public final class ReceiveChangesCoordinator {
                                         String reason = null;
                                         long confirmedRevision = ReceiveRevisionStore.UNKNOWN;
                                         int acknowledgedCount = 0;
-                                        int archivedPreviousUnknown = 0;
                                         finishStage.set("чтение журнала ожидающих изменений");
                                         Set<String> pendingNow = ReceivePendingStore.get(
                                             project, settings.address(), branch,
@@ -1395,15 +1394,14 @@ public final class ReceiveChangesCoordinator {
                                                     // must not veto the native EDT result.
                                                     finishStage.set("запись рассмотренной версии");
                                                     long finalHead = revisionForReview.get();
-                                                    archivedPreviousUnknown =
-                                                        ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
-                                                            project, settings.address(),
-                                                            intermediaryIdentity, branch,
-                                                            finalHead, journal, initialFullReview);
+                                                    ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
+                                                        project, settings.address(),
+                                                        intermediaryIdentity, branch,
+                                                        finalHead, journal, initialFullReview);
                                                     confirmedRevision = finalHead;
                                                     reason = "Полное сравнение EDT завершено; "
-                                                        + "REVIEWED = " + finalHead
-                                                        + ". APPLIED не менялся.";
+                                                        + "обработана версия хранилища "
+                                                        + finalHead + ".";
                                                 } else {
                                                     // EDT's finished native MERGE is the
                                                     // merge evidence, not Files.mismatch
@@ -1454,10 +1452,9 @@ public final class ReceiveChangesCoordinator {
                                                                     journal.markInitialReviewPrepared();
                                                                 }
                                                                 confirmedRevision = finalHead;
-                                                                reason = "EDT Merge завершён; REVIEWED = "
-                                                                    + finalHead
-                                                                    + ". Индивидуальные решения EDT "
-                                                                    + "учтены как UNKNOWN. APPLIED не менялся.";
+                                                                reason = "EDT Merge завершён; обработана "
+                                                                    + "версия хранилища " + finalHead
+                                                                    + ".";
                                                             }
                                                         } else {
                                                         // Legacy second checklist retained for
@@ -1516,41 +1513,23 @@ public final class ReceiveChangesCoordinator {
                                                 project, settings.address(),
                                                 branch, intermediaryIdentity);
                                         int pendingAfter = remainingPending.size();
-                                        Set<String> retainedLocally =
-                                            ReceivePendingStore.keptLocal(
-                                                project, settings.address(),
-                                                branch, intermediaryIdentity);
-                                        int unknownChoices = ReceivePendingStore.unknownChoices(
-                                            project, settings.address(), branch,
-                                            intermediaryIdentity).size();
+                                        // User-facing result reports actual native
+                                        // Merge completion, pending scope and source
+                                        // revision only. Internal per-object UNKNOWN
+                                        // and observer counters are diagnostics, NOT
+                                        // user decisions and NOT proof of rejection.
+                                        // Do not invent an archive or show them as
+                                        // consequences of a completed full merge.
                                         StringBuilder report = new StringBuilder(
                                             "Штатное объединение EDT: ")
                                             .append(nativeFinished
                                                 ? "завершено."
                                                 : "не подтверждено.");
-                                        if (!effectiveFull) {
-                                            report.append("\nПодтверждено записей учёта: ")
-                                                .append(acknowledgedCount).append(".");
-                                        }
                                         report.append("\nОжидают проверки: ")
-                                            .append(pendingAfter).append(".")
-                                            .append("\nРанее подтверждённые сохранённые локальные версии объектов: ")
-                                            .append(retainedLocally.size()).append(".")
-                                            .append("\nТекущие выборочные решения EDT "
-                                                + "с неизвестным исходом: ")
-                                            .append(unknownChoices).append(".");
-                                        if (archivedPreviousUnknown > 0) {
-                                            report.append("\nСтарые UNKNOWN повторно "
-                                                + "рассмотрены полной сверкой и "
-                                                + "сохранены в истории: ")
-                                                .append(archivedPreviousUnknown)
-                                                .append(". Это НЕ подтверждение их "
-                                                    + "принятия; APPLIED не менялся.");
-                                        }
-                                        // Native observation is advisory, not a
-                                        // per-object choice receipt or APPLIED proof.
-                                        report.append("\nНаблюдение настроек EDT: ")
-                                            .append(nativeMergeWitness.choiceSummary());
+                                            .append(pendingAfter).append(".");
+                                        // Temporary read-only trace is still shown
+                                        // separately for selective mode. Its data
+                                        // never change EDT Merge or checkpoints.
                                         if (pendingAfter > 0) {
                                             report.append(
                                                 ReceivePendingExplanation.format(
@@ -1572,7 +1551,7 @@ public final class ReceiveChangesCoordinator {
                                                 + "но номер версии хранилища "
                                                 + "ещё не подтверждён.");
                                         }
-                                        if (reason != null) {
+                                        if (reason != null && confirmedRevision < 1) {
                                             report.append("\n").append(reason);
                                         }
                                         // TEMPORARY NATIVE EVENT TRACE, not a

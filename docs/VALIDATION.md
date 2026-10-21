@@ -104,3 +104,9 @@
   UNKNOWN не архивируется.
 - [ ] Архивные записи не выдаются за принятые или применённые;
   запись архива идёт ДО удаления активных меток.
+
+
+### UI after global native Merge — no invented statuses
+- [ ] Native FULL Merge, all selections on, and PENDING=0: report displays EDT merge completed, 0 pending and verified repository revision, without UNKNOWN archives or diagnostic counters.
+- [ ] No automatic conversion of historical unknown choices to accepted, applied or a new archived status; older markers stay unchanged.
+- [ ] Selective diagnostic window remains read-only and independent of checkpoint safety.
