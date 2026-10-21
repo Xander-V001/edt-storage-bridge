@@ -2,6 +2,7 @@ package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Set;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.equinox.security.storage.StorageException;
@@ -43,6 +44,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Label observedRevisionLabel;
     private Label appliedRevisionLabel;
     private Button refreshVersionsButton;
+    private Button clearLocalMarksButton;
+    private Label localMarksCountLabel;
     private String activeBranch;
 
     public StorageSettingsDialog(Shell shell, IProject project) {
@@ -222,6 +225,21 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "не затрагиваются.");
         resetReceive.addListener(SWT.Selection, event -> resetReceiveHistory());
 
+        localMarksCountLabel = addReadOnly(revisions,
+            "Отметок о сохранённых локальных изменениях:", "—");
+        clearLocalMarksButton = new Button(revisions, SWT.PUSH);
+        clearLocalMarksButton.setText(
+            "Сбросить отметки о сохранённых локальных изменениях…");
+        clearLocalMarksButton.setLayoutData(new GridData(
+            SWT.LEFT, SWT.CENTER, false, false, 2, 1));
+        clearLocalMarksButton.setToolTipText(
+            "Удалить только отметки о ранее оставленных локально изменениях. "
+            + "Сам код проекта EDT, Git, ожидающие изменения, версии и "
+            + "сведения о подключении не затрагиваются.");
+        clearLocalMarksButton.addListener(
+            SWT.Selection, event -> clearLocalMarks());
+        refreshLocalMarksCount();
+
         Label note = new Label(content, SWT.WRAP);
         note.setText("Получение обновит только существующую базу хранилища "
             + "после подтверждения. Затем можно выбрать отдельные объекты "
@@ -305,6 +323,114 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     setErrorMessage(reason);
                 }
             });
+    }
+
+    /**
+     * Local metadata-only operation: the retained-local decisions are NOT
+     * source files, Git changes, or unreviewed incoming changes. The user
+     * must explicitly confirm that the next fast receive will no longer
+     * insist on a full review due to these historical markers.
+     */
+    private void clearLocalMarks() {
+        if (saved == null || activeBranch == null) {
+            setErrorMessage("Нет сохранённого подключения или ветки Git.");
+            return;
+        }
+        // Never silently target a different intermediary or repository when
+        // connection fields have been edited but not saved/reloaded.
+        if (!saved.address().equals(address.getText().trim())
+                || !saved.infobaseAddress().equals(infobaseAddress.getText().trim())
+                || saved.infobaseType() != (infobaseType.getSelectionIndex() == 1
+                    ? InfobaseType.SERVER : InfobaseType.FILE)) {
+            setErrorMessage("Подключение изменено. Сохраните настройки и "
+                + "откройте окно заново перед очисткой отметок.");
+            return;
+        }
+        try {
+            String actualBranch = GitReceiveGuard.currentBranch(project);
+            if (!activeBranch.equals(actualBranch)) {
+                setErrorMessage("Ветка Git изменилась. Откройте настройки "
+                    + "проекта заново перед очисткой отметок.");
+                return;
+            }
+            // Exclusion also covers a live native EDT editor and outgoing
+            // operations, not just concurrent local-preferences writes.
+            try (AutoCloseable lease =
+                    ReceiveChangesCoordinator.acquireOutgoingReview(project, saved)) {
+                String intermediary = saved.infobaseType().name() + ":"
+                    + saved.infobaseAddress().trim();
+                Set<String> marked = ReceivePendingStore.keptLocal(
+                    project, saved.address(), activeBranch, intermediary);
+                if (marked.isEmpty()) {
+                    refreshLocalMarksCount();
+                    setMessage("Отметок о сохранённых локальных изменениях нет.");
+                    return;
+                }
+                boolean confirmed = org.eclipse.jface.dialogs.MessageDialog.openConfirm(
+                    getShell(), "Сброс отметок о локальных изменениях",
+                    "Сохранённых отметок: " + marked.size() + ".\n"
+                    + "Проект: «" + project.getName() + "», ветка Git: «"
+                    + activeBranch + "».\n\n"
+                    + "Удалить ТОЛЬКО отметки о ранее оставленных локально "
+                    + "изменениях?\n\n"
+                    + "Код проекта EDT, Git, хранилище 1С, база-посредник, "
+                    + "ожидающие изменения и обработанные версии "
+                    + "не изменятся.\n\n"
+                    + "После сброса быстрое получение больше не потребует "
+                    + "полную сверку ИЗ-ЗА ЭТИХ отметок, хотя прежние "
+                    + "различия с хранилищем могут остаться.");
+                if (!confirmed) {
+                    return;
+                }
+                int removed = ReceivePendingStore.clearKeptLocalMarks(
+                    project, saved.address(), activeBranch, intermediary, marked);
+                refreshLocalMarksCount();
+                setErrorMessage(null);
+                setMessage("Удалены отметки о сохранённых локальных изменениях: "
+                    + removed + ". Содержимое проекта EDT не менялось.");
+                org.eclipse.jface.dialogs.MessageDialog.openInformation(
+                    getShell(), "Отметки сброшены",
+                    "Удалены только отметки: " + removed
+                    + ".\nФайлы проекта и хранилище не изменялись.");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            setErrorMessage("Проверка Git прервана, отметки не сброшены.");
+        } catch (Exception ex) {
+            setErrorMessage("Не удалось очистить отметки. Проверьте журнал "
+                + "EDT и убедитесь, что не выполняется получение или Merge.");
+            BridgeActivator.getDefault().getLog().error(
+                "Kept-local markers reset failed: "
+                + ex.getClass().getSimpleName());
+            refreshLocalMarksCount();
+        }
+    }
+
+    private void refreshLocalMarksCount() {
+        if (clearLocalMarksButton == null || clearLocalMarksButton.isDisposed()
+                || localMarksCountLabel == null || localMarksCountLabel.isDisposed()) {
+            return;
+        }
+        if (saved == null || activeBranch == null
+                || saved.address().isBlank() || saved.infobaseAddress().isBlank()) {
+            localMarksCountLabel.setText("Недоступно");
+            clearLocalMarksButton.setEnabled(false);
+            return;
+        }
+        try {
+            String intermediary = saved.infobaseType().name() + ":"
+                + saved.infobaseAddress().trim();
+            int count = ReceivePendingStore.keptLocal(
+                project, saved.address(), activeBranch, intermediary).size();
+            localMarksCountLabel.setText(Integer.toString(count));
+            clearLocalMarksButton.setEnabled(count > 0);
+        } catch (BackingStoreException | RuntimeException ex) {
+            localMarksCountLabel.setText("Не удалось прочитать");
+            clearLocalMarksButton.setEnabled(false);
+            BridgeActivator.getDefault().getLog().warn(
+                "Kept-local markers count unavailable: "
+                + ex.getClass().getSimpleName());
+        }
     }
 
     private void resetReceiveHistory() {

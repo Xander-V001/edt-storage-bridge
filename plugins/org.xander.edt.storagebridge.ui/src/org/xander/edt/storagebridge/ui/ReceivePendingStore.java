@@ -329,6 +329,32 @@ public final class ReceivePendingStore {
     }
 
     /**
+     * Explicit user-requested reset of ONLY the locally-retained choices
+     * in the identified project/repository/Git-branch/intermediary.
+     * Does not touch PENDING, UNKNOWN, revision checkpoints, or EDT files.
+     * Expected scope is checked under the caller's receive-operation lease:
+     * no other receive/merge is permitted to change the journal meanwhile.
+     */
+    public static int clearKeptLocalMarks(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> expected) throws BackingStoreException {
+        Objects.requireNonNull(expected, "expected");
+        Set<String> current = keptLocal(project, repositoryAddress,
+            branch, intermediaryIdentity);
+        if (!current.equals(expected)) {
+            throw new IllegalStateException(
+                "Retained-local choices changed before explicit reset");
+        }
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        for (String name : current) {
+            node.remove(KEPT_LOCAL + digest(name));
+        }
+        node.flush();
+        return current.size();
+    }
+
+    /**
      * Global EDT equality was proven against the full native source: there
      * are no longer any known intentionally retained remote differences.
      */
