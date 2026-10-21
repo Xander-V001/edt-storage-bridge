@@ -171,7 +171,24 @@ public final class OutgoingMetadataExportCoordinator {
                             + "\n\nЭто диагностический экспорт без изменений "
                             + "проекта, базы и хранилища. "
                             + "Списки Lock/Load/Commit не сформированы.");
-                        if (approvedPlan != null && !shell.isDisposed()) {
+                        if (approvedPlan != null && !shell.isDisposed()
+                                && settings.manualOutgoing()) {
+                            if (MessageDialog.openQuestion(shell,
+                                    "Ручное помещение через Конфигуратор",
+                                    "Подготовить кандидат конфигурации (.cf) "
+                                    + "из актуальной базы-посредника и "
+                                    + "выбранных изменений EDT?\n\n"
+                                    + "Для сборки файла будет создана "
+                                    + "временная файловая база 1С. "
+                                    + "Рабочую базу и хранилище плагин "
+                                    + "не изменяет, Lock/Load/Commit "
+                                    + "автоматически не выполняет.")) {
+                                OutgoingManualHandoffCoordinator.prepare(
+                                    shell, project, settings, expectedGit,
+                                    reviewedRevision, approvedPlan,
+                                    resultDir.resolve("xml"));
+                            }
+                        } else if (approvedPlan != null && !shell.isDisposed()) {
                             if (MessageDialog.openQuestion(shell,
                                     "Экспериментальная запись целых объектов",
                                     "Штатный экспорт охватил все выбранные "

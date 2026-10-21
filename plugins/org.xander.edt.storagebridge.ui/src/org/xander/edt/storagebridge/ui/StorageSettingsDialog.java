@@ -40,6 +40,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Text infobaseUsername;
     private Text infobasePassword;
     private Text platformExecutable;
+    private Button manualOutgoing;
     private StorageProjectSettings.Snapshot saved;
     private Label observedRevisionLabel;
     private Label appliedRevisionLabel;
@@ -170,6 +171,26 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         securityData.horizontalSpan = 3;
         securityData.widthHint = 560;
         security.setLayoutData(securityData);
+
+        Group outgoing = new Group(content, SWT.NONE);
+        outgoing.setText("Помещение в хранилище");
+        outgoing.setLayout(new GridLayout(1, false));
+        GridData outgoingData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        outgoingData.horizontalSpan = 2;
+        outgoing.setLayoutData(outgoingData);
+        manualOutgoing = new Button(outgoing, SWT.CHECK);
+        manualOutgoing.setText("Ручное помещение через Конфигуратор 1С");
+        manualOutgoing.setSelection(saved != null && saved.manualOutgoing());
+        manualOutgoing.setToolTipText(
+            "После подготовки XML сформировать кандидат .cf через "
+            + "изолированную временную базу, затем открыть Конфигуратор "
+            + "для ручного сравнения. Плагин не выполнит Lock, Load, Commit "
+            + "в базе-посреднике.");
+        Label outgoingHint = new Label(outgoing, SWT.WRAP);
+        outgoingHint.setText("Если флажок снят, доступен прежний экспериментальный "
+            + "автоматический путь. При установленном флажке запись выполняешь "
+            + "сам в Конфигураторе; плагин только готовит файл сравнения.");
+        outgoingHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
         Group revisions = new Group(content, SWT.NONE);
         revisions.setText("Состояние синхронизации");
@@ -553,7 +574,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                 infobaseType.getSelectionIndex() == 1
                     ? InfobaseType.SERVER : InfobaseType.FILE,
                 infobaseAddress.getText(), platformExecutable.getText(),
-                infobaseUsername.getText(), infobasePassword.getText());
+                infobaseUsername.getText(), infobasePassword.getText(),
+                manualOutgoing.getSelection());
             setErrorMessage(null);
             return true;
         } catch (IllegalArgumentException ex) {

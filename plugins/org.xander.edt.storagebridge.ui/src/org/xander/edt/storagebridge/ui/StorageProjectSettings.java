@@ -35,6 +35,7 @@ public final class StorageProjectSettings {
     private static final String PLATFORM_EXECUTABLE = "platformExecutable";
     private static final String INFOBASE_USER = "infobaseUser";
     private static final String INFOBASE_PASSWORD = "infobasePassword";
+    private static final String MANUAL_OUTGOING = "manualOutgoing";
 
     /** Matches documented 1C Designer launch switches /F and /S. */
     public enum InfobaseType { FILE, SERVER }
@@ -57,11 +58,13 @@ public final class StorageProjectSettings {
         private final String infobasePassword;
         private final long observedVersion;
         private final long appliedVersion;
+        private final boolean manualOutgoing;
 
         private Snapshot(String address, String username, String password,
                 InfobaseType infobaseType, String infobaseAddress,
                 String platformExecutable, String infobaseUsername,
-                String infobasePassword, long observedVersion, long appliedVersion) {
+                String infobasePassword, long observedVersion, long appliedVersion,
+                boolean manualOutgoing) {
             this.address = address;
             this.username = username;
             this.password = password;
@@ -72,6 +75,7 @@ public final class StorageProjectSettings {
             this.infobasePassword = infobasePassword;
             this.observedVersion = observedVersion;
             this.appliedVersion = appliedVersion;
+            this.manualOutgoing = manualOutgoing;
         }
 
         public String address() { return address; }
@@ -84,6 +88,7 @@ public final class StorageProjectSettings {
         public String infobasePassword() { return infobasePassword; }
         public long observedVersion() { return observedVersion; }
         public long appliedVersion() { return appliedVersion; }
+        public boolean manualOutgoing() { return manualOutgoing; }
 
         @Override
         public String toString() {
@@ -104,14 +109,27 @@ public final class StorageProjectSettings {
             preferences.get(INFOBASE_USER, ""),
             secretNode.get(INFOBASE_PASSWORD, ""),
             preferences.getLong(LAST_REMOTE, UNKNOWN_VERSION),
-            preferences.getLong(LAST_APPLIED, UNKNOWN_VERSION));
+            preferences.getLong(LAST_APPLIED, UNKNOWN_VERSION),
+            preferences.getBoolean(MANUAL_OUTGOING, false));
     }
 
-    /** Save connection settings; changing storage address invalidates both revisions. */
+    /** Preserve the saved mode for existing callers that do not edit it. */
     public static void save(IProject project, String address, String username,
             String password, InfobaseType infobaseType, String infobaseAddress,
             String platformExecutable, String infobaseUsername,
             String infobasePassword)
+            throws StorageException, IOException, BackingStoreException {
+        save(project, address, username, password, infobaseType,
+            infobaseAddress, platformExecutable, infobaseUsername,
+            infobasePassword,
+            preferences(project).getBoolean(MANUAL_OUTGOING, false));
+    }
+
+    /** Manual mode is opt-in and scoped to this existing EDT project. */
+    public static void save(IProject project, String address, String username,
+            String password, InfobaseType infobaseType, String infobaseAddress,
+            String platformExecutable, String infobaseUsername,
+            String infobasePassword, boolean manualOutgoing)
             throws StorageException, IOException, BackingStoreException {
         Objects.requireNonNull(address, "address");
         Objects.requireNonNull(username, "username");
@@ -141,6 +159,7 @@ public final class StorageProjectSettings {
         preferences.put(INFOBASE_ADDRESS, infobaseAddress.trim());
         preferences.put(INFOBASE_USER, infobaseUsername.trim());
         preferences.put(PLATFORM_EXECUTABLE, platformExecutable.trim());
+        preferences.putBoolean(MANUAL_OUTGOING, manualOutgoing);
         if (changed) {
             // A checkpoint from storage A is invalid for storage B.
             preferences.remove(LAST_REMOTE);
