@@ -117,7 +117,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 if (relevant.isEmpty()) {
                     unclassified.add(identity);
                 } else if (relevant.stream().anyMatch(n ->
-                        !n.checked() || n.nestedExcluded()
+                        !n.checked()
                         || "DoNotMerge".equals(n.mergeRule()))) {
                     kept.add(identity);
                 } else if (relevant.stream().allMatch(n ->
