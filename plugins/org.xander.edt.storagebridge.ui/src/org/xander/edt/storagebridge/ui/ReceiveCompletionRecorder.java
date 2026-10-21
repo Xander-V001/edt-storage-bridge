@@ -141,6 +141,30 @@ public final class ReceiveCompletionRecorder {
         return pending.size();
     }
 
+    /**
+     * Finalise real per-identity native EDT Merge choices observed by the
+     * comparison model. REVIEWED is an independently proven repository
+     * checkpoint; it is never a claim of global byte-equality or APPLIED.
+     */
+    public static int reviewedNativeObserved(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, Set<String> presented,
+            Set<String> accepted, Set<String> keptLocal,
+            Set<String> unclassified) throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        if (!ReceivePendingStore.get(project, repository, branch,
+                intermediary).equals(presented)) {
+            throw new IllegalStateException(
+                "Pending identities changed during native EDT comparison");
+        }
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        ReceivePendingStore.acknowledgeNativeObservedChoices(
+            project, repository, branch, intermediary,
+            presented, accepted, keptLocal, unclassified);
+        return presented.size();
+    }
+
     public static int reviewedExactScope(IProject project, String repository,
             String intermediary, String branch, long revision,
             Set<String> exactlyVerified) throws BackingStoreException {

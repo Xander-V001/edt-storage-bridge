@@ -80,6 +80,19 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
             ? "недоступно; решения UNKNOWN" : choices.summary();
     }
 
+    /**
+     * Used by receive completion after native MERGE_PROCESS_FINISHED:
+     * actual observed node choices, not a secondary user checklist.
+     */
+    public NativeEdtMergeChoiceObserver.Decision classifyPending(
+            java.util.Set<String> pending) {
+        if (choices == null) {
+            return new NativeEdtMergeChoiceObserver.Decision(
+                java.util.Set.of(), java.util.Set.of(), pending);
+        }
+        return choices.snapshot().classifyPending(pending);
+    }
+
     /** Immutable UI-safe rows: native EDT model objects never cross bundles. */
     public java.util.List<String> choiceRows(int limit) {
         if (choices == null) return java.util.List.of(

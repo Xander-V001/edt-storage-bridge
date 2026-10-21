@@ -110,3 +110,18 @@
 - [ ] Native FULL Merge, all selections on, and PENDING=0: report displays EDT merge completed, 0 pending and verified repository revision, without UNKNOWN archives or diagnostic counters.
 - [ ] No automatic conversion of historical unknown choices to accepted, applied or a new archived status; older markers stay unchanged.
 - [ ] Selective diagnostic window remains read-only and independent of checkpoint safety.
+
+
+## Native EDT decisions are persisted (21.10.2026)
+- [ ] Fast receive: two changed procedures in Document.ПрочийДоход,
+  native UI both checked / GetFromOther; two native pending names
+  get accepted on successful native Merge; no new unknown-choice entries.
+- [ ] Uncheck a genuinely differing nested BSL procedure; whole source
+  metadata identity is marked kept-local (never falsely accepted).
+- [ ] Unrelated metadata identities do not match by substring:
+  Document.A is different from Document.ABC.
+- [ ] Unexpected merge-rule and truly missing node remain unclassified;
+  successfully observed changes still get their own dispositions.
+- [ ] Cancel native Merge leaves pending and never persists accepted.
+- [ ] Finish retains distinct REVIEWED/APPLIED semantics, no duplicate
+  choice window; ordinary result has no diagnostic counters.

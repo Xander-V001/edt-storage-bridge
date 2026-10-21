@@ -53,6 +53,21 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
         }
     }
 
+    /**
+     * EDT's observed merge settings, grouped by native metadata identity.
+     * Accepted means selected GetFromOther; a differing unchecked descendant
+     * means that metadata identity kept local changes. No serialized EDT
+     * resources are compared.
+     */
+    public record Decision(Set<String> accepted, Set<String> keptLocal,
+            Set<String> unclassified) {
+        public Decision {
+            accepted = Set.copyOf(accepted);
+            keptLocal = Set.copyOf(keptLocal);
+            unclassified = Set.copyOf(unclassified);
+        }
+    }
+
     public record Snapshot(List<NodeChoice> nodes, int deliveredEvents,
             int filteredWithoutDifferences, int pendingNodeReads,
             int readFailures, int sessionNotReadyAttempts,
@@ -73,6 +88,51 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 + (complete ? ", снимок обработан до Merge"
                     : ", снимок НЕполный/неподтверждённый")
                 + "; только наблюдение, результат применения UNKNOWN";
+        }
+
+        /**
+         * Inspect all observed differing nodes belonging to each changed
+         * native identity. Both directions of the path relation are needed:
+         * 1C may report an embedded Form.Module while EDT reports its Form
+         * owner, or EDT may report child procedures under a parent identity.
+         * Avoid matching "Document.A" to "Document.ABC".
+         *
+         * A changed unchecked nested node takes precedence over an accepted
+         * parent. Synthetic RootComparisonNode has no metadata identity.
+         */
+        public Decision classifyPending(Set<String> pending) {
+            Set<String> accepted = new java.util.LinkedHashSet<>();
+            Set<String> kept = new java.util.LinkedHashSet<>();
+            Set<String> unclassified = new java.util.LinkedHashSet<>();
+            for (String identity : pending) {
+                List<NodeChoice> relevant = nodes.stream()
+                    .filter(n -> isRelated(identity, n.ownerSymlink()))
+                    .toList();
+                if (relevant.isEmpty()) {
+                    unclassified.add(identity);
+                } else if (relevant.stream().anyMatch(n ->
+                        !n.checked() || n.nestedExcluded()
+                        || "DoNotMerge".equals(n.mergeRule()))) {
+                    kept.add(identity);
+                } else if (relevant.stream().allMatch(n ->
+                        n.checked() && "GetFromOther".equals(n.mergeRule()))) {
+                    accepted.add(identity);
+                } else {
+                    // A custom/ambiguous rule must not silently be reported
+                    // as an accepted remote choice.
+                    unclassified.add(identity);
+                }
+            }
+            return new Decision(accepted, kept, unclassified);
+        }
+
+        private static boolean isRelated(String identity, String owner) {
+            if (owner == null || owner.startsWith("(") || identity == null) {
+                return false;
+            }
+            return owner.equals(identity)
+                || owner.startsWith(identity + ".")
+                || identity.startsWith(owner + ".");
         }
 
         public List<String> rows(int limit) {

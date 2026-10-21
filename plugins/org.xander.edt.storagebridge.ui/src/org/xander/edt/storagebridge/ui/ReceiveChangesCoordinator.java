@@ -1424,10 +1424,12 @@ public final class ReceiveChangesCoordinator {
                                                         // user decision is required to preserve
                                                         // genuine KEPT_LOCAL without byte audits.
                                                         if (!LEGACY_KEEP_LOCAL_DIALOG_ENABLED) {
-                                                            // Native Merge itself is the acceptance
-                                                            // boundary. Per-object choices cannot
-                                                            // yet be proven: record UNKNOWN, never
-                                                            // silently assume "accepted".
+                                                            // Native EDT settings ARE the selected
+                                                            // decisions. Never create a second
+                                                            // checkbox dialog or compare bytes.
+                                                            var selectedChoices =
+                                                                nativeMergeWitness.classifyPending(
+                                                                    pendingNow);
                                                             long finalHead = revisionForReview.get();
                                                             if (!intermediaryInventoryUnchanged(
                                                                     journal, detect, monitor)) {
@@ -1442,12 +1444,20 @@ public final class ReceiveChangesCoordinator {
                                                                         project, postMergeGit);
                                                                 acknowledgedCount =
                                                                     ReceiveCompletionRecorder
-                                                                        .reviewedNativeSelectiveUnknown(
+                                                                        .reviewedNativeObserved(
                                                                             project,
                                                                             settings.address(),
                                                                             intermediaryIdentity,
                                                                             branch, finalHead,
-                                                                            pendingNow);
+                                                                            pendingNow,
+                                                                            selectedChoices.accepted(),
+                                                                            selectedChoices.keptLocal(),
+                                                                            selectedChoices.unclassified());
+                                                                BridgeActivator.getDefault().getLog()
+                                                                    .info("Native EDT reviewed decisions: "
+                                                                        + "accepted=" + selectedChoices.accepted().size()
+                                                                        + "; keptLocal=" + selectedChoices.keptLocal().size()
+                                                                        + "; unclassified=" + selectedChoices.unclassified().size());
                                                                 if (effectiveFull && initialFullReview) {
                                                                     journal.markInitialReviewPrepared();
                                                                 }
@@ -1554,20 +1564,13 @@ public final class ReceiveChangesCoordinator {
                                         if (reason != null && confirmedRevision < 1) {
                                             report.append("\n").append(reason);
                                         }
-                                        // TEMPORARY NATIVE EVENT TRACE, not a
-                                        // second choice/acknowledgement step:
-                                        // the old ListSelectionDialog remains
-                                        // disabled and unchanged below. This
-                                        // scrollable read-only list lets us
-                                        // verify what EDT actually emitted per
-                                        // node and which flags were captured.
-                                        // The dialog cannot influence REVIEWED,
-                                        // PENDING, KEPT_LOCAL or native Merge.
-                                        if (!effectiveFull && nativeFinished) {
-                                            showObservedEdtChoicesOnUi(shell,
-                                                nativeMergeWitness.choiceRows(2000),
-                                                nativeMergeWitness.choiceSummary());
-                                        }
+                                        // The temporary native event listing is
+                                        // no longer shown: its node settings now
+                                        // feed the receive journal above. Detailed
+                                        // observer counters belong in Error Log.
+                                        BridgeActivator.getDefault().getLog()
+                                            .info("Native EDT choices: "
+                                                + nativeMergeWitness.choiceSummary());
                                         informationOnUi(shell, "Результат объединения EDT",
                                             report.toString());
                                         return Status.OK_STATUS;

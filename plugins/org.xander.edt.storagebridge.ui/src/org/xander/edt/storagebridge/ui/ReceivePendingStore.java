@@ -189,6 +189,62 @@ public final class ReceivePendingStore {
         node.flush();
     }
 
+    /**
+     * Record exactly the native EDT choices we observed for the reviewed
+     * changed identities. An unchecked differing descendant keeps the whole
+     * metadata identity locally; an accepted one clears stale retained/unknown
+     * markers. Preserve unclassified identities without mislabeling them.
+     * Write dispositions BEFORE removing pending so interrupted persistence
+     * never loses its only pending debt.
+     */
+    public static void acknowledgeNativeObservedChoices(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> presented, Set<String> accepted,
+            Set<String> keptLocal, Set<String> unclassified)
+            throws BackingStoreException {
+        Objects.requireNonNull(presented);
+        Objects.requireNonNull(accepted);
+        Objects.requireNonNull(keptLocal);
+        Objects.requireNonNull(unclassified);
+        var union = new LinkedHashSet<String>();
+        for (Set<String> group : java.util.List.of(accepted, keptLocal, unclassified)) {
+            for (String identity : group) {
+                requireObject(identity);
+                if (!union.add(identity)) {
+                    throw new IllegalArgumentException("Overlapping EDT choice groups");
+                }
+            }
+        }
+        if (!presented.equals(union)) {
+            throw new IllegalArgumentException("EDT choices do not cover pending scope");
+        }
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        for (String name : presented) {
+            requireObject(name);
+            if (!name.equals(node.get(ITEM + digest(name), ""))) {
+                throw new IllegalStateException(
+                    "Observed EDT identity not in current pending journal");
+            }
+        }
+        for (String name : presented) {
+            String id = digest(name);
+            if (keptLocal.contains(name)) {
+                node.put(KEPT_LOCAL + id, name);
+                node.remove(CHOICE_UNKNOWN + id);
+            } else if (unclassified.contains(name)) {
+                node.put(CHOICE_UNKNOWN + id, name);
+                node.remove(KEPT_LOCAL + id);
+            } else {
+                node.remove(KEPT_LOCAL + id);
+                node.remove(CHOICE_UNKNOWN + id);
+            }
+        }
+        node.flush();
+        for (String name : presented) node.remove(ITEM + digest(name));
+        node.flush();
+    }
+
     public static Set<String> unknownChoices(IProject project,
             String repositoryAddress, String branch, String intermediaryIdentity)
             throws BackingStoreException {
