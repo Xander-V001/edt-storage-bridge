@@ -147,8 +147,9 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
          * A complete native tree with no related differences means the old
          * retained-local difference was resolved; all relevant [x]
          * GetFromOther choices also resolve it. An actual differing excluded
-         * child keeps the identity local. Unknown/custom settings preserve
-         * the old marker instead of silently dropping it.
+         * child keeps the identity local. A parent's nestedExcluded flag
+         * alone is NOT proof: an unchanged child can also be excluded.
+         * Unknown/custom settings preserve the old marker.
          */
         public KeptLocalReview recheckKeptLocal(Set<String> candidates) {
             if (!complete) return new KeptLocalReview(candidates, false);
@@ -163,7 +164,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     continue;
                 }
                 boolean allAccepted = relevant.stream().allMatch(n ->
-                    n.checked() && !n.nestedExcluded() && !n.customMerge()
+                    n.checked() && !n.customMerge()
                         && "GetFromOther".equals(n.mergeRule()));
                 if (!allAccepted) remaining.add(identity);
             }
