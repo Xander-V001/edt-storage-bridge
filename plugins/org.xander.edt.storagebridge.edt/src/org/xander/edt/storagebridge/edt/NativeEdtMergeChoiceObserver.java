@@ -54,7 +54,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     }
 
     public record Snapshot(List<NodeChoice> nodes, int deliveredEvents,
-            int unreadEvents, boolean observedBeforeMerge, boolean complete,
+            int filteredWithoutDifferences, int unreadEvents,
+            boolean observedBeforeMerge, boolean complete,
             boolean sessionAvailable) {
         public Snapshot { nodes = List.copyOf(nodes); }
 
@@ -63,6 +64,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
             long skipped = nodes.size() - checked;
             return "узлов " + nodes.size() + " (флаг включён " + checked
                 + ", выключен " + skipped + "), событий " + deliveredEvents
+                + ", без подтверждённых различий отфильтровано "
+                + filteredWithoutDifferences
                 + ", не прочитано " + unreadEvents
                 + (complete ? ", события обработаны до Merge"
                     : ", снимок НЕполный/неподтверждённый")
@@ -98,6 +101,10 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     private int failures;
     private final Map<Long, String> queued = new LinkedHashMap<>();
     private final Map<Long, NodeChoice> observed = new HashMap<>();
+    // Only diagnostic: tree events also include unchanged nested nodes.
+    // Track unique IDs excluded by EDT's own native comparison flags so the
+    // diagnostic output explains why its count differs from event count.
+    private final Set<Long> withoutDifferences = new HashSet<>();
 
     public NativeEdtMergeChoiceObserver(IComparisonManager manager,
             ComparisonProcessHandle handle) {
@@ -119,6 +126,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     long id = event.getNodeId();
                     if (event.getType() == ComparisonTreeNodeEvent.EventType.REMOVED) {
                         observed.remove(id);
+                        withoutDifferences.remove(id);
                         queued.remove(id);
                     } else if (queued.size() < MAX_NODES) {
                         queued.put(id, event.getType().name());
@@ -218,7 +226,20 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     });
                 synchronized (this) {
                     if (closed || mergeStarted) return;
-                    observed.putAll(sampled);
+                    // A node may be re-computed by EDT after a previous
+                    // event. Remove a stale observation if its current native
+                    // flags no longer prove MAIN/OTHER differences.
+                    for (var entry : sampled.entrySet()) {
+                        Long id = entry.getKey();
+                        NodeChoice choice = entry.getValue();
+                        if (choice == null) {
+                            observed.remove(id);
+                            withoutDifferences.add(id);
+                        } else {
+                            withoutDifferences.remove(id);
+                            observed.put(id, choice);
+                        }
+                    }
                     initialBaselineCaptured = true;
                     if (queued.isEmpty()) return;
                 }
@@ -235,9 +256,26 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     private static void readNode(IComparisonSession session, long nodeId,
             String event, Map<Long, NodeChoice> result) {
         ComparisonNode node = session.getNode(nodeId);
-        if (node == null) return;
+        if (node == null) {
+            result.put(nodeId, null);
+            return;
+        }
+        // CRITICAL: DoNotMerge / unchecked is normal for an UNCHANGED
+        // descendant of an affected top-level object. The comparison tree
+        // emits COMPARISON_FINISHED events for such descendants too. Read
+        // EDT's own consolidated comparison flags BEFORE merge settings;
+        // never infer that an unchecked unchanged node was kept locally.
+        // hasDiffsMainOther also includes partial/one-sided objects.
+        var flags = node.getComparisonFlags();
+        if (flags == null || !flags.hasDiffsMainOther()) {
+            result.put(nodeId, null);
+            return;
+        }
         MergeSettings settings = node.getMergeSettings();
-        if (settings == null) return;
+        if (settings == null) {
+            result.put(nodeId, null);
+            return;
+        }
         TopComparisonNode top = session.getTopNodeOf(node);
         String owner = top == null ? null : top.getOtherSymlink();
         if (owner == null || owner.isBlank()) {
@@ -258,8 +296,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 .thenComparingLong(NodeChoice::nodeId))
             .toList();
         return new Snapshot(nodes, deliveredEvents,
-            queued.size() + failures, mergeStarted, finishedCapture,
-            sessionAvailable);
+            withoutDifferences.size(), queued.size() + failures,
+            mergeStarted, finishedCapture, sessionAvailable);
     }
 
     public String summary() { return snapshot().summary(); }
