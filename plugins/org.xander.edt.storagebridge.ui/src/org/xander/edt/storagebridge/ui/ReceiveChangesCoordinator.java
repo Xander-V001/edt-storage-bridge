@@ -1348,6 +1348,7 @@ public final class ReceiveChangesCoordinator {
                                         String reason = null;
                                         long confirmedRevision = ReceiveRevisionStore.UNKNOWN;
                                         int acknowledgedCount = 0;
+                                        int archivedPreviousUnknown = 0;
                                         finishStage.set("чтение журнала ожидающих изменений");
                                         Set<String> pendingNow = ReceivePendingStore.get(
                                             project, settings.address(), branch,
@@ -1394,10 +1395,11 @@ public final class ReceiveChangesCoordinator {
                                                     // must not veto the native EDT result.
                                                     finishStage.set("запись рассмотренной версии");
                                                     long finalHead = revisionForReview.get();
-                                                    ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
-                                                        project, settings.address(),
-                                                        intermediaryIdentity, branch,
-                                                        finalHead, journal, initialFullReview);
+                                                    archivedPreviousUnknown =
+                                                        ReceiveCompletionRecorder.reviewedGlobalNativeMerge(
+                                                            project, settings.address(),
+                                                            intermediaryIdentity, branch,
+                                                            finalHead, journal, initialFullReview);
                                                     confirmedRevision = finalHead;
                                                     reason = "Полное сравнение EDT завершено; "
                                                         + "REVIEWED = " + finalHead
@@ -1534,8 +1536,17 @@ public final class ReceiveChangesCoordinator {
                                             .append(pendingAfter).append(".")
                                             .append("\nРанее подтверждённые сохранённые локальные версии объектов: ")
                                             .append(retainedLocally.size()).append(".")
-                                            .append("\nИндивидуальные решения EDT неизвестны: ")
+                                            .append("\nТекущие выборочные решения EDT "
+                                                + "с неизвестным исходом: ")
                                             .append(unknownChoices).append(".");
+                                        if (archivedPreviousUnknown > 0) {
+                                            report.append("\nСтарые UNKNOWN повторно "
+                                                + "рассмотрены полной сверкой и "
+                                                + "сохранены в истории: ")
+                                                .append(archivedPreviousUnknown)
+                                                .append(". Это НЕ подтверждение их "
+                                                    + "принятия; APPLIED не менялся.");
+                                        }
                                         // Native observation is advisory, not a
                                         // per-object choice receipt or APPLIED proof.
                                         report.append("\nНаблюдение настроек EDT: ")

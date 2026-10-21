@@ -29,6 +29,10 @@ public final class ReceivePendingStore {
     private static final String KEPT_LOCAL = "kept-";
     // Native Merge finished but EDT individual selection was not proven.
     private static final String CHOICE_UNKNOWN = "unknown-choice-";
+    // A finished GLOBAL native EDT review supersedes a preceding selective
+    // choice receipt even when the local code may differ. Keep the old
+    // uncertain identity in this audit namespace, never mark it ACCEPTED.
+    private static final String FULL_REVIEWED_UNKNOWN = "full-reviewed-unknown-";
     private static final String INTERMEDIARY = "boundIntermediary";
     private ReceivePendingStore() {}
 
@@ -56,6 +60,7 @@ public final class ReceivePendingStore {
             requireObject(name);
             node.put(ITEM + digest(name), name);
             node.remove(CHOICE_UNKNOWN + digest(name));
+            node.remove(FULL_REVIEWED_UNKNOWN + digest(name));
         }
         node.flush();
     }
@@ -84,6 +89,7 @@ public final class ReceivePendingStore {
             // the previous explicit keep-local decision for this identity.
             node.remove(KEPT_LOCAL + digest(name));
             node.remove(CHOICE_UNKNOWN + digest(name));
+            node.remove(FULL_REVIEWED_UNKNOWN + digest(name));
         }
         node.flush();
     }
@@ -187,6 +193,40 @@ public final class ReceivePendingStore {
         node.flush();
         for (String name : names) node.remove(ITEM + digest(name));
         node.flush();
+    }
+
+    /**
+     * ONLY AFTER a native FINISHED global comparison/merge, verified source
+     * HEAD, and EMPTY PENDING. Previous selective UNKNOWN choices have now
+     * been reviewed again in a newer global comparison. They are no longer
+     * current SELECTIVE-choice debt, but their original acceptance remains
+     * unproven. Archive by exact original identity before deleting active
+     * markers. This does NOT mean remote code was accepted or fully applied.
+     */
+    public static int archiveUnknownAfterGlobalReview(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity)
+            throws BackingStoreException {
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        if (!get(project, repositoryAddress, branch,
+                intermediaryIdentity).isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot archive review choices while PENDING exists");
+        }
+        Set<String> names = unknownChoices(
+            project, repositoryAddress, branch, intermediaryIdentity);
+        if (names.isEmpty()) return 0;
+        // Crash ordering: first make every identity durable in the historical
+        // namespace, THEN clear active markers. Never erase the only trace.
+        for (String name : names) {
+            node.put(FULL_REVIEWED_UNKNOWN + digest(name), name);
+        }
+        node.flush();
+        for (String name : names) {
+            node.remove(CHOICE_UNKNOWN + digest(name));
+        }
+        node.flush();
+        return names.size();
     }
 
     public static Set<String> unknownChoices(IProject project,

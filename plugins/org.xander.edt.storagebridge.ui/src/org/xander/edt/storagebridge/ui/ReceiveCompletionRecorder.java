@@ -48,7 +48,7 @@ public final class ReceiveCompletionRecorder {
      * records REVIEWED only, never APPLIED or artificial KEPT_LOCAL entries.
      * It also avoids reading the entire 1C/EDT resource tree a second time.
      */
-    public static void reviewedGlobalNativeMerge(IProject project,
+    public static int reviewedGlobalNativeMerge(IProject project,
             String repository, String intermediary, String branch,
             long revision, ReceiveBaselineJournal journal,
             boolean initialReview) throws IOException, BackingStoreException {
@@ -60,9 +60,16 @@ public final class ReceiveCompletionRecorder {
         }
         ReceiveRevisionStore.recordReviewed(
             project, repository, intermediary, branch, revision);
+        // A full comparison covers all source metadata, so older selective
+        // UNKNOWN decisions are superseded as *reviewed*, not as ACCEPTED.
+        // They remain available in a separate audit namespace. Never update
+        // APPLIED or clear a genuine explicitly retained KEPT_LOCAL decision.
+        int archivedChoices = ReceivePendingStore.archiveUnknownAfterGlobalReview(
+            project, repository, branch, intermediary);
         if (initialReview) {
             journal.markInitialReviewPrepared();
         }
+        return archivedChoices;
     }
 
     public static int partial(IProject project, String repository, String intermediary,

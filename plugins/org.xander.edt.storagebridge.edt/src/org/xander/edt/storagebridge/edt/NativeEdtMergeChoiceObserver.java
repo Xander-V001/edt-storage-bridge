@@ -54,7 +54,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     }
 
     public record Snapshot(List<NodeChoice> nodes, int deliveredEvents,
-            int filteredWithoutDifferences, int unreadEvents,
+            int filteredWithoutDifferences, int pendingNodeReads,
+            int readFailures, int sessionNotReadyAttempts,
             boolean observedBeforeMerge, boolean complete,
             boolean sessionAvailable) {
         public Snapshot { nodes = List.copyOf(nodes); }
@@ -66,8 +67,10 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 + ", выключен " + skipped + "), событий " + deliveredEvents
                 + ", без подтверждённых различий отфильтровано "
                 + filteredWithoutDifferences
-                + ", не прочитано " + unreadEvents
-                + (complete ? ", события обработаны до Merge"
+                + ", осталось прочитать узлов " + pendingNodeReads
+                + ", ошибок чтения " + readFailures
+                + ", ранних обращений к сессии " + sessionNotReadyAttempts
+                + (complete ? ", снимок обработан до Merge"
                     : ", снимок НЕполный/неподтверждённый")
                 + "; только наблюдение, результат применения UNKNOWN";
         }
@@ -98,7 +101,12 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     private boolean sessionAvailable;
     private boolean initialBaselineCaptured;
     private int deliveredEvents;
-    private int failures;
+    private int readFailures;
+    private int sessionNotReadyAttempts;
+    // The earlier "unread events" total mixed startup lookup attempts with
+    // real unread nodes and lost a batch that was already being read.
+    // Keep the in-flight batch explicit until the EDT read-only task ends.
+    private int inFlightNodes;
     private final Map<Long, String> queued = new LinkedHashMap<>();
     private final Map<Long, NodeChoice> observed = new HashMap<>();
     // Only diagnostic: tree events also include unchanged nested nodes.
@@ -131,7 +139,9 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                     } else if (queued.size() < MAX_NODES) {
                         queued.put(id, event.getType().name());
                     } else {
-                        failures++;
+                        // Bounded journal overflow is an actual observation
+                        // failure, not a harmless early session lookup.
+                        readFailures++;
                     }
                 }
                 scheduleCapture();
@@ -154,7 +164,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
             // An empty event queue is NOT evidence unless EDT provided a
             // session and at least one native baseline was captured.
             finishedCapture = sessionAvailable && initialBaselineCaptured
-                && queued.isEmpty() && failures == 0
+                && queued.isEmpty() && inFlightNodes == 0
+                && readFailures == 0
                 && captureJob.getState() == Job.NONE;
             captureJob.cancel();
             return;
@@ -172,7 +183,9 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 scheduleCapture();
             }
         } catch (RuntimeException | LinkageError ex) {
-            failures++;
+            // getComparisonSession() may transiently throw before EDT has
+            // finished creating the session. This is NOT an unread tree event.
+            sessionNotReadyAttempts++;
         }
     }
 
@@ -193,6 +206,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 current = session;
                 batch = new LinkedHashMap<>(queued);
                 queued.clear();
+                inFlightNodes = batch.size();
                 captureInitial = !initialBaselineCaptured;
             }
             try {
@@ -225,6 +239,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                         }
                     });
                 synchronized (this) {
+                    inFlightNodes = 0;
                     if (closed || mergeStarted) return;
                     // A node may be re-computed by EDT after a previous
                     // event. Remove a stale observation if its current native
@@ -245,7 +260,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 }
             } catch (RuntimeException | LinkageError ex) {
                 synchronized (this) {
-                    failures++;
+                    readFailures++;
+                    inFlightNodes = 0;
                     if (!mergeStarted && !closed) queued.putAll(batch);
                 }
                 return;
@@ -296,7 +312,8 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 .thenComparingLong(NodeChoice::nodeId))
             .toList();
         return new Snapshot(nodes, deliveredEvents,
-            withoutDifferences.size(), queued.size() + failures,
+            withoutDifferences.size(), queued.size() + inFlightNodes,
+            readFailures, sessionNotReadyAttempts,
             mergeStarted, finishedCapture, sessionAvailable);
     }
 
