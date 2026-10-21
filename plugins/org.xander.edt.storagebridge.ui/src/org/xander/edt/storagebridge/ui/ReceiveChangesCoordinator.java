@@ -854,10 +854,55 @@ public final class ReceiveChangesCoordinator {
                 || recovery || changeScopeRequiresFull.get()
                 || !absentFromRemote.isEmpty();
             if (requiresFull && !fullReview) {
+                // Diagnostic ONLY. Do not widen/narrow native comparison or
+                // bypass EDT/1C's FullDump request. Previously this warning
+                // listed only PENDING and deletions, so a perfectly legitimate
+                // FullDump from Designer looked like an unexplained fallback.
+                var reported = nativeChangeReport.get();
+                boolean platformFullDump =
+                    reported != null && reported.fullDump();
+                boolean rootOrLanguageChange = reported != null
+                    && reported.exactNames().stream().anyMatch(name ->
+                        "Configuration".equals(name)
+                        || name.startsWith("Configuration.")
+                        || "Language".equals(name)
+                        || name.startsWith("Language.")
+                        || "Язык".equals(name)
+                        || name.startsWith("Язык."));
+                StringBuilder whyFull = new StringBuilder();
+                if (platformFullDump) {
+                    whyFull.append("• Платформа 1С вернула FullDump вместо "
+                        + "выборочного списка изменений. Это прямое "
+                        + "требование полного экспорта.\n");
+                }
+                if (rootOrLanguageChange) {
+                    whyFull.append("• В штатном списке изменений есть "
+                        + "Configuration или Language: требуется "
+                        + "полное сравнение EDT.\n");
+                }
+                if (recovery) {
+                    whyFull.append("• Восстанавливается незавершённая "
+                        + "попытка получения.\n");
+                }
+                if (!absentFromRemote.isEmpty()) {
+                    whyFull.append("• Отсутствуют в текущем составе "
+                        + "хранилища записи: ")
+                        .append(absentFromRemote.size()).append(".\n");
+                }
+                if (whyFull.isEmpty()) {
+                    // Defensive diagnostic: preserve existing safe fallback.
+                    whyFull.append("• Текущий состав изменений требует "
+                        + "глобального сравнения EDT.\n");
+                }
+                BridgeActivator.getDefault().getLog().info(
+                    "Full comparison required: nativeFullDump="
+                    + platformFullDump + "; rootOrLanguageChange="
+                    + rootOrLanguageChange + "; recovery=" + recovery
+                    + "; missingFromRemote=" + absentFromRemote.size());
                 boolean accept = confirmOnUi(shell,
                     "Требуется полное сравнение EDT",
-                    "Штатная инкрементальная выгрузка не покрывает "
-                    + "весь состав ожидающих изменений.\n"
+                    "Почему требуется полное сравнение:\n"
+                    + whyFull + "\n"
                     + "Осталось изменений от предыдущих получений: "
                     + (hadUnresolvedBefore ? "да" : "нет") + ".\n"
                     + "Удалённых или отсутствующих в источнике записей: "
