@@ -51,7 +51,11 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
             synchronized (NativeEdtMergeChoiceObserver.this) {
                 if (!closed && !mergeStarted) {
                     events += changes == null ? 1 : changes.size();
-                    captureJob.schedule(80L);
+                    try {
+                        captureJob.schedule(80L);
+                    } catch (RuntimeException ignored) {
+                        // Observing settings must never interrupt native EDT.
+                    }
                 }
             }
         };
@@ -68,7 +72,11 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                         session = found;
                     }
                 }
-                captureJob.schedule(80L);
+                try {
+                    captureJob.schedule(80L);
+                } catch (RuntimeException ignored) {
+                    // A running/scheduled job is an advisory snapshot only.
+                }
             } catch (RuntimeException | LinkageError ignored) {
                 // Diagnostics must NEVER prevent EDT Merge or close PENDING.
             }

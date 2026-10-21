@@ -1486,7 +1486,7 @@ public final class ReceiveChangesCoordinator {
                                         }
                                         report.append("\nОжидают проверки: ")
                                             .append(pendingAfter).append(".")
-                                            .append("\nСознательно сохранены локальные версии объектов: ")
+                                            .append("\nРанее подтверждённые сохранённые локальные версии объектов: ")
                                             .append(retainedLocally.size()).append(".")
                                             .append("\nИндивидуальные решения EDT неизвестны: ")
                                             .append(unknownChoices).append(".");
