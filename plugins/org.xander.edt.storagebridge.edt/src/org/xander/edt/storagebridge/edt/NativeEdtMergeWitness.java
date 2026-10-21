@@ -80,6 +80,13 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
             ? "недоступно; решения UNKNOWN" : choices.summary();
     }
 
+    /** Immutable UI-safe rows: native EDT model objects never cross bundles. */
+    public java.util.List<String> choiceRows(int limit) {
+        if (choices == null) return java.util.List.of(
+            "Наблюдатель EDT недоступен: изменения выбора неизвестны.");
+        return choices.snapshot().rows(limit);
+    }
+
     public NativeEdtMergeEvidence.Snapshot snapshot() {
         return evidence.snapshot();
     }
