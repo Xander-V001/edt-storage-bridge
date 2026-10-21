@@ -54,11 +54,11 @@ public class NativeEdtMergeChoiceObserverTest {
     }
 
     @Test
-    public void nestedExclusionAndCustomRulesDoNotErasePreviousKeep() {
+    public void parentNestedExclusionAloneDoesNotCreateOrKeepExtraChoices() {
         var nested = snapshot(true,
             choice("Document.X.Form.Y", true, "GetFromOther", true, false))
             .recheckKeptLocal(Set.of("Document.X.Form.Y"));
-        assertEquals(Set.of("Document.X.Form.Y"), nested.remaining());
+        assertTrue(nested.remaining().isEmpty());
         var custom = snapshot(true,
             choice("Document.X.Form.Y", true, "GetFromOther", false, true))
             .recheckKeptLocal(Set.of("Document.X.Form.Y"));
