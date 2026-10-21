@@ -68,6 +68,12 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
         }
     }
 
+    /** Global review never invents retained-local identities from all local
+     * differences: it may only revisit existing/localised inbound IDs. */
+    public record KeptLocalReview(Set<String> remaining, boolean complete) {
+        public KeptLocalReview { remaining = Set.copyOf(remaining); }
+    }
+
     public record Snapshot(List<NodeChoice> nodes, int deliveredEvents,
             int filteredWithoutDifferences, int pendingNodeReads,
             int readFailures, int sessionNotReadyAttempts,
@@ -133,6 +139,35 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
             return owner.equals(identity)
                 || owner.startsWith(identity + ".")
                 || identity.startsWith(owner + ".");
+        }
+
+        /**
+         * After a finished native GLOBAL Merge, revisit only previously
+         * recorded KEPT_LOCAL and newly retained incoming identities.
+         * A complete native tree with no related differences means the old
+         * retained-local difference was resolved; all relevant [x]
+         * GetFromOther choices also resolve it. An actual differing excluded
+         * child keeps the identity local. Unknown/custom settings preserve
+         * the old marker instead of silently dropping it.
+         */
+        public KeptLocalReview recheckKeptLocal(Set<String> candidates) {
+            if (!complete) return new KeptLocalReview(candidates, false);
+            Set<String> remaining = new java.util.LinkedHashSet<>();
+            for (String identity : candidates) {
+                List<NodeChoice> relevant = nodes.stream()
+                    .filter(n -> isRelated(identity, n.ownerSymlink()))
+                    .toList();
+                if (relevant.isEmpty()) {
+                    // A completed global comparison had no remaining
+                    // difference for this previously kept identity.
+                    continue;
+                }
+                boolean allAccepted = relevant.stream().allMatch(n ->
+                    n.checked() && !n.nestedExcluded() && !n.customMerge()
+                        && "GetFromOther".equals(n.mergeRule()));
+                if (!allAccepted) remaining.add(identity);
+            }
+            return new KeptLocalReview(remaining, true);
         }
 
         public List<String> rows(int limit) {

@@ -93,6 +93,20 @@ public final class NativeEdtMergeWitness implements AutoCloseable {
         return choices.snapshot().classifyPending(pending);
     }
 
+    /**
+     * Only after a confirmed global EDT Merge. A missing/incomplete
+     * comparison snapshot retains previous KEPT_LOCAL choices; it never
+     * produces a speculative empty set.
+     */
+    public NativeEdtMergeChoiceObserver.KeptLocalReview recheckKeptLocal(
+            java.util.Set<String> candidates) {
+        if (choices == null) {
+            return new NativeEdtMergeChoiceObserver.KeptLocalReview(
+                candidates, false);
+        }
+        return choices.snapshot().recheckKeptLocal(candidates);
+    }
+
     /** Immutable UI-safe rows: native EDT model objects never cross bundles. */
     public java.util.List<String> choiceRows(int limit) {
         if (choices == null) return java.util.List.of(

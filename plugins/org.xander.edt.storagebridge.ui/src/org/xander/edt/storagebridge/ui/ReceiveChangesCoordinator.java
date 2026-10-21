@@ -305,8 +305,31 @@ public final class ReceiveChangesCoordinator {
             // A force-full comparison re-exports the entire CURRENT remote
             // configuration without touching the persisted initial marker.
             // This is not a pending-only retry and must run Designer update.
+            // An intentionally retained local version is NOT included in
+            // the next native incremental -getChanges delta. Offer a full
+            // EDT comparison BEFORE starting another Designer update; do
+            // not silently let incremental receive skip the old difference.
+            final Set<String> keptBeforeReview = ReceivePendingStore.keptLocal(
+                project, settings.address(), branch, intermediaryIdentity);
+            final boolean fullDueToKeptLocal =
+                mode == ReceiveMode.INCREMENTAL && !keptBeforeReview.isEmpty();
+            if (fullDueToKeptLocal && !confirmOnUi(shell,
+                    "Требуется полное сравнение EDT",
+                    "При предыдущем получении часть изменений из "
+                        + "хранилища оставлена локально (объектов: "
+                        + keptBeforeReview.size() + ").\\n"
+                        + "Быстрое обновление не включает эти старые "
+                        + "различия в новую выборочную выгрузку.\\n\\n"
+                        + "Для корректного рассмотрения всех оставшихся "
+                        + "различий требуется полная сверка с хранилищем. "
+                        + "После штатного Merge сохранённые локальные "
+                        + "решения будут пересмотрены. Отмена ничего "
+                        + "не изменит.",
+                    "Полная сверка")) {
+                return;
+            }
             final boolean fullReview = initialFullReview
-                || mode == ReceiveMode.FULL_REVIEW;
+                || mode == ReceiveMode.FULL_REVIEW || fullDueToKeptLocal;
             // A failed selective dump has ALREADY persisted the remote
             // changed-object list. Retrying it must not force another native
             // repository update. Require a read-only intermediary version
@@ -321,7 +344,8 @@ public final class ReceiveChangesCoordinator {
                 project, settings.address(), intermediaryIdentity, branch);
             final long previouslyScanned = journal.scannedRevision();
             boolean pendingAvailable = mode == ReceiveMode.INCREMENTAL
-                && !recovery && !firstInventory && hadUnresolvedBefore;
+                && !fullReview && !recovery && !firstInventory
+                && hadUnresolvedBefore;
             int pendingChoice = -1;
             long stagedPendingRevision = ReceiveRevisionStore.UNKNOWN;
             long latestPendingRevision = ReceiveRevisionStore.UNKNOWN;
@@ -417,12 +441,12 @@ public final class ReceiveChangesCoordinator {
             if (!retryPendingOnly && !freshUpdateApproved
                     && (!recovery || resumePrepared)
                     && !confirmOnUi(shell,
-                        mode == ReceiveMode.FULL_REVIEW
+                        fullReview
                             ? "Получить полную конфигурацию из хранилища"
                             : "Получить изменения из хранилища",
                         ReceiveConfirmationTexts.freshReceive(
                             settings.address(), settings.infobaseAddress(),
-                            fullReview, mode == ReceiveMode.FULL_REVIEW),
+                            fullReview, fullReview),
                         "Обновить и сравнить")) {
                 return;
             }
@@ -1515,6 +1539,41 @@ public final class ReceiveChangesCoordinator {
                                                     }
                                                 }
                                             }
+                                        }
+
+                                        // The FULL comparison covers retained
+                                        // local choices from older receives.
+                                        // Reconcile only previously kept IDs and
+                                        // IDs kept by the CURRENT native delta:
+                                        // arbitrary local-only diffs in the
+                                        // global comparison are not inbound debt.
+                                        if (mergeConfirmed && confirmedRevision > 0
+                                                && effectiveFull) {
+                                            finishStage.set(
+                                                "пересмотр сохранённых локальных решений");
+                                            Set<String> currentKept =
+                                                ReceivePendingStore.keptLocal(
+                                                    project, settings.address(), branch,
+                                                    intermediaryIdentity);
+                                            var reviewCandidates =
+                                                new java.util.LinkedHashSet<>(
+                                                    keptBeforeReview);
+                                            reviewCandidates.addAll(currentKept);
+                                            var keepReview =
+                                                nativeMergeWitness.recheckKeptLocal(
+                                                    reviewCandidates);
+                                            Set<String> keptAfter =
+                                                keepReview.complete()
+                                                    ? keepReview.remaining()
+                                                    : reviewCandidates;
+                                            ReceivePendingStore.replaceKeptLocalAfterFullMerge(
+                                                project, settings.address(), branch,
+                                                intermediaryIdentity, keptAfter);
+                                            BridgeActivator.getDefault().getLog()
+                                                .info("Native full EDT retained-local recheck: "
+                                                    + "candidates=" + reviewCandidates.size()
+                                                    + "; kept=" + keptAfter.size()
+                                                    + "; complete=" + keepReview.complete());
                                         }
 
                                         finishStage.set("чтение оставшихся изменений");

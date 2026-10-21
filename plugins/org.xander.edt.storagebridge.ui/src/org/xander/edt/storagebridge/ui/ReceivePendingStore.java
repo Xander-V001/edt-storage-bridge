@@ -234,7 +234,9 @@ public final class ReceivePendingStore {
                 node.remove(CHOICE_UNKNOWN + id);
             } else if (unclassified.contains(name)) {
                 node.put(CHOICE_UNKNOWN + id, name);
-                node.remove(KEPT_LOCAL + id);
+                // Missing/ambiguous observation cannot cancel an existing
+                // explicit KEEP_LOCAL decision, particularly during a full
+                // recheck. The next FULL merge can resolve it.
             } else {
                 node.remove(KEPT_LOCAL + id);
                 node.remove(CHOICE_UNKNOWN + id);
@@ -264,6 +266,37 @@ public final class ReceivePendingStore {
         return Set.copyOf(result);
     }
 
+    /**
+     * Replace ONLY the retained-local receipt after a successful native FULL
+     * merge and repository HEAD/Git/intermediary checks. The caller provides
+     * only identities known from previous kept-local receipts or the current
+     * incoming pending batch: never sweep every local-only difference into
+     * KEPT_LOCAL. UNKNOWN and PENDING are separate and remain untouched.
+     *
+     * Persist the surviving IDs first; on a crash a stale extra KEPT_LOCAL
+     * merely forces another full review instead of losing a retained choice.
+     */
+    public static void replaceKeptLocalAfterFullMerge(IProject project,
+            String repositoryAddress, String branch, String intermediaryIdentity,
+            Set<String> remaining) throws BackingStoreException {
+        Objects.requireNonNull(remaining);
+        Preferences node = node(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        Set<String> previous = keptLocal(project, repositoryAddress, branch,
+            intermediaryIdentity);
+        for (String identity : remaining) {
+            requireObject(identity);
+            node.put(KEPT_LOCAL + digest(identity), identity);
+        }
+        node.flush();
+        for (String identity : previous) {
+            if (!remaining.contains(identity)) {
+                node.remove(KEPT_LOCAL + digest(identity));
+            }
+        }
+        node.flush();
+    }
+
     /** Legacy no-keep convenience; only call when the user explicitly chose
      * zero locally retained changes, never based on serialized EDT equality. */
     public static void acknowledgeNativeReviewedScope(IProject project,
@@ -275,8 +308,8 @@ public final class ReceivePendingStore {
 
     /**
      * Actual locally-retained differences, separately persisted from PENDING.
-     * No further full review is forced just because a developer explicitly
-     * kept committed local changes on a previously reviewed remote revision.
+     * An intentional local keep forces the next incremental receive to
+     * propose a full native review, until that review removes the receipt.
      */
     public static Set<String> keptLocal(IProject project, String repositoryAddress,
             String branch, String intermediaryIdentity) throws BackingStoreException {
