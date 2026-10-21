@@ -93,6 +93,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
     private boolean mergeStarted;
     private boolean finishedCapture;
     private boolean sessionAvailable;
+    private boolean initialBaselineCaptured;
     private int deliveredEvents;
     private int failures;
     private final Map<Long, String> queued = new LinkedHashMap<>();
@@ -175,11 +176,13 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
         for (;;) {
             IComparisonSession current;
             Map<Long, String> batch;
+            boolean captureInitial;
             synchronized (this) {
                 if (closed || mergeStarted || session == null) return;
                 current = session;
                 batch = new LinkedHashMap<>(queued);
                 queued.clear();
+                captureInitial = !initialBaselineCaptured;
             }
             try {
                 // All node access is inside native EDT's own READ-ONLY task.
@@ -194,7 +197,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                                 throw new IllegalStateException("EDT comparison tree is writable");
                             }
                             Map<Long, NodeChoice> data = new HashMap<>();
-                            if (batch.isEmpty()) {
+                            if (captureInitial) {
                                 Collection<Long> preexisting =
                                     current.getNodesWithChangedMergeSettings();
                                 for (Long id : preexisting) {
@@ -213,6 +216,7 @@ public final class NativeEdtMergeChoiceObserver implements AutoCloseable {
                 synchronized (this) {
                     if (closed || mergeStarted) return;
                     observed.putAll(sampled);
+                    initialBaselineCaptured = true;
                     if (queued.isEmpty()) return;
                 }
             } catch (RuntimeException | LinkageError ex) {
