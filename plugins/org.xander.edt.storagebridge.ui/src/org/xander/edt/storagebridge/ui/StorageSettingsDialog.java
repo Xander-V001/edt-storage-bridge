@@ -436,7 +436,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         receive.setToolTipText("Выборочное получение с подтверждением "
             + "обновления базы, ручным выбором объектов и штатным сравнением EDT.");
         Button full = createButton(parent, FULL_REVIEW_BUTTON_ID,
-            "Полная сверка с хранилищем", false);
+            "Получить полную конфигурацию из хранилища", false);
         full.setEnabled(saved != null);
         full.setToolTipText("Повторно обновить базу-посредник, выгрузить ВСЮ "
             + "конфигурацию в XML и открыть полное сравнение EDT. "

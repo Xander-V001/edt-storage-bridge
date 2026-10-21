@@ -204,11 +204,19 @@ public final class OutgoingMetadataExportCoordinator {
                     Thread.currentThread().interrupt();
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
+                    // The outgoing stage has no side effects on 1C yet.
+                    // Record the exact *public interface* that EDT failed to
+                    // provide. No paths, object names, credentials or raw
+                    // third-party exception messages are put in events.log.
+                    String failureCode = ex.getClass().getSimpleName();
+                    if (ex instanceof EdtPublicServiceBridge.ExportServiceUnavailable missing) {
+                        failureCode = "SERVICE_UNAVAILABLE";
+                        failureCode += " service=" + missing.type();
+                    }
                     if (folder != null) {
                         try {
                             event(folder.resolve("events.log"), "FAILED",
-                                "phase=" + phase + " exception="
-                                + ex.getClass().getSimpleName());
+                                "phase=" + phase + " exception=" + failureCode);
                         } catch (IOException ignored) { /* workbench log follows */ }
                     }
                     Platform.getLog(OutgoingMetadataExportCoordinator.class)
@@ -223,6 +231,10 @@ public final class OutgoingMetadataExportCoordinator {
                             + "выбранных объектов. Помещение не запускалось."
                             + (diagnostic == null ? ""
                                 : "\nДиагностика: " + diagnostic)
+                            + (ex instanceof EdtPublicServiceBridge.ExportServiceUnavailable missing
+                                ? "\nСервис EDT не найден: " + missing.type()
+                                  + ". Запись в хранилище не начиналась."
+                                : "")
                             + "\nПодробная ошибка: Error Log EDT.");
                     });
                     return new Status(IStatus.ERROR, PLUGIN,

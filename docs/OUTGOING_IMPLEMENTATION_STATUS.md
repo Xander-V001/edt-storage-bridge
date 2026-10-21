@@ -67,3 +67,28 @@
 [ДОК] Платформа: [операции классического хранилища](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/), [XML/configuration](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.4._Configurations_and_extensions/). EDT: [IExportService](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/export/IExportService.html), [IExportOperationFactory](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html). Указанные публикации **не** проверяют автоматически SDK/платформу 2026.2 пользователя.
 
 [КОД] вышеназванные классы по HEAD `931c846`. [ОПЫТ] известные расхождения round-trip форм в прошлых тестах — повод для отказа, не нормализатор без доказательств. [?] Сквозной безопасный успешный Commit на текущем HEAD.
+
+
+## 21.10.2026: ServiceUnavailableException при предпросмотре
+
+Локальный `events.log`: `START git=9ead4bd9500246d3aea19eed154c5dcbb62b359a revision=29449`,
+`SCOPE owners=3 changed_resources=4 removed_owners=0`,
+`FAILED phase=NATIVE_EDT_EXPORT exception=ServiceUnavailableException`.
+Ни один из этапов `LOCK / LOAD / COMMIT` не запускался; сбой ещё до
+штатного XML-экспорта. В `EdtPublicServiceBridge.previewNativeMetadataExport`
+перед созданием `EdtNativeOutgoingExportService` запрашивались четыре OSGi
+сервиса через `ServiceAccess.get`; старый журнал не позволял установить
+конкретный отсутствующий интерфейс.
+
+Добавлена точечная диагностика `ExportServiceUnavailable`: логирует и
+показывает только имя неполученного **типа** службы, например
+`IExportOperationFactory`, если проблема именно в нём. Ошибку не заменяют
+ручным экспортом, самодельным DI-инжектором или обходом блокировок.
+Согласно EDT SDK 2025.2 `IExportOperationFactory` — интерфейс фабрики
+(документация не подтверждает его регистрацию в OSGi EDT 2026.2).
+Точное имя сервиса и совместимость штатного экспортёра потребуют
+повторного диагностического запуска; до этого помещение TEST-ONLY
+остаётся заблокировано.
+
+- SDK `IExportOperationFactory`: https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html
+- `ServiceAccess.get`: https://edt.1c.ru/dev/wiring/2.5/apidocs/com/_1c/g5/wiring/ServiceAccess.html

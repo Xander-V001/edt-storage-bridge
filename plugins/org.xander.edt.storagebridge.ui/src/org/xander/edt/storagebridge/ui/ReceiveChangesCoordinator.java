@@ -158,7 +158,7 @@ public final class ReceiveChangesCoordinator {
             return;
         }
         Job job = new Job((mode == ReceiveMode.FULL_REVIEW
-                ? "1С: Полная сверка с хранилищем — "
+                ? "1С: Получить полную конфигурацию из хранилища — "
                 : "1С: Получение изменений из хранилища — ")
                 + project.getName()) {
             @Override
@@ -418,7 +418,7 @@ public final class ReceiveChangesCoordinator {
                     && (!recovery || resumePrepared)
                     && !confirmOnUi(shell,
                         mode == ReceiveMode.FULL_REVIEW
-                            ? "Полная сверка с хранилищем"
+                            ? "Получить полную конфигурацию из хранилища"
                             : "Получить изменения из хранилища",
                         ReceiveConfirmationTexts.freshReceive(
                             settings.address(), settings.infobaseAddress(),
@@ -846,7 +846,7 @@ public final class ReceiveChangesCoordinator {
                     + "обработанная версия не может быть подтверждена "
                     + "по сохранённой исходной точке.\n"
                     + "Для установления подтверждённой базы выполните "
-                    + "«Полную сверку с хранилищем».");
+                    + "«Получить полную конфигурацию из хранилища».");
                 return;
             }
             // Native 1C decides changes; full review is an explicit mode.
@@ -866,7 +866,7 @@ public final class ReceiveChangesCoordinator {
                     + "подготовки сравнения EDT. База-посредник второй "
                     + "раз из хранилища не обновляется.\n"
                     + "Отмена сохранит все изменения в журнале.",
-                    "Полная сверка");
+                    "Полное сравнение");
                 if (!accept) {
                     return;
                 }
@@ -1062,7 +1062,7 @@ public final class ReceiveChangesCoordinator {
                         "EDT не смогла импортировать штатную выборочную XML-выгрузку. "
                         + "Ожидающие изменения сохранены. "
                         + "Исправьте причину импорта либо отдельно запустите "
-                        + "«Полную сверку с хранилищем».", failure);
+                        + "«Получить полную конфигурацию из хранилища».", failure);
                 }
             });
             // Keep staged native XML until EDT's merge reaches a terminal
@@ -2005,7 +2005,7 @@ public final class ReceiveChangesCoordinator {
                 + " Рабочий проект не менялся; ожидающие изменения сохранены. "
                 + (nativeFailure.fullReview()
                     ? "Проверьте ошибки импортёра EDT."
-                    : "Можно повторить операцию через «Полная сверка с хранилищем».");
+                    : "Можно повторить операцию через «Получить полную конфигурацию из хранилища».");
         }
         if (failure instanceof EdtSelectiveReviewService.MissingEmbeddedLanguagesException mismatch) {
             return "Импортированная Configuration.mdo не содержит "

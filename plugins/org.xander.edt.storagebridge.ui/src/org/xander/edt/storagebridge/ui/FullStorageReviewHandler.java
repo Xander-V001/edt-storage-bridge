@@ -24,7 +24,7 @@ public final class FullStorageReviewHandler extends AbstractHandler {
         IProject project = InspectProjectHandler.findProject(selection);
         Shell shell = HandlerUtil.getActiveShell(event);
         if (project == null || !project.isAccessible()) {
-            MessageDialog.openInformation(shell, "Полная сверка с хранилищем",
+            MessageDialog.openInformation(shell, "Получить полную конфигурацию из хранилища",
                 "Выберите открытый проект EDT в Навигаторе.");
             return null;
         }
@@ -33,7 +33,7 @@ public final class FullStorageReviewHandler extends AbstractHandler {
             if (settings.address().isBlank()
                     || settings.infobaseAddress().isBlank()
                     || settings.platformExecutable().isBlank()) {
-                MessageDialog.openInformation(shell, "Полная сверка с хранилищем",
+                MessageDialog.openInformation(shell, "Получить полную конфигурацию из хранилища",
                     "Сначала заполните и сохраните подключение через "
                     + "«Работа с хранилищем».");
                 return null;
@@ -41,7 +41,7 @@ public final class FullStorageReviewHandler extends AbstractHandler {
             ReceiveChangesCoordinator.receive(shell, project, settings,
                 ReceiveChangesCoordinator.ReceiveMode.FULL_REVIEW);
         } catch (StorageException | RuntimeException ex) {
-            MessageDialog.openError(shell, "Полная сверка с хранилищем",
+            MessageDialog.openError(shell, "Получить полную конфигурацию из хранилища",
                 "Не удалось прочитать настройки проекта из Secure Storage EDT.");
         }
         return null;

@@ -51,12 +51,39 @@ public final class EdtPublicServiceBridge {
     public static EdtNativeOutgoingExportService.MetadataPreview
             previewNativeMetadataExport(IProject project, List<String> owners,
             Path target, IProgressMonitor monitor) throws IOException {
+        // Resolve each EDT OSGi service independently. Older code obtained
+        // four services inside one constructor call, so ServiceUnavailableException
+        // could not identify WHICH service blocked outgoing export. This is
+        // especially important for IExportOperationFactory: the SDK documents
+        // it as an export factory, not proof of OSGi registration in EDT 2026.2.
+        // Never create an independent injector or silently switch exporters.
+        var projects = requiredExportService(IV8ProjectManager.class);
+        var models = requiredExportService(IBmModelManager.class);
+        var paths = requiredExportService(IQualifiedNameFilePathConverter.class);
+        var exports = requiredExportService(IExportOperationFactory.class);
         return new EdtNativeOutgoingExportService(
-            ServiceAccess.get(IV8ProjectManager.class),
-            ServiceAccess.get(IBmModelManager.class),
-            ServiceAccess.get(IQualifiedNameFilePathConverter.class),
-            ServiceAccess.get(IExportOperationFactory.class))
+            projects, models, paths, exports)
             .previewMetadataOwners(project, owners, target, monitor);
+    }
+
+    public static final class ExportServiceUnavailable extends IOException {
+        private final String type;
+
+        private ExportServiceUnavailable(String type, RuntimeException cause) {
+            super("Native EDT export service unavailable: " + type, cause);
+            this.type = type;
+        }
+
+        public String type() { return type; }
+    }
+
+    private static <T> T requiredExportService(Class<T> type) throws IOException {
+        try {
+            return ServiceAccess.get(type);
+        } catch (com._1c.g5.wiring.ServiceUnavailableException ex) {
+            // No third-party exception text or model identity in diagnostic file.
+            throw new ExportServiceUnavailable(type.getSimpleName(), ex);
+        }
     }
 
     /** Prepare external comparison without writing to the open EDT project. */
