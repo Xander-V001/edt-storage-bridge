@@ -26,6 +26,7 @@ import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.jface.window.Window;
 import org.eclipse.ui.dialogs.ListSelectionDialog;
+import org.eclipse.ui.dialogs.ListDialog;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorPart;
@@ -1518,6 +1519,20 @@ public final class ReceiveChangesCoordinator {
                                         if (reason != null) {
                                             report.append("\n").append(reason);
                                         }
+                                        // TEMPORARY NATIVE EVENT TRACE, not a
+                                        // second choice/acknowledgement step:
+                                        // the old ListSelectionDialog remains
+                                        // disabled and unchanged below. This
+                                        // scrollable read-only list lets us
+                                        // verify what EDT actually emitted per
+                                        // node and which flags were captured.
+                                        // The dialog cannot influence REVIEWED,
+                                        // PENDING, KEPT_LOCAL or native Merge.
+                                        if (!effectiveFull && nativeFinished) {
+                                            showObservedEdtChoicesOnUi(shell,
+                                                nativeMergeWitness.choiceRows(2000),
+                                                nativeMergeWitness.choiceSummary());
+                                        }
                                         informationOnUi(shell, "Результат объединения EDT",
                                             report.toString());
                                         return Status.OK_STATUS;
@@ -1679,6 +1694,34 @@ public final class ReceiveChangesCoordinator {
      * null = Cancel: keep every PENDING and DO NOT advance REVIEWED.
      * This UI is local and does not send metadata names to logs or servers.
      */
+    /**
+     * TEMPORARY DEBUG VIEW (2026-10-21): display the *actual observed*
+     * IComparisonSession node events, current native checkbox states and
+     * merge rules; never ask the developer to choose objects a second time.
+     * This dialog is purely informational. A native tree event can be EDT's
+     * own recalculation rather than a user click. Initial states and the last
+     * click before Merge may be missing, so the trace NEVER proves APPLIED.
+     */
+    private static void showObservedEdtChoicesOnUi(Shell shell,
+            List<String> observedRows, String summary) throws Exception {
+        uiCall(shell, active -> {
+            List<String> rows = observedRows.isEmpty()
+                ? List.of("EDT не передала ни одного пригодного изменения "
+                    + "узлов. Проверить подписку и статус сессии.")
+                : observedRows;
+            var dialog = new ListDialog(active);
+            dialog.setTitle("Выбор EDT — перехваченные события (только просмотр)");
+            dialog.setMessage("Флаги и правила взяты из штатной модели EDT. "
+                + "Это НЕ повторное подтверждение и НЕ доказательство "
+                + "фактического принятия. " + summary);
+            dialog.setContentProvider(ArrayContentProvider.getInstance());
+            dialog.setLabelProvider(new LabelProvider());
+            dialog.setInput(rows);
+            dialog.open();
+            return null;
+        });
+    }
+
     private static Set<String> chooseKeptLocalOnUi(Shell shell,
             Set<String> presented) throws Exception {
         return uiCall(shell, active -> {
