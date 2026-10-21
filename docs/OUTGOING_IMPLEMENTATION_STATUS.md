@@ -1,6 +1,6 @@
 # Помещение изменений EDT → классическое хранилище 1С — код и ограничения
 
-**Действующий срез:** 20.10.2026, `feature/edt-2026.2-integration`, HEAD `931c846`. **TEST-ONLY**: здесь описана реально написанная опасная операция. Работу в установленной EDT и на тестовом хранилище не доказали. Никаких запусков в рабочую ИБ.
+**Срез реализации:** 21.10.2026, `feature/edt-2026.2-integration`, исходники `4fab919` до документационных изменений. **TEST-ONLY**: здесь описана реально написанная опасная операция. Работу в установленной EDT и на тестовом хранилище не доказали. Никаких запусков в рабочую ИБ.
 
 ## Что фактически существует [КОД]
 
@@ -42,6 +42,12 @@
 - `OutgoingDesignerRunner` запускает `ProcessBuilder`, не shell, ограничивает время и объём логов, маскирует пароли/адреса в сохраняемых копиях. Native stage может изменить базу ещё до исключения/отмены.
 - Нет автоматических `-force`, `UnLock -force`, сбросов Git или повторов COMMIT.
 
+## Использование решений наблюдателя при помещении
+
+**[КОД] Сейчас не используется.** При получении `NativeEdtMergeChoiceObserver` пишет выбранное локальное состояние через `ReceivePendingStore` (решение `KEPT_LOCAL` либо принятие). Но `OutgoingReadinessCoordinator`, `OutgoingReadOnlyComparisonCoordinator`, `OutgoingWholeObjectWriteCoordinator` читают `REVIEWED` и `PENDING`, **не читают `KEPT_LOCAL`**. Кандидаты к помещению определяются независимо через Git/native read-only EDT comparison. Пометка о локально оставленном изменении сама по себе не добавляет объект или конкретную процедуру в публикацию.
+
+**Связь со следующим получением:** `ReceiveChangesCoordinator` также не возвращает `KEPT_LOCAL` в новый `-getChanges` scope. Если старое изменение оставили локально и в хранилище объект больше не меняли, быстрый приём не обязан предложить его снова. Полная сверка делает глобальный native EDT compare с текущим хранилищем. Сохранённая отметка не управляет этим выбором автоматически.
+
 ## Неустранённые критические пробелы
 
 **Главный стоп-фактор [КОД]:** `OutgoingWholeObjectWriteCoordinator` **не выполняет независимую постзагрузочную проверку содержимого объектов после LOAD перед COMMIT**, хотя старые черновики утверждали обратное. Он сверяет HEAD и Git, затем вызывает COMMIT. Нет сравнения фактически загруженных файлов или контроля `ConfigDumpInfo` вне выбранных владельцев на этой стадии. Нельзя считать механизм безопасным только из-за успешного exit code процесса.
@@ -66,7 +72,7 @@
 
 [ДОК] Платформа: [операции классического хранилища](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.15._Configuration_repository_operations/), [XML/configuration](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Administrator_Guides/1C_Enterprise_8.3.27_Administrator_Guide/Appendix_7._Startup_command-line_options_of_1C_Enterprise/7.4._Running_Designer_in_batch_mode/7.4.4._Configurations_and_extensions/). EDT: [IExportService](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/export/IExportService.html), [IExportOperationFactory](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html). Указанные публикации **не** проверяют автоматически SDK/платформу 2026.2 пользователя.
 
-[КОД] вышеназванные классы по HEAD `931c846`. [ОПЫТ] известные расхождения round-trip форм в прошлых тестах — повод для отказа, не нормализатор без доказательств. [?] Сквозной безопасный успешный Commit на текущем HEAD.
+[КОД] вышеназванные классы по исходникам `4fab919`. [ОПЫТ] известные расхождения round-trip форм в прошлых тестах — повод для отказа, не нормализатор без доказательств. [?] Сквозной безопасный успешный Commit на текущем HEAD.
 
 
 ## 21.10.2026: ServiceUnavailableException при предпросмотре
