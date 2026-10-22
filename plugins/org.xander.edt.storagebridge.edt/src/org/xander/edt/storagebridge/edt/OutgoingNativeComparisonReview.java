@@ -124,12 +124,31 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
                                     boolean differs = flags != null
                                         && flags.hasDiffsMainOther();
                                     String identity = item.identity();
-                                    if (node instanceof TopComparisonNode top) {
-                                        String symlink = top.getMainSymlink();
+                                    // The synthetic RootComparisonNode may
+                                    // have "Configuration" as a symlink, but
+                                    // that does NOT mean a metadata-root
+                                    // property was changed. Never inherit it
+                                    // into child nodes as a publish candidate.
+                                    if (node != root && node instanceof TopComparisonNode top) {
+                                        String main = top.getMainSymlink();
+                                        String other = top.getOtherSymlink();
+                                        String symlink = main;
                                         if (symlink == null || symlink.isBlank()) {
-                                            symlink = top.getOtherSymlink();
+                                            symlink = other;
                                         }
                                         if (symlink != null && !symlink.isBlank()) {
+                                            String[] parts = symlink.split("\\.");
+                                            // A top-level addition/deletion
+                                            // needs native Configuration
+                                            // membership and lock semantics.
+                                            // Never misclassify it as a regular
+                                            // modified object.
+                                            if (parts.length <= 2
+                                                    && (main == null || main.isBlank()
+                                                        || other == null || other.isBlank())) {
+                                                throw new IllegalStateException(
+                                                    "Native one-sided owner cannot use modified-only publish");
+                                            }
                                             identity = symlink;
                                         }
                                     }
