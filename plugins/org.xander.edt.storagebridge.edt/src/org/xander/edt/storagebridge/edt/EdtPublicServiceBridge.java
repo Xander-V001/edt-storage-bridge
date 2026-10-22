@@ -6,6 +6,10 @@ import java.util.List;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleException;
+import org.osgi.framework.FrameworkUtil;
+import com.google.inject.Injector;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.PartInitException;
 
@@ -51,16 +55,14 @@ public final class EdtPublicServiceBridge {
     public static EdtNativeOutgoingExportService.MetadataPreview
             previewNativeMetadataExport(IProject project, List<String> owners,
             Path target, IProgressMonitor monitor) throws IOException {
-        // Resolve each EDT OSGi service independently. Older code obtained
-        // four services inside one constructor call, so ServiceUnavailableException
-        // could not identify WHICH service blocked outgoing export. This is
-        // especially important for IExportOperationFactory: the SDK documents
-        // it as an export factory, not proof of OSGi registration in EDT 2026.2.
-        // Never create an independent injector or silently switch exporters.
+        // Project/model/path services are public OSGi services. Export's
+        // IExportOperationFactory is different: it is wired by the native
+        // EDT export bundle's Guice injector, not published via ServiceAccess.
+        // Never create a second injector or fall back to an unrelated exporter.
         var projects = requiredExportService(IV8ProjectManager.class);
         var models = requiredExportService(IBmModelManager.class);
         var paths = requiredExportService(IQualifiedNameFilePathConverter.class);
-        var exports = requiredExportService(IExportOperationFactory.class);
+        var exports = nativeExportFactory();
         return new EdtNativeOutgoingExportService(
             projects, models, paths, exports)
             .previewMetadataOwners(project, owners, target, monitor);
@@ -69,7 +71,7 @@ public final class EdtPublicServiceBridge {
     public static final class ExportServiceUnavailable extends IOException {
         private final String type;
 
-        private ExportServiceUnavailable(String type, RuntimeException cause) {
+        private ExportServiceUnavailable(String type, Throwable cause) {
             super("Native EDT export service unavailable: " + type, cause);
             this.type = type;
         }
@@ -83,6 +85,56 @@ public final class EdtPublicServiceBridge {
         } catch (com._1c.g5.wiring.ServiceUnavailableException ex) {
             // No third-party exception text or model identity in diagnostic file.
             throw new ExportServiceUnavailable(type.getSimpleName(), ex);
+        }
+    }
+
+    /**
+     * Resolve the factory from EDT's OWN export plug-in, whose Injector holds
+     * the ExportRuntimeModule bindings and native export dependencies.
+     *
+     * ExportPlugin resides in an internal OSGi package which is not part of
+     * EDT's guaranteed package-export contract. Loading the class using the
+     * bundle that owns the PUBLIC IExportOperationFactory API allows us to
+     * invoke its documented public getDefault()/getInjector() methods without
+     * adding an unsatisfiable Import-Package for a private implementation.
+     *
+     * This does not instantiate a new injector, activate untrusted extensions,
+     * reflect over the BM model or run a separate export strategy. If the
+     * native export bundle cannot provide its factory, fail BEFORE touching 1C.
+     */
+    private static IExportOperationFactory nativeExportFactory()
+            throws ExportServiceUnavailable {
+        try {
+            Bundle exporter = FrameworkUtil.getBundle(IExportOperationFactory.class);
+            if (exporter == null) {
+                throw new IllegalStateException("EDT export API has no OSGi bundle");
+            }
+            // A package import alone need not start a lazily activated bundle.
+            // Start the existing bundle, do not create a separate Guice injector.
+            if (exporter.getState() != Bundle.ACTIVE) {
+                exporter.start(Bundle.START_TRANSIENT);
+            }
+            Class<?> pluginClass = exporter.loadClass(
+                "com._1c.g5.v8.dt.internal.export.ExportPlugin");
+            Object plugin = pluginClass.getMethod("getDefault").invoke(null);
+            if (plugin == null) {
+                throw new IllegalStateException("Native export bundle not activated");
+            }
+            Object supplied = pluginClass.getMethod("getInjector").invoke(plugin);
+            if (!(supplied instanceof Injector injector)) {
+                throw new IllegalStateException("Native export Guice injector unavailable");
+            }
+            // Guice's binding is owned and managed by EDT's export plug-in.
+            IExportOperationFactory factory =
+                injector.getInstance(IExportOperationFactory.class);
+            if (factory == null) {
+                throw new IllegalStateException("Native export factory unavailable");
+            }
+            return factory;
+        } catch (ReflectiveOperationException | BundleException
+                | RuntimeException | LinkageError ex) {
+            throw new ExportServiceUnavailable(
+                IExportOperationFactory.class.getSimpleName(), ex);
         }
     }
 

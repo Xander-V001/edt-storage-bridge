@@ -28,5 +28,6 @@ Import-Package: com._1c.g5.v8.bm.core,
  org.eclipse.emf.ecore,
  org.eclipse.swt.widgets,
  org.eclipse.ui,
- org.eclipse.xtext.naming
+ org.eclipse.xtext.naming,
+ org.osgi.framework
 Export-Package: org.xander.edt.storagebridge.edt
