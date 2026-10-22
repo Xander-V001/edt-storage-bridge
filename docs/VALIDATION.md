@@ -156,3 +156,34 @@
 `changed_resources=3`, `service=IExportOperationFactory`.
 Сохранённый исходник — исправление контракта получения фабрики, **не
 утверждение о пройденном испытании**.
+
+
+## Исходящее помещение — без побайтового сравнения [КОД; НЕ ИСПЫТАНО]
+
+- [x] В `OutgoingReadOnlyComparisonCoordinator` отсутствуют вызовы
+  `OutgoingDeltaScanner.compare`, `OutgoingDifferenceSummary.from`
+  и `OutgoingMetadataObjectPlan.fromDelta`. Предварительное окно
+  «Обнаружены кандидаты ...» больше не показывается.
+- [x] Новый наблюдатель подписан **до** открытия native readonly editor;
+  только после `COMPARISON_PROCESS_FINISHED` читает native
+  `IComparisonSession`/узлы и `ComparisonFlags.hasDiffsMainOther()`.
+- [x] Неизвестный native symlink, неподтверждённый FQN, недоступная
+  сессия и раннее закрытие блокируют отправку без резервной эвристики.
+- [ ] В EDT 2026.2 при одной изменённой строке формы документа
+  `Выплата` после закрытия сравнения плагин предлагает **только
+  `Documents/Выплата`**; `Configuration` и
+  `МиграцияПриложений` не должны попадать в область.
+- [ ] При нуле native differences плагин ничего не экспортирует.
+- [ ] Для других типов метаданных native FQN должен разрешаться
+  через `IQualifiedNameFilePathConverter` без вручную составленных
+  сопоставлений типов.
+- [ ] Проверить нагрузку и полноту дерева после native
+  `COMPARISON_PROCESS_FINISHED`: скрытые/ленивые узлы
+  нельзя терять; ошибки загрузки должны останавливать экспорт.
+- [ ] Фиксация native области в ручном и автоматическом пути.
+- [ ] Автоматическое помещение оставить **TEST-ONLY** пока нет
+  независимой проверки после `LOAD`.
+- [ ] `events(2).log` подтверждает повторный
+  `SERVICE_UNAVAILABLE service=IExportOperationFactory` в старом
+  трёхобъектном preview. Нужен полный Error Log с cause для решения
+  ошибки заводского экспорта; нового native-пути лог ещё не проверяет.

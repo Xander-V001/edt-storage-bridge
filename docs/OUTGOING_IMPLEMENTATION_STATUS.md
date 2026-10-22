@@ -5,7 +5,7 @@
 ## Что фактически существует [КОД]
 
 1. `OutgoingReadinessHandler` / `OutgoingReadinessCoordinator`: проверка Git, `ReceiveRevisionStore.reviewed`, `ReceivePendingStore`, текущего HEAD хранилища; при несовпадении предлагает пройти получение. Проверка — **не** автоматическое разрешение на помещение.
-2. `OutgoingReadOnlyComparisonCoordinator`: сравнение существующего проекта EDT с полученной из текущего посредника временной EDT-моделью в **неизменяющем** режиме. `OutgoingDeltaScanner` группирует отличия как кандидатов; `OutgoingMetadataObjectPlan` сопоставляет их с верхними владельцами, включая вложенные ресурсы, новые и удалённые метаданные.
+2. `OutgoingReadOnlyComparisonCoordinator`: сравнение проекта EDT с временной EDT-моделью посредника в **неизменяющем** режиме. **После исправления 22.10.2026:** прежний файловый отбор `OutgoingDeltaScanner.compare()`, `OutgoingDifferenceSummary` и предварительное окно **исключены из пути помещения**. Перед открытием редактора подписываемся на штатный `IComparisonManager`, на `COMPARISON_PROCESS_FINISHED` читаем `IComparisonSession.getRootNode()` через `runComparisonTreeReadonlyTask`. Различия определяет **только `ComparisonFlags.hasDiffsMainOther()`**. Нативные идентификаторы преобразуются публичным `IQualifiedNameFilePathConverter`. Отдельная фабрика `OutgoingMetadataObjectPlan.fromNativeChangedOwners` получает лишь подтверждённые объекты; никакой `Files.mismatch()` не участвует.
 3. `OutgoingMetadataExportCoordinator.preview`: после review разрешает имена через штатные EDT-сервисы и вызывает `EdtPublicServiceBridge.previewNativeMetadataExport` / `EdtNativeOutgoingExportService` / `IExportOperationFactory` + `IExportStrategy.DEFAULT`. Экспортирует целые владельцы вместе с зависимыми файлами в отдельный каталог. Превью и XML **сами по себе не доказывают** допустимость Load/Commit.
 4. `OutgoingWholeObjectWritePlan.qualify`: сверяет exportable owners с native names и реальными файлами, требует корневые `<owner>.xml`. Для добавления/удаления включает `Configuration/Configuration` → `Configuration.xml`; **раздельно** формирует Lock scope и Commit scope. При удалении `Configuration` захватывается с `includeChildObjects=true`, что требует особой квалификации риска.
 5. **Только после двух явных подтверждений** (ввод `ТЕСТ` и отдельное подтверждение записи) `OutgoingWholeObjectWriteCoordinator.confirmTestWrite` создаёт журнал, повторно экспортирует, проверяет Git/HEAD/версию посредника и выполняет:
@@ -190,3 +190,49 @@ EDT 2026.2 runtime этого изменения ещё не подтвержд�
 - [IExportOperationFactory](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html)
 - [ExportPlugin.getInjector()](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/internal/export/ExportPlugin.html)
 - [Публичные сервисы EDT](https://edt.1c.ru/dev/ru/docs/plugins/dev/public-services/)
+
+
+## Исправление 22.10.2026: отмена побайтового отбора при помещении
+
+**[ОПЫТ]** После однострочной правки `Документ.Выплата.ФормаДокумента`
+наш старый предварительный список содержал также
+`Configuration/Configuration` и `ExchangePlans/МиграцияПриложений`.
+Штатное окно EDT показывало **только** правку формы.
+Причина — наш старый `OutgoingDeltaScanner`: несходство сериализованных
+файлов выдавалось за кандидатов на помещение.
+
+**[КОД]** Файловая сверка и её предварительный список теперь вообще
+не вызываются в `OutgoingReadOnlyComparisonCoordinator`. Никаких
+`Files.mismatch()`, собственного XML/BSL-diff, Git diff или
+запасного списка владельцев для публикации больше нет. Путь:
+1. Проект и источник приводятся к двум моделям EDT тем же штатным импортом.
+2. Открывается только штатный редактор сравнения EDT **без Merge**.
+3. `OutgoingNativeComparisonReview` заранее подписан на
+   `IComparisonManager`, собирает данные из штатного
+   `IComparisonSession` на `COMPARISON_PROCESS_FINISHED`.
+   Чтение дерева делается внутри read-only BM task: только native
+   `ComparisonFlags.hasDiffsMainOther()` и native symlink.
+4. При закрытии штатного окна имеющийся снимок проверяется;
+   `IQualifiedNameFilePathConverter` разрешает native FQN в
+   реальный descriptor EDT, затем строится область экспорта.
+5. В ручную и автоматическую ветку отправляется **один и тот же**
+   семантический список; если native сессия недоступна/снимок
+   неполон/есть неподдержанные новые или удалённые объекты —
+   **помещение запрещено** (никаких байтовых fallback).
+6. Старый `OutgoingDeltaScanner` и его unit-тесты пока оставлены
+   как неиспользуемое legacy-ядро, чтобы не ломать старые тесты;
+   это **не часть маршрута помещения**.
+
+**[?]** Новый snapshot API и чтение коллекции `ComparisonNode.getChildren()`
+не проверены на точном EDT 2026.2.1.3; без сборки/интерактивной проверки
+это нельзя считать гарантированно рабочим механизмом.
+
+**Новый лог `events(2).log`:** 29458, git
+`2c758a8df814ee94d44325d522069528fe17c0d5`,
+`owners=3`, `changed_resources=3`,
+`FAILED phase=NATIVE_EDT_EXPORT exception=SERVICE_UNAVAILABLE
+service=IExportOperationFactory`. Это ещё **старая трёхобъектная область**,
+а не новый native result. Файл не содержит Java stack trace, поэтому
+не позволяет установить, почему получение фабрики экспорта всё ещё не
+удалось (старая установленная сборка или новая ошибка Guice/OSGi).
+Экспорт и помещение не произошли.

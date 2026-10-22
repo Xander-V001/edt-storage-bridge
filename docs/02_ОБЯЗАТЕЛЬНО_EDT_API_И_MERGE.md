@@ -234,3 +234,20 @@ ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
   https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/internal/import_/xml/ImportXmlService.html
 
 **[?] ВАЖНО:** Javadoc 2024.2/2025.2 — первичный ориентир на имена и контракт, но **не официальная верификация EDT 2026.2**. Проверять именно бинарники/SDK EDT 2026.2 перед объявлением полной совместимости.
+
+
+### Исходящее сравнение: штатное EDT, не `Files.mismatch` [КОД, НЕ ИСПЫТАНО]
+
+При `COMPARISON_PROCESS_FINISHED` из `IComparisonSession` получаем
+`getRootNode`, читаем `ComparisonNode.getChildren`,
+`getComparisonFlags().hasDiffsMainOther()` внутри
+`runComparisonTreeReadonlyTask`, определяем native symlink через
+`TopComparisonNode.getMainSymlink`. Возвращаем **только
+подтверждённые нативные идентификаторы**; дескриптор разрешает
+`IQualifiedNameFilePathConverter.getFilePath` и `getFqn`.
+Никакие различия сохранённых `.mdo/.bsl/.distr` не участвуют
+в формировании Lock/Load/Commit. Поддержка отсутствующих в активном
+EDT новых/удалённых владельцев пока запрещена до реализации
+полного native one-side контракта.
+Документация EDT: [IComparisonSession](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/compare/core/IComparisonSession.html),
+[ComparisonNode](https://edt.1c.ru/dev/edt/2025.2/apidocs/com/_1c/g5/v8/dt/compare/model/ComparisonNode.html).

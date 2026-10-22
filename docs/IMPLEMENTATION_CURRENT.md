@@ -89,3 +89,30 @@
 ## 22.10.2026 — исправление API фабрики исходящего экспорта
 
 **[КОД]** В `EdtPublicServiceBridge` устранён неверный вызов `ServiceAccess.get(IExportOperationFactory.class)` после фактической ошибки `SERVICE_UNAVAILABLE service=IExportOperationFactory`. Фабрика теперь запрашивается через собственный Guice-инжектор штатного экспортного бандла EDT (`ExportPlugin`, через `Bundle.loadClass` без импорта внутреннего пакета). Другие публичные сервисы EDT по-прежнему выдаются `ServiceAccess`; ручное и автоматическое помещение используют общий исправленный экспортёр. **Сборка и выполнение в установленной EDT не проверены**; реальные записи в хранилище не запускались. Автоматический Commit остаётся TEST-ONLY из-за неподтверждённой пост-LOAD проверки. Подробности — [OUTGOING_IMPLEMENTATION_STATUS.md](OUTGOING_IMPLEMENTATION_STATUS.md).
+
+
+## 22.10.2026 — исходящее помещение только по модели сравнения EDT
+
+**[ОПЫТ]** Старый сканер файлов ошибочно показывал
+`Configuration/Configuration` и
+`ExchangePlans/МиграцияПриложений` помимо настоящего изменения
+формы документа `Выплата`. Сам EDT editor показывал только форму.
+
+**[КОД]** Удалены из рабочего пути `OutgoingDeltaScanner.compare`,
+`OutgoingDifferenceSummary.from`, `OutgoingMetadataObjectPlan.fromDelta`
+и промежуточный диалог «Отличия EDT и хранилища — предварительный список».
+Теперь в EDT-бандле `OutgoingNativeComparisonReview` подписывается
+на штатный `IComparisonManager`, захватывает read-only узлы
+`IComparisonSession` и передаёт native FQN.
+`EdtPublicServiceBridge.outgoingOwnersFromNative` разрешает их
+через штатный `IQualifiedNameFilePathConverter`;
+`OutgoingMetadataObjectPlan.fromNativeChangedOwners` строит
+**единственную** область помещения для обоих маршрутов.
+При неизвестном объекте или неполном снимке результат
+**не подменяется** побайтовым сравнением. Старые классы сравнения
+файлов пока в репозитории только для legacy-тестов.
+
+**[?]** Новое чтение результатов штатного сравнения не собрано и не
+проверено в установленной EDT. Новая попытка всё ещё может прерваться
+на `IExportOperationFactory`; сообщение из трёх строк
+`events(2).log` не раскрывает внутренний cause.
