@@ -166,6 +166,80 @@ public final class EdtPublicServiceBridge {
             project.getLocation().toFile().toPath(), missingFromRepository);
     }
 
+    /**
+     * Observe the existing EDT read-only comparison. The native comparison
+     * session, not a second file/tree/text differ, defines outgoing scope.
+     */
+    public static OutgoingNativeComparisonReview observeOutgoingNativeComparison(
+            CompareMergeProcessDescriptor descriptor) throws IOException {
+        try {
+            return new OutgoingNativeComparisonReview(
+                ServiceAccess.get(IComparisonManager.class),
+                descriptor.getHandle());
+        } catch (RuntimeException | LinkageError ex) {
+            throw new IOException("Native EDT comparison manager unavailable", ex);
+        }
+    }
+
+    /**
+     * Convert native symbolic identities into EDT top-level owner paths via
+     * EDT's own public qualified-name/file-path converter. No guesses about
+     * the object's Russian or English metadata TYPE or byte content.
+     *
+     * New/deleted owners need separate native object-scope semantics and
+     * must fail closed rather than silently include Configuration.
+     */
+    public static java.util.List<String> outgoingOwnersFromNative(
+            IProject project, List<String> nativeIdentities) throws IOException {
+        if (nativeIdentities == null || project == null
+                || !project.isAccessible()) {
+            throw new IOException("Native outgoing scope unavailable");
+        }
+        var converter = ServiceAccess.get(IQualifiedNameFilePathConverter.class);
+        var owners = new java.util.LinkedHashSet<String>();
+        for (String symlink : nativeIdentities) {
+            if (symlink == null || !symlink.matches(
+                    "[\\p{L}_][\\p{L}\\p{N}_]*(\\.[\\p{L}_][\\p{L}\\p{N}_]*)*")) {
+                throw new IOException("Native comparison returned invalid symlink");
+            }
+            String[] segments = symlink.split("\\.");
+            // Top configuration is a special single-segment native owner.
+            String nativeTop = segments.length < 2
+                ? segments[0] : segments[0] + "." + segments[1];
+            String filePath = converter.getFilePath(nativeTop);
+            if (filePath == null || filePath.isBlank()) {
+                throw new IOException("Cannot resolve changed native metadata object");
+            }
+            String normalized = filePath.replace('\\', '/');
+            if (normalized.startsWith("/")) normalized = normalized.substring(1);
+            if (!normalized.startsWith("src/")) normalized = "src/" + normalized;
+            java.nio.file.Path candidate = java.nio.file.Path.of(normalized).normalize();
+            if (candidate.isAbsolute() || candidate.startsWith("..")
+                    || !candidate.toString().replace('\\', '/').equals(normalized)
+                    || !(normalized.endsWith(".mdo")
+                        || normalized.equals("src/Configuration/Configuration.distr"))) {
+                throw new IOException("Native metadata owner path is not a safe descriptor");
+            }
+            var descriptor = project.getFile(
+                new org.eclipse.core.runtime.Path(normalized));
+            if (!descriptor.exists() || descriptor.isLinked()) {
+                throw new IOException(
+                    "Native changed metadata missing in EDT project: " + nativeTop
+                    + " (new/deleted objects require separate handling)");
+            }
+            var validated = converter.getFqn(descriptor);
+            if (validated == null || !nativeTop.equals(validated.toString())) {
+                throw new IOException("Native metadata symlink/descriptor mismatch");
+            }
+            String owner = org.xander.edt.storagebridge.core.EdtPathObjectMapper
+                .topObject(candidate);
+            if (owner == null || !owners.add(owner) && owners.size() > 10_000) {
+                throw new IOException("Native metadata owner classification failed");
+            }
+        }
+        return java.util.List.copyOf(owners);
+    }
+
     /** Read-only native comparison for outgoing review; merge disabled. */
     public static IEditorPart openOutgoingReadOnlyEditor(
             CompareMergeProcessDescriptor descriptor)
