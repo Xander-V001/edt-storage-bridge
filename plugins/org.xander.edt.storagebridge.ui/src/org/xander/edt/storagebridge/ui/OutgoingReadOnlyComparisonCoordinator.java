@@ -26,9 +26,7 @@ import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
-import org.xander.edt.storagebridge.core.OutgoingDeltaScanner;
-import org.xander.edt.storagebridge.core.OutgoingDifferenceSummary;
-import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
+ import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
@@ -161,42 +159,14 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
 
-                    // Compare the actual converted repository EDT tree with
-                    // the real project. This finds candidates automatically
-                    // across ALL object/resource types; Git commit history
-                    // or manually selected individual files are not required.
-                    // A file change is NOT proof of a semantic EDT change
-                    // and NEVER permits Lock/Load/Commit by itself.
-                    monitor.subTask("Поиск отличий файлов EDT и хранилища");
-                    if (project.getLocation() == null) {
-                        throw new IOException("EDT project has no local directory");
-                    }
-                    var delta = OutgoingDeltaScanner.compare(
-                        converted, Path.of(project.getLocation().toOSString()));
-                    var summary = OutgoingDifferenceSummary.from(delta);
-                    var metadataPlan = OutgoingMetadataObjectPlan.fromDelta(delta);
+                    // The NATIVE EDT comparison is the only authority for
+                    // outgoing metadata differences. Never compare source
+                    // bytes or turn .mdo/.distr serialization into outgoing
+                    // objects. Subscribe BEFORE opening the native editor.
                     GitReceiveGuard.requireUnchanged(project, expectedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
-
-                    // A bounded candidate summary is shown BEFORE the native
-                    // comparison editor. Declining only aborts this preview:
-                    // source files, the workspace and the IB stay untouched.
-                    var previewAccepted = new AtomicBoolean(false);
-                    display.syncExec(() -> {
-                        if (shell.isDisposed()) return;
-                        previewAccepted.set(MessageDialog.openQuestion(shell,
-                            "Отличия EDT и хранилища — предварительный список",
-                            summary.describe(16) + "\n\n"
-                            + "Это список ФАЙЛОВЫХ отличий, не окончательный "
-                            + "семантический состав помещения. "
-                            + "Для проверки объектов и свойств откроется "
-                            + "штатное сравнение EDT БЕЗ ОБЪЕДИНЕНИЯ. "
-                            + "Рабочий проект, база и хранилище не изменяются.\n\n"
-                            + "Открыть подробное сравнение?"));
-                    });
-                    if (!previewAccepted.get()) return Status.CANCEL_STATUS;
-                    GitReceiveGuard.requireUnchanged(project, expectedGit);
-                    if (monitor.isCanceled()) return Status.CANCEL_STATUS;
+                    var nativeReview =
+                        EdtPublicServiceBridge.observeOutgoingNativeComparison(descriptor);
 
                     // Blocking dispatch ensures either the UI editor takes
                     // ownership of BOTH staged directories or this job cleans
@@ -232,34 +202,72 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                                     Job cleanup = new Job("Очистка временной сверки 1С") {
                                         @Override
                                         protected IStatus run(IProgressMonitor m) {
-                                            closeQuietly(retainedExport,
-                                                retainedConversion, lease);
+                                            OutgoingMetadataObjectPlan confirmed = null;
+                                            IOException evidenceError = null;
+                                            try {
+                                                var identities =
+                                                    nativeReview.awaitNativeIdentities();
+                                                var owners = EdtPublicServiceBridge
+                                                    .outgoingOwnersFromNative(
+                                                        project, identities);
+                                                confirmed = OutgoingMetadataObjectPlan
+                                                    .fromNativeChangedOwners(owners);
+                                            } catch (InterruptedException ex) {
+                                                Thread.currentThread().interrupt();
+                                                evidenceError = new IOException(
+                                                    "Native outgoing review interrupted", ex);
+                                            } catch (IOException | RuntimeException ex) {
+                                                evidenceError = new IOException(
+                                                    "Native EDT difference evidence is incomplete", ex);
+                                            } finally {
+                                                nativeReview.close();
+                                                closeQuietly(retainedExport,
+                                                    retainedConversion, lease);
+                                            }
+                                            final var nativePlan = confirmed;
+                                            final var nativeFailure = evidenceError;
                                             if (!display.isDisposed()) {
                                                 display.asyncExec(() -> {
                                                     if (shell.isDisposed()) return;
-                                                    if (metadataPlan.owners().isEmpty()) {
+                                                    if (nativeFailure != null) {
+                                                        Platform.getLog(
+                                                            OutgoingReadOnlyComparisonCoordinator.class)
+                                                            .log(new Status(IStatus.ERROR,
+                                                                PLUGIN,
+                                                                "Outgoing native EDT scope unavailable",
+                                                                nativeFailure));
+                                                        MessageDialog.openWarning(shell,
+                                                            "Помещение остановлено",
+                                                            "Не удалось получить подтверждённый "
+                                                            + "состав отличий из штатного сравнения "
+                                                            + "EDT. Никакого резервного файлового "
+                                                            + "сравнения нет. Ничего не помещено. "
+                                                            + "Подробности — в Error Log EDT.");
+                                                    } else if (nativePlan == null
+                                                            || nativePlan.owners().isEmpty()) {
                                                         MessageDialog.openInformation(shell,
                                                             "Сверка завершена",
-                                                            "Изменений исходных файлов "
-                                                            + "не обнаружено. Ничего не помещено.");
+                                                            "Штатное сравнение EDT не обнаружило "
+                                                            + "изменённых объектов. "
+                                                            + "Ничего не помещено.");
                                                     } else {
-                                                        boolean export = MessageDialog.openQuestion(
-                                                            shell, "Экспорт всех изменённых объектов",
-                                                            "Обнаружено объектов метаданных: "
-                                                            + metadataPlan.owners().size()
-                                                            + ", ресурсов: "
-                                                            + metadataPlan.changedResourceCount()
-                                                            + ".\n\nПодготовить штатный XML-экспорт "
-                                                            + "ВСЕХ доступных изменённых объектов "
-                                                            + "из EDT для проверки? "
-                                                            + "Удалённые объекты будут перечислены "
-                                                            + "отдельно. Это операция ТОЛЬКО ЧТЕНИЯ: "
-                                                            + "база и хранилище не меняются.");
+                                                        boolean export =
+                                                            MessageDialog.openQuestion(shell,
+                                                            "Помещение: отличия по EDT",
+                                                            "Штатное сравнение подтвердило "
+                                                            + "изменения в "
+                                                            + nativePlan.owners().size()
+                                                            + " объектах.\n"
+                                                            + String.join("\n",
+                                                                nativePlan.owners().keySet())
+                                                            + "\n\nПодготовить нативный "
+                                                            + "экспорт только этих объектов? "
+                                                            + "Это пока операция чтения.");
                                                         if (export) {
                                                             OutgoingMetadataExportCoordinator
                                                                 .preview(shell, project, settings,
                                                                     expectedGit, headRevision,
-                                                                    metadataPlan);
+                                                                    nativePlan);
                                                         }
                                                     }
                                                 });
@@ -274,6 +282,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                             page.addPartListener(listener);
                             ownsStaging.set(true);
                         } catch (Exception ex) {
+                            nativeReview.close();
                             uiFailure.set(ex);
                             if (editor != null && editor.getSite() != null
                                     && editor.getSite().getPage() != null) {
@@ -282,11 +291,13 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         }
                     });
                     if (uiFailure.get() != null) {
+                        nativeReview.close();
                         throw new IOException("Unable to show read-only EDT comparison",
                             uiFailure.get());
                     }
                     transferred = ownsStaging.get();
                     if (!transferred) {
+                        nativeReview.close();
                         throw new IOException("EDT workbench closed before comparison");
                     }
                     // The read-only editor now owns all temporary files and
