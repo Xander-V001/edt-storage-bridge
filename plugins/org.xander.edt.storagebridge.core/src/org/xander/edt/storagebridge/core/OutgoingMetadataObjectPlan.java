@@ -24,7 +24,7 @@ public final class OutgoingMetadataObjectPlan {
     public record Owner(String path, List<OutgoingDeltaScanner.Change> changes,
             boolean added, boolean removed, boolean descriptorChanged) {
         public Owner {
-            if (path == null || path.isBlank() || changes == null || changes.isEmpty())
+            if (path == null || path.isBlank() || changes == null)
                 throw new IllegalArgumentException("Invalid outgoing owner");
             changes = List.copyOf(changes);
         }
@@ -71,6 +71,28 @@ public final class OutgoingMetadataObjectPlan {
         return new OutgoingMetadataObjectPlan(result);
     }
 
+    /**
+     * Trusted native EDT result only: these are owners with REAL model
+     * differences from a completed native comparison, not candidate files.
+     * Only existing owners are currently supported; additions/deletions
+     * must be qualified by native one-side data before any platform write.
+     */
+    public static OutgoingMetadataObjectPlan fromNativeChangedOwners(
+            java.util.Collection<String> nativeOwners) throws IOException {
+        Objects.requireNonNull(nativeOwners);
+        var confirmed = new LinkedHashMap<String, Owner>();
+        for (String owner : nativeOwners) {
+            if (owner == null || !owner.matches(
+                    "[\\p{L}_][\\p{L}\\p{N}_]*/[\\p{L}_][\\p{L}\\p{N}_]*")
+                    || confirmed.containsKey(owner) || confirmed.size() >= 10_000) {
+                throw new IOException("Invalid native outgoing metadata owner");
+            }
+            confirmed.put(owner, new Owner(owner, List.of(),
+                false, false, false));
+        }
+        return new OutgoingMetadataObjectPlan(confirmed);
+    }
+
     public Map<String, Owner> owners() { return owners; }
 
     /**
@@ -103,7 +125,10 @@ public final class OutgoingMetadataObjectPlan {
     }
 
     public int changedResourceCount() {
-        return owners.values().stream().mapToInt(x -> x.changes().size()).sum();
+        // Native review reports changed METADATA OWNERS, not individual
+        // changed source files. Do not invent resource-level changes.
+        return owners.values().stream().mapToInt(x ->
+            x.changes().isEmpty() ? 1 : x.changes().size()).sum();
     }
 
     /**
