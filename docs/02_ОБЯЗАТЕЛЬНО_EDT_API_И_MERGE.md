@@ -29,7 +29,7 @@
 
 ## 2. Получение сервисов: ServiceAccess.get(Class<T>)
 
-**Сигнатура:** `ServiceAccess.get(IV8ProjectManager.class)`, `ServiceAccess.get(IImportServiceRegistry.class)`, `ServiceAccess.get(IQualifiedNameFilePathConverter.class)`, `ServiceAccess.get(IComparisonManager.class)`, `ServiceAccess.get(IDtComparisonEditorInputFactory.class)`, а также `IConfigurationProvider`, `IBmModelManager`, `IExportOperationFactory` для других функций.
+**Сигнатура:** `ServiceAccess.get(IV8ProjectManager.class)`, `ServiceAccess.get(IImportServiceRegistry.class)`, `ServiceAccess.get(IQualifiedNameFilePathConverter.class)`, `ServiceAccess.get(IComparisonManager.class)`, `ServiceAccess.get(IDtComparisonEditorInputFactory.class)`, а также `IConfigurationProvider` и `IBmModelManager` для других функций. **Исключение:** `IExportOperationFactory` не выдавался как OSGi-сервис в испытании EDT 2026.2 и больше не запрашивается через `ServiceAccess`; источник фабрики — собственный инжектор экспортного бандла EDT (см. ниже).
 - `Class<T>`: точный тип зарегистрированного сервиса Eclipse/EDT, не имя проектной конфигурации.
 - **Возврат:** runtime-сервис EDT; `get` НЕ выполняет импорт, НЕ открывает редактор, НЕ применяет изменения.
 - **[КОД]** `EdtPublicServiceBridge` делает короткоживущие обращения, не создаёт отдельный Guice Injector. Старый собственный injector в EDT 2026.2 вызывал исключения.
@@ -201,7 +201,7 @@ ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
 ## 13. Дополнительные EDT API подготовки публикации (НЕ ПРИМЕНЯТЬ В RECEIVE)
 
 - `IBmModelManager`: доступ к BM-модели проекта — не XML выгрузка платформы.
-- `IExportOperationFactory`: построение штатной выгрузки EDT в XML; служит на пути *EDT → 1С*, а не входящему Merge.
+- `IExportOperationFactory`: построение штатной выгрузки EDT в XML; служит на пути *EDT → 1С*, а не входящему Merge. **[КОД 22.10.2026]** После `SERVICE_UNAVAILABLE` заводской экспортёр теперь получается из `ExportPlugin.getDefault().getInjector().getInstance(IExportOperationFactory.class)`, **не из `ServiceAccess`**. Вызов методов `ExportPlugin` изолирован через `Bundle.loadClass`, поскольку класс находится в внутреннем пакете, который не должен становиться обязательной импортируемой зависимостью. Инжектор EDT повторно используется, не создаётся новый. [SDK ExportPlugin](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/internal/export/ExportPlugin.html). **[?]** Компиляция/работа в установленной EDT 2026.2 не подтверждены.
 - `IQualifiedNameFilePathConverter`: преобразование квалифицированных имён EDT/путей; **не** принимает как есть русские строки `changes.txt` без проверки.
 - `EdtNativeOutgoingExportService.preview(...)` и `previewMetadataOwners(...)` — отдельный путь read-only подготовки отправки, **не** свидетельство работоспособности получения.
 - `EdtDeltaComparisonService.prepare(... GitComparisonDataSourceDescriptor ...)` — альтернативная THREE-WAY подготовка; фактический receive вызывает `EdtSelectiveReviewService.prepare()`, TWO-WAY.

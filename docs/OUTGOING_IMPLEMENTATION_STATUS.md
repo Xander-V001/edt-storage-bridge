@@ -89,13 +89,14 @@
 сохраняются на диске (могут содержать метаданные и занимать много места).
 Плагин автоматически их не удаляет.
 
-**Известный блокер:** ручной путь зависит от того же штатного EDT
-экспорта, что и старый preview. Прежняя
-`NATIVE_EDT_EXPORT ServiceUnavailableException` пока не имеет
-подтверждённого исправления. Без успешного экспорта кандидат не
-появится. Ни сборка нового пути, ни проверка командного round-trip
-в установленной EDT/платформе 1С пока не выполнялись; формы,
-удаление и добавление отдельно требуют испытаний на тестовой копии.
+**Обновление 22.10.2026:** устранена ошибочная зависимость от
+OSGi-регистрации `IExportOperationFactory` (коммит `ce06f5e`).
+Плагин получает фабрику через существующий Guice-инжектор
+экспортного бандла EDT, без собственного инжектора. **Это изменение
+исходников, а не подтверждённое runtime-испытание в EDT 2026.2**.
+Если встроенная фабрика экспорта не инициализируется, операция прерывается
+до записи в ИБ/хранилище. Нативный XML round-trip, формы, добавления
+и удаления всё ещё требуют проверки на тестовой копии.
 
 ## Неустранённые критические пробелы
 
@@ -147,3 +148,45 @@
 
 - SDK `IExportOperationFactory`: https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html
 - `ServiceAccess.get`: https://edt.1c.ru/dev/wiring/2.5/apidocs/com/_1c/g5/wiring/ServiceAccess.html
+
+
+## 22.10.2026: исправление штатной фабрики экспорта [КОД]
+
+Лог испытания: `revision=29456`, `owners=3`,
+`changed_resources=3`, `FAILED phase=NATIVE_EDT_EXPORT
+exception=SERVICE_UNAVAILABLE service=IExportOperationFactory`.
+Перед стадией экспорта Designer `LOCK/LOAD/COMMIT` не запускался.
+
+Ошибка вызвана обращением `ServiceAccess.get(IExportOperationFactory.class)`.
+`ServiceAccess` выдаёт зарегистрированные публичные сервисы OSGi, а
+наличие `IExportOperationFactory` в API **не** означает такой регистрации.
+Исправлен `EdtPublicServiceBridge.previewNativeMetadataExport`:
+
+- `IV8ProjectManager`, `IBmModelManager` и
+  `IQualifiedNameFilePathConverter` остаются штатными OSGi-сервисами.
+- Бандл, содержащий публичный интерфейс `IExportOperationFactory`,
+  определяется через `FrameworkUtil.getBundle`; при необходимости
+  активируется без собственного инжектора.
+- В том же бандле штатный `ExportPlugin.getDefault().getInjector()`
+  используется для получения `IExportOperationFactory`.
+  Поскольку `ExportPlugin` расположен во внутреннем пакете, доступ
+  к его документированным публичным методам инкапсулирован через
+  `Bundle.loadClass` и reflection, **без Import-Package на внутренний
+  неэкспортируемый пакет**.
+- `BundleException`, ошибки доступа к встроенному инжектору и Guice
+  возвращают `ExportServiceUnavailable(IExportOperationFactory)`, а не
+  приводят к автоматическому переключению на другой экспортёр.
+- `EdtNativeOutgoingExportService` продолжает использовать ту же
+  нативную `createExportOperation`/`IExportStrategy.DEFAULT`.
+  Оба варианта помещения (ручной и автоматический) используют один путь.
+
+**Никаких собственных Guice-инжекторов, восстановления OSGi-регистрации
+в обход EDT или экспериментальных резервных экспортёров не добавлено.**
+Пост-LOAD проверка автоматического помещения остаётся незакрытой;
+автоматический Commit по-прежнему TEST-ONLY. Компиляция и установленный
+EDT 2026.2 runtime этого изменения ещё не подтверждены.
+
+Источники интерфейсов:
+- [IExportOperationFactory](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/export/IExportOperationFactory.html)
+- [ExportPlugin.getInjector()](https://edt.1c.ru/dev/edt/2024.2/apidocs/com/_1c/g5/v8/dt/internal/export/ExportPlugin.html)
+- [Публичные сервисы EDT](https://edt.1c.ru/dev/ru/docs/plugins/dev/public-services/)
