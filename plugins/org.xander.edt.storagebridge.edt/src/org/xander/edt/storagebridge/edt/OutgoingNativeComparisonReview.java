@@ -82,7 +82,7 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
         Job job = new Job("1С: Чтение фактических отличий из штатного EDT") {
             @Override protected IStatus run(IProgressMonitor monitor) {
                 try {
-                    IComparisonSession session = manager.getComparisonSession(handle);
+                    IComparisonSession session = OutgoingNativeComparisonReview.this.manager.getComparisonSession(handle);
                     if (session == null) {
                         throw new IOException("EDT comparison session is unavailable");
                     }
