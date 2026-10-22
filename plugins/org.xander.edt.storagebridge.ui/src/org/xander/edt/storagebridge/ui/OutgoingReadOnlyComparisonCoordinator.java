@@ -175,7 +175,8 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     var uiFailure = new AtomicReference<Exception>();
                     final var retainedExport = export;
                     final Path retainedConversion = conversionRoot;
-                    display.syncExec(() -> {
+                    try {
+                        display.syncExec(() -> {
                         if (shell.isDisposed()) return;
                         IEditorPart editor = null;
                         try {
@@ -289,7 +290,10 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                                 editor.getSite().getPage().closeEditor(editor, false);
                             }
                         }
-                    });
+                        });
+                    } finally {
+                        if (!ownsStaging.get()) nativeReview.close();
+                    }
                     if (uiFailure.get() != null) {
                         nativeReview.close();
                         throw new IOException("Unable to show read-only EDT comparison",

@@ -133,17 +133,19 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
                                             identity = symlink;
                                         }
                                     }
-                                    List<ComparisonNode> differingChildren = new ArrayList<>();
-                                    for (ComparisonNode child : node.<ComparisonNode>getChildren()) {
+                                    List<ComparisonNode> children =
+                                        new ArrayList<>(node.<ComparisonNode>getChildren());
+                                    boolean hasChangedChild = false;
+                                    for (ComparisonNode child : children) {
                                         var childFlags = child.getComparisonFlags();
                                         if (childFlags != null
                                                 && childFlags.hasDiffsMainOther()) {
-                                            differingChildren.add(child);
+                                            hasChangedChild = true;
                                         }
                                     }
                                     // A parent flagged due to differing descendants
                                     // is not a separate change to Configuration.
-                                    if (differs && differingChildren.isEmpty()
+                                    if (differs && !hasChangedChild
                                             && node != root) {
                                         foundNativeDiff = true;
                                         if (identity == null || identity.isBlank()) {
@@ -156,13 +158,20 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
                                                 "Too many changed native identities");
                                         }
                                     }
-                                    for (int i = differingChildren.size() - 1; i >= 0; i--) {
-                                        stack.push(new Item(
-                                            differingChildren.get(i), identity));
+                                    // Do not prune using aggregate parent flags:
+                                    // native descendants can carry a semantic
+                                    // change even if the parent has no diff flag.
+                                    for (int i = children.size() - 1; i >= 0; i--) {
+                                        stack.push(new Item(children.get(i), identity));
                                     }
                                 }
                                 if (!foundNativeDiff) {
-                                    // Native comparison really found no differences.
+                                    var rootFlags = root.getComparisonFlags();
+                                    if (rootFlags != null
+                                            && rootFlags.hasDiffsMainOther()) {
+                                        throw new IllegalStateException(
+                                            "Native root has differences not classified into metadata objects");
+                                    }
                                     return List.of();
                                 }
                                 return List.copyOf(result);

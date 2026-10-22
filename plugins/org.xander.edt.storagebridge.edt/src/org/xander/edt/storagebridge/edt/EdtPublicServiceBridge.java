@@ -233,8 +233,12 @@ public final class EdtPublicServiceBridge {
             }
             String owner = org.xander.edt.storagebridge.core.EdtPathObjectMapper
                 .topObject(candidate);
-            if (owner == null || !owners.add(owner) && owners.size() > 10_000) {
+            if (owner == null) {
                 throw new IOException("Native metadata owner classification failed");
+            }
+            owners.add(owner);
+            if (owners.size() > 10_000) {
+                throw new IOException("Native metadata owner limit exceeded");
             }
         }
         return java.util.List.copyOf(owners);
