@@ -12,6 +12,43 @@ import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 
 public final class OutgoingMetadataObjectPlanTest {
     @Test
+    public void nativeCompareOneChangedFormIncludesOnlyItsDocument() throws Exception {
+        var plan = OutgoingMetadataObjectPlan.fromNativeChangedOwners(
+            Set.of("Documents/Выплата"));
+        assertEquals(Set.of("Documents/Выплата"), plan.owners().keySet());
+        assertEquals(Set.of("Documents/Выплата"),
+            Set.copyOf(plan.exportableOwners()));
+        assertFalse(plan.owners().containsKey("Configuration/Configuration"));
+        assertFalse(plan.owners().containsKey(
+            "ExchangePlans/МиграцияПриложений"));
+        assertEquals(1, plan.changedResourceCount());
+        assertFalse(plan.changesTopLevelMembership());
+    }
+
+    @Test
+    public void nativePlanRejectsDuplicateOrUnverifiedOwner() throws Exception {
+        assertThrows(IOException.class,
+            () -> OutgoingMetadataObjectPlan.fromNativeChangedOwners(
+                java.util.List.of("Documents/Выплата", "Documents/Выплата")));
+        assertThrows(IOException.class,
+            () -> OutgoingMetadataObjectPlan.fromNativeChangedOwners(
+                java.util.List.of("Documents/../Configuration")));
+        assertThrows(IOException.class,
+            () -> OutgoingMetadataObjectPlan.fromNativeChangedOwners(
+                java.util.List.of("Документы.Выплата")));
+    }
+
+    @Test
+    public void nativePlanDoesNotInventObjectAdditionOrDeletion() throws Exception {
+        var plan = OutgoingMetadataObjectPlan.fromNativeChangedOwners(
+            Set.of("Catalogs/Номенклатура", "Documents/Выплата"));
+        assertTrue(plan.removedOwners().isEmpty());
+        assertFalse(plan.removesTopLevelOwners());
+        assertEquals(2, plan.changedResourceCount());
+        assertEquals(2, plan.owners().size());
+    }
+
+    @Test
     public void groupsDifferentMetadataTypesWithoutBslWhitelist() throws Exception {
         Path old = Files.createTempDirectory("storage-original-");
         Path edt = Files.createTempDirectory("storage-active-");
