@@ -229,6 +229,15 @@ public final class OutgoingMetadataExportCoordinator {
                     if (ex instanceof EdtPublicServiceBridge.ExportServiceUnavailable missing) {
                         failureCode = "SERVICE_UNAVAILABLE";
                         failureCode += " service=" + missing.type();
+                        // Report only a safe Java TYPE, never native exception
+                        // messages that may include credentials/arguments.
+                        // Distinguishes old ServiceAccess errors from failures
+                        // inside the built-in EDT export injector.
+                        Throwable cause = missing.getCause();
+                        if (cause != null) {
+                            failureCode += " cause="
+                                + cause.getClass().getSimpleName();
+                        }
                     }
                     if (folder != null) {
                         try {
@@ -285,7 +294,8 @@ public final class OutgoingMetadataExportCoordinator {
             settings.address(), settings.username(), settings.password(),
             monitor::isCanceled);
         if (current != expected) {
-            throw new IOException("Repository revision advanced after outgoing review");
+            throw new IOException("Repository revision changed after review: "
+                + "expected=" + expected + " current=" + current);
         }
     }
 
