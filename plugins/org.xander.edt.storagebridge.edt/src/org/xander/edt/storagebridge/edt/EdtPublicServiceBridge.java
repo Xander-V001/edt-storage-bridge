@@ -9,7 +9,6 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleException;
 import org.osgi.framework.FrameworkUtil;
-import com.google.inject.Injector;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.PartInitException;
 
@@ -120,15 +119,28 @@ public final class EdtPublicServiceBridge {
             if (plugin == null) {
                 throw new IllegalStateException("Native export bundle not activated");
             }
-            Object supplied = pluginClass.getMethod("getInjector").invoke(plugin);
-            if (!(supplied instanceof Injector injector)) {
-                throw new IllegalStateException("Native export Guice injector unavailable");
+            // The native export bundle can load its Guice API through a
+            // different OSGi class loader. An instanceof against this plug-in's
+            // Guice Injector can therefore fail even when EDT did return a
+            // valid injector. Invoke the public Injector interface *as loaded
+            // by the native bundle*, without creating our own injector.
+            var injectorMethod = pluginClass.getMethod("getInjector");
+            Object nativeInjector = injectorMethod.invoke(plugin);
+            if (nativeInjector == null) {
+                throw new IllegalStateException(
+                    "Native EDT ExportPlugin.getInjector() returned null");
             }
-            // Guice's binding is owned and managed by EDT's export plug-in.
-            IExportOperationFactory factory =
-                injector.getInstance(IExportOperationFactory.class);
-            if (factory == null) {
-                throw new IllegalStateException("Native export factory unavailable");
+            Class<?> nativeInjectorApi = injectorMethod.getReturnType();
+            Object nativeFactory = nativeInjectorApi
+                .getMethod("getInstance", Class.class)
+                .invoke(nativeInjector, IExportOperationFactory.class);
+            if (nativeFactory == null) {
+                throw new IllegalStateException(
+                    "Native EDT injector returned no export operation factory");
+            }
+            if (!(nativeFactory instanceof IExportOperationFactory factory)) {
+                throw new IllegalStateException(
+                    "Native EDT export factory API class-loader mismatch");
             }
             return factory;
         } catch (ReflectiveOperationException | BundleException
