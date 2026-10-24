@@ -128,7 +128,7 @@ def summarize_javap(jar_file, classname, methods):
     # Only report symbolic invocation targets, not vendor bytecode.
     if details.returncode == 0:
         symbols = set(re.findall(
-            r"// (?:InterfaceMethod|Method) ([^\\n]+)", details.stdout))
+            r"// (?:InterfaceMethod|Method) ([^\n]+)", details.stdout))
         interesting = [x[:180] for x in sorted(symbols)
                        if any(key in x.lower() for key in
                               ("inject", "guice", "export", "getinstance", "service"))]
@@ -154,7 +154,7 @@ def main():
         print("Required native classes present:", {x: x in names for x in classes})
         manifest = z.read("META-INF/MANIFEST.MF").decode("utf-8", errors="replace")
         for key in ("Bundle-SymbolicName", "Bundle-Activator", "Bundle-Version"):
-            match = re.search(r"^" + re.escape(key) + r":\\s*(.*)$", manifest, re.M)
+            match = re.search(r"^" + re.escape(key) + r":\s*(.*)$", manifest, re.M)
             print(key + ":", match.group(1).strip() if match else "(not declared)")
     with tempfile.TemporaryDirectory(prefix="edt-export-probe-") as directory:
         path = pathlib.Path(directory) / "native-export.jar"
