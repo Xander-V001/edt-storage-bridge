@@ -152,8 +152,26 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
                                             identity = symlink;
                                         }
                                     }
-                                    List<ComparisonNode> children =
-                                        new ArrayList<>(node.<ComparisonNode>getChildren());
+                                    // EDT supplies a read-only EList whose toArray()
+                                    // deliberately throws UnsupportedOperationException.
+                                    // ArrayList(Collection) invokes toArray(), so read the
+                                    // native tree's indexed children inside this readonly
+                                    // BM transaction without converting the EList.
+                                    var nativeChildren = node.<ComparisonNode>getChildren();
+                                    int childCount = nativeChildren.size();
+                                    if (childCount > MAX_NODES) {
+                                        throw new IllegalStateException(
+                                            "Native comparison node has too many children");
+                                    }
+                                    List<ComparisonNode> children = new ArrayList<>(childCount);
+                                    for (int i = 0; i < childCount; i++) {
+                                        ComparisonNode child = nativeChildren.get(i);
+                                        if (child == null) {
+                                            throw new IllegalStateException(
+                                                "Native comparison contains a null child node");
+                                        }
+                                        children.add(child);
+                                    }
                                     boolean hasChangedChild = false;
                                     for (ComparisonNode child : children) {
                                         var childFlags = child.getComparisonFlags();
