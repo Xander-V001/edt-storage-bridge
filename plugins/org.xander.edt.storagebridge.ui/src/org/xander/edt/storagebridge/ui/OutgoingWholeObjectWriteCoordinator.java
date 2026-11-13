@@ -12,9 +12,7 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.jface.dialogs.InputDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.window.Window;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 
@@ -65,20 +63,6 @@ public final class OutgoingWholeObjectWriteCoordinator {
         Objects.requireNonNull(previewPlan);
         if (shell.isDisposed()) return;
 
-        var input = new InputDialog(shell, "Тестовое помещение объектов EDT",
-            "Будут целиком выгружены выбранные объекты EDT вместе с формами, "
-            + "модулями и внешними ресурсами. Затем Конфигуратор захватит "
-            + "объекты, частично загрузит их XML и поместит изменения."
-            + "\n\nЭто реальная запись в базу и хранилище 1С. "
-            + "Используйте только изолированную тестовую копию."
-            + "\n\nДля продолжения введите ТЕСТ:", "",
-            value -> "ТЕСТ".equals(value) ? null : "Введите точно ТЕСТ");
-        if (input.open() != Window.OK) return;
-        if (!MessageDialog.openConfirm(shell, "Подтверждение помещения",
-                "Изменятся база-посредник и тестовое хранилище. "
-                + "При сбое после захвата автоматический повтор запрещён. "
-                + "\n\nВыполнить Lock → Load → Commit?")) return;
-
         final AutoCloseable lease;
         try {
             lease = ReceiveChangesCoordinator.acquireOutgoingReview(project, settings);
@@ -89,7 +73,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
         }
 
         Display display = shell.getDisplay();
-        Job job = new Job("1С: Тестовое помещение полных объектов EDT") {
+        Job job = new Job("1С: Автоматическое помещение объектов EDT") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 OutgoingOperationJournal journal = null;
