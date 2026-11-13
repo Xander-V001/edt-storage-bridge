@@ -170,19 +170,28 @@ public final class OutgoingOperationJournal {
         state(stage + "_PROCESS_OK");
     }
 
-    /** On success, only independently verified repository HEAD may unblock. */
-    public void verified(long newVersion) throws IOException {
-        if (newVersion < 1)
-            throw new IllegalArgumentException("Unverified repository revision");
+    /**
+     * Release the operation marker after a successful native Designer
+     * ConfigurationRepositoryCommit (exit code 0). The plugin intentionally
+     * does NOT fetch or store the repository revision after Commit. A developer
+     * must explicitly receive the new revision before their next publication.
+     *
+     * If Commit did not return successfully, retain the active marker to
+     * prevent unsafe automatic retries.
+     */
+    public void completedAfterNativeCommit() throws IOException {
         if (!"COMMIT_PROCESS_OK".equals(Files.readString(marker,
                 StandardCharsets.US_ASCII).trim())) {
             throw new IOException("No confirmed native Commit process outcome");
         }
-        event("VERIFIED", "native-head=" + newVersion);
-        state("COMPLETED");
         Path active = directory.getParent().resolve("active.txt");
-        if (!runId.equals(Files.readString(active, StandardCharsets.US_ASCII).trim()))
+        if (!Files.isRegularFile(active, LinkOption.NOFOLLOW_LINKS)
+                || !runId.equals(Files.readString(active,
+                    StandardCharsets.US_ASCII).trim())) {
             throw new IOException("Operation marker identity changed");
+        }
+        event("COMMIT_SUCCEEDED", "native-designer-exit-zero");
+        state("COMPLETED");
         Files.delete(active);
     }
 
