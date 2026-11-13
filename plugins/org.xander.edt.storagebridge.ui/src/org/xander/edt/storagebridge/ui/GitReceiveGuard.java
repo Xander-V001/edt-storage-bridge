@@ -17,6 +17,17 @@ public final class GitReceiveGuard {
 
     public record Baseline(String branch, String head) {}
 
+    /** A clean Git commit is required before any outgoing repository write. */
+    public static final class UncommittedChangesException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        public UncommittedChangesException() {
+            super("В проекте EDT есть незакоммиченные изменения Git. "
+                + "Сначала выполните коммит всех изменений, затем "
+                + "повторите автоматическое помещение в хранилище.");
+        }
+    }
+
     /** Vetted Git-only text, safe to show without exposing repository paths. */
     public static final class PostMergeGitMismatch extends IOException {
         private static final long serialVersionUID = 1L;
@@ -100,10 +111,28 @@ public final class GitReceiveGuard {
             throw new IOException("Не удалось определить HEAD проекта.");
         }
         if (!call(root, "status", "--porcelain=v1", "--untracked-files=normal").isBlank()) {
-            throw new IOException("В Git есть незакоммиченные файлы. "
-                + "Сначала сохраните изменения и создайте коммит.");
+            throw new UncommittedChangesException();
         }
         return new Baseline(branch, head);
+    }
+
+    /**
+     * Get the entire message of the already verified HEAD commit.
+     * The message comes from Git's official CLI, not EDT metadata files.
+     * The checked baseline guarantees that no other commit or uncommitted
+     * worktree change has appeared since the initial outgoing preflight.
+     */
+    public static String requireHeadCommitMessage(IProject project, Baseline before)
+            throws IOException, InterruptedException {
+        requireUnchanged(project, before);
+        Path root = Path.of(project.getLocation().toOSString());
+        String message = call(root, "-c", "i18n.logOutputEncoding=UTF-8",
+            "log", "-1", "--format=%B", "HEAD").stripTrailing();
+        if (message.isBlank() || message.indexOf('\0') >= 0) {
+            throw new IOException("У последнего коммита Git отсутствует "
+                + "корректное описание. Помещение остановлено.");
+        }
+        return message;
     }
 
     /**
