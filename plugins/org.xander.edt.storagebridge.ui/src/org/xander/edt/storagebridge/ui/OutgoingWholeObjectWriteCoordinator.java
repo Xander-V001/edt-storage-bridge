@@ -82,8 +82,9 @@ public final class OutgoingWholeObjectWriteCoordinator {
                 try {
                     // Fetch the text attached to the verified Git HEAD
                     // before any native repository mutation can begin.
-                    String commitComment = GitReceiveGuard.requireHeadCommitMessage(
-                        project, reviewedGit);
+                    String commitComment = OutgoingDesignerCommands.withAdditionalComment(
+                        GitReceiveGuard.requireHeadCommitMessage(project, reviewedGit),
+                        settings.outgoingCommentSuffix());
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
                     String source = settings.infobaseType().name() + ":"
                         + settings.infobaseAddress().trim();
