@@ -36,6 +36,7 @@ public final class StorageProjectSettings {
     private static final String INFOBASE_USER = "infobaseUser";
     private static final String INFOBASE_PASSWORD = "infobasePassword";
     private static final String MANUAL_OUTGOING = "manualOutgoing";
+    private static final String OUTGOING_COMMENT_SUFFIX = "outgoingCommentSuffix";
 
     /** Matches documented 1C Designer launch switches /F and /S. */
     public enum InfobaseType { FILE, SERVER }
@@ -59,12 +60,13 @@ public final class StorageProjectSettings {
         private final long observedVersion;
         private final long appliedVersion;
         private final boolean manualOutgoing;
+        private final String outgoingCommentSuffix;
 
         private Snapshot(String address, String username, String password,
                 InfobaseType infobaseType, String infobaseAddress,
                 String platformExecutable, String infobaseUsername,
                 String infobasePassword, long observedVersion, long appliedVersion,
-                boolean manualOutgoing) {
+                boolean manualOutgoing, String outgoingCommentSuffix) {
             this.address = address;
             this.username = username;
             this.password = password;
@@ -76,6 +78,7 @@ public final class StorageProjectSettings {
             this.observedVersion = observedVersion;
             this.appliedVersion = appliedVersion;
             this.manualOutgoing = manualOutgoing;
+            this.outgoingCommentSuffix = outgoingCommentSuffix;
         }
 
         public String address() { return address; }
@@ -89,6 +92,7 @@ public final class StorageProjectSettings {
         public long observedVersion() { return observedVersion; }
         public long appliedVersion() { return appliedVersion; }
         public boolean manualOutgoing() { return manualOutgoing; }
+        public String outgoingCommentSuffix() { return outgoingCommentSuffix; }
 
         @Override
         public String toString() {
@@ -110,7 +114,8 @@ public final class StorageProjectSettings {
             secretNode.get(INFOBASE_PASSWORD, ""),
             preferences.getLong(LAST_REMOTE, UNKNOWN_VERSION),
             preferences.getLong(LAST_APPLIED, UNKNOWN_VERSION),
-            preferences.getBoolean(MANUAL_OUTGOING, false));
+            preferences.getBoolean(MANUAL_OUTGOING, false),
+            preferences.get(OUTGOING_COMMENT_SUFFIX, ""));
     }
 
     /** Preserve the saved mode for existing callers that do not edit it. */
@@ -119,18 +124,41 @@ public final class StorageProjectSettings {
             String platformExecutable, String infobaseUsername,
             String infobasePassword)
             throws StorageException, IOException, BackingStoreException {
+        Preferences preferences = preferences(project);
         save(project, address, username, password, infobaseType,
             infobaseAddress, platformExecutable, infobaseUsername,
             infobasePassword,
-            preferences(project).getBoolean(MANUAL_OUTGOING, false));
+            preferences.getBoolean(MANUAL_OUTGOING, false),
+            preferences.get(OUTGOING_COMMENT_SUFFIX, ""));
     }
 
-    /** Manual mode is opt-in and scoped to this existing EDT project. */
+    /** Preserve the saved extra comment for existing callers. */
     public static void save(IProject project, String address, String username,
             String password, InfobaseType infobaseType, String infobaseAddress,
             String platformExecutable, String infobaseUsername,
             String infobasePassword, boolean manualOutgoing)
             throws StorageException, IOException, BackingStoreException {
+        save(project, address, username, password, infobaseType,
+            infobaseAddress, platformExecutable, infobaseUsername,
+            infobasePassword, manualOutgoing,
+            preferences(project).get(OUTGOING_COMMENT_SUFFIX, ""));
+    }
+
+    /** Settings are scoped to the selected EDT project, not to Git. */
+    public static void save(IProject project, String address, String username,
+            String password, InfobaseType infobaseType, String infobaseAddress,
+            String platformExecutable, String infobaseUsername,
+            String infobasePassword, boolean manualOutgoing,
+            String outgoingCommentSuffix)
+            throws StorageException, IOException, BackingStoreException {
+        Objects.requireNonNull(outgoingCommentSuffix, "outgoingCommentSuffix");
+        String normalizedSuffix = outgoingCommentSuffix.trim();
+        if (normalizedSuffix.indexOf('\n') >= 0
+                || normalizedSuffix.indexOf('\r') >= 0
+                || normalizedSuffix.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException(
+                "Дополнительный комментарий должен быть одной строкой.");
+        }
         Objects.requireNonNull(address, "address");
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(password, "password");
@@ -160,6 +188,7 @@ public final class StorageProjectSettings {
         preferences.put(INFOBASE_USER, infobaseUsername.trim());
         preferences.put(PLATFORM_EXECUTABLE, platformExecutable.trim());
         preferences.putBoolean(MANUAL_OUTGOING, manualOutgoing);
+        preferences.put(OUTGOING_COMMENT_SUFFIX, normalizedSuffix);
         if (changed) {
             // A checkpoint from storage A is invalid for storage B.
             preferences.remove(LAST_REMOTE);
