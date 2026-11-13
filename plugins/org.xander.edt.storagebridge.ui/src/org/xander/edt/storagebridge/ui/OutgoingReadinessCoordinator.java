@@ -133,12 +133,14 @@ public final class OutgoingReadinessCoordinator {
                     Thread.currentThread().interrupt();
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
-                    String message = ex instanceof java.io.IOException
-                        ? "Проверьте, что все изменения закоммичены в Git, "
-                            + "ветка не переключалась и доступ к хранилищу "
-                            + "настроен."
-                        : "Не удалось подтвердить актуальность "
-                            + "версии хранилища. Помещение отменено.";
+                    String message = ex instanceof GitReceiveGuard.UncommittedChangesException
+                        ? ex.getMessage()
+                        : ex instanceof java.io.IOException
+                            ? "Не удалось выполнить проверку Git или хранилища. "
+                                + "Проверьте ветку, состояние проекта и доступ "
+                                + "к хранилищу. Подробности — в EDT Error Log."
+                            : "Не удалось подтвердить актуальность "
+                                + "версии хранилища. Помещение отменено.";
                     display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
