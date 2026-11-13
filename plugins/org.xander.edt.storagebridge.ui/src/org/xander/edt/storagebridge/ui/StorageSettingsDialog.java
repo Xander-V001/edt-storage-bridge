@@ -532,8 +532,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         return observed >= 1 ? "Не подтверждена" : "Не определена";
     }
 
-    private static final int RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
-    private static final int FULL_REVIEW_BUTTON_ID = IDialogConstants.CLIENT_ID + 2;
+    private static final int AUTOMATIC_RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
+    private static final int MANUAL_RECEIVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 2;
+    private static final int FULL_REVIEW_BUTTON_ID = IDialogConstants.CLIENT_ID + 3;
 
     @Override
     protected void okPressed() {
@@ -544,7 +545,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void buttonPressed(int buttonId) {
-        if (buttonId == RECEIVE_BUTTON_ID
+        if (buttonId == AUTOMATIC_RECEIVE_BUTTON_ID
+                || buttonId == MANUAL_RECEIVE_BUTTON_ID
                 || buttonId == FULL_REVIEW_BUTTON_ID) {
             if (saveSettings()) {
                 try {
@@ -567,7 +569,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                                 workbenchShell, project, current,
                                 buttonId == FULL_REVIEW_BUTTON_ID
                                     ? ReceiveChangesCoordinator.ReceiveMode.FULL_REVIEW
-                                    : ReceiveChangesCoordinator.ReceiveMode.INCREMENTAL);
+                                    : buttonId == AUTOMATIC_RECEIVE_BUTTON_ID
+                                        ? ReceiveChangesCoordinator.ReceiveMode.AUTOMATIC
+                                        : ReceiveChangesCoordinator.ReceiveMode.INCREMENTAL);
                         }
                     });
                 } catch (StorageException ex) {
@@ -606,11 +610,18 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void createButtonsForButtonBar(Composite parent) {
-        Button receive = createButton(parent, RECEIVE_BUTTON_ID,
-            "Получить изменения", false);
+        Button automatic = createButton(parent, AUTOMATIC_RECEIVE_BUTTON_ID,
+            "Получить изменения (автоматически)", false);
+        automatic.setEnabled(saved != null);
+        automatic.setToolTipText("Получить изменения из классического хранилища "
+            + "и применить все отличия штатным EDT Merge без открытия "
+            + "редактора сравнения. Варианты из хранилища имеют приоритет. "
+            + "Перед запуском требуется чистый Git.");
+        Button receive = createButton(parent, MANUAL_RECEIVE_BUTTON_ID,
+            "Получить изменения (ручное сравнение)", false);
         receive.setEnabled(saved != null);
-        receive.setToolTipText("Выборочное получение с подтверждением "
-            + "обновления базы, ручным выбором объектов и штатным сравнением EDT.");
+        receive.setToolTipText("Прежний выборочный механизм получения "
+            + "с открытием штатного редактора сравнения и объединения EDT.");
         Button full = createButton(parent, FULL_REVIEW_BUTTON_ID,
             "Получить полную конфигурацию из хранилища", false);
         full.setEnabled(saved != null);
