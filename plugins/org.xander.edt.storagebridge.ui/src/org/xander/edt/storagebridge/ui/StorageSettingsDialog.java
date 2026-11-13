@@ -113,6 +113,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             saved == null ? "" : saved.username());
         password = addText(repositoryCredentials, "Пароль:", SWT.BORDER | SWT.PASSWORD,
             saved == null ? "" : saved.password());
+        compactWidth(username, 240);
+        compactWidth(password, 240);
 
         Group platform = new Group(connectionContent, SWT.NONE);
         platform.setText("База 1С, подключённая к хранилищу");
@@ -159,6 +161,8 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         infobasePassword = addText(infobaseCredentials,
             "Пароль информационной базы (/P):", SWT.BORDER | SWT.PASSWORD,
             saved == null ? "" : saved.infobasePassword());
+        compactWidth(infobaseUsername, 205);
+        compactWidth(infobasePassword, 205);
 
         Composite executableRow = compactRow(platform, 3);
         executableRow.setLayoutData(
@@ -220,7 +224,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         outgoingHint.setText("Если флажок снят, доступен прежний экспериментальный "
             + "автоматический путь. При установленном флажке запись выполняешь "
             + "сам в Конфигураторе; плагин только готовит файл сравнения.");
-        outgoingHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        GridData outgoingHintData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        outgoingHintData.widthHint = 960;
+        outgoingHint.setLayoutData(outgoingHintData);
 
         new Label(outgoing, SWT.NONE).setText(
             "Дополнительный комментарий при помещении в хранилище:");
@@ -342,6 +348,13 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         layout.marginHeight = 0;
         row.setLayout(layout);
         return row;
+    }
+
+    /** Keep short login/password fields compact even in a wide SWT dialog. */
+    private static void compactWidth(Text input, int width) {
+        GridData data = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        data.widthHint = width;
+        input.setLayoutData(data);
     }
 
     private static Text addText(Composite parent, String caption, int style, String initial) {
