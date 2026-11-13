@@ -155,14 +155,12 @@ public final class IncomingNativeAutomaticMerge {
             mergeScheduled = true;
             IStatus scheduled = manager.startMerge(batch, monitor);
             if (scheduled == null || !scheduled.isOK()) {
-                if (cancelled[0]) {
-                    nativeTerminal = true;
-                    throw new IOException(
-                        "EDT explicitly cancelled the automatic native merge");
-                }
-                throw new UncertainMergeException(
-                    "EDT did not confirm native Merge scheduling; "
-                    + "staged XML preserved until EDT restart");
+                // Per the public IComparisonManager contract an error status
+                // means NO merge job was scheduled. Only a thrown exception
+                // after invocation leaves scheduling genuinely uncertain.
+                mergeScheduled = false;
+                throw new IOException(
+                    "EDT refused to schedule the native merge; no changes applied");
             }
             try {
                 await(signal, finished, cancelled, lastStatus,
