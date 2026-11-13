@@ -38,6 +38,8 @@
   <extension point="org.eclipse.ui.menus">
     <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
       <menu id="org.xander.edt.storagebridge.ui.menu" label="%menu.bridge">
+        <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings" style="push"/>
+        <separator name="org.xander.edt.storagebridge.ui.menu.actionsSeparator" visible="true"/>
         <command commandId="org.xander.edt.storagebridge.ui.receiveAutomatic" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.receiveManual" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.fullReview" style="push"/>
