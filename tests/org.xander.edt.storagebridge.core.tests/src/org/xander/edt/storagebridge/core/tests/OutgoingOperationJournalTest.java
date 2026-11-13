@@ -70,6 +70,24 @@ public final class OutgoingOperationJournalTest {
         } finally { clean(root); }
     }
 
+    @Test
+    public void failedCommitCannotBeMarkedSuccessfulOrReleased() throws Exception {
+        Path folder = Files.createTempDirectory("outgoing-commit-failed-");
+        try {
+            var run = OutgoingOperationJournal.begin(folder, "failed-commit", SHA, 123);
+            run.before("LOCK");
+            run.after("LOCK", 0);
+            run.before("LOAD");
+            run.after("LOAD", 0);
+            run.before("COMMIT");
+            assertThrows(IOException.class, () -> run.after("COMMIT", 1));
+            assertThrows(IOException.class, run::completedAfterNativeCommit);
+            assertEquals(run.directory(),
+                OutgoingOperationJournal.unresolvedDirectory(
+                    folder, "failed-commit"));
+        } finally { clean(folder); }
+    }
+
     private static void clean(Path root) throws Exception {
         try (var entries = Files.walk(root)) {
             for (var entry : entries.sorted(Comparator.reverseOrder()).toList())
