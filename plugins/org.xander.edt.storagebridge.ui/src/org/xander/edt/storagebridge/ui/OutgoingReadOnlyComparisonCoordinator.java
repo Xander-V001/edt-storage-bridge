@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,9 +18,6 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.viewers.ArrayContentProvider;
-import org.eclipse.jface.viewers.LabelProvider;
-import org.eclipse.jface.window.Window;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IEditorPart;
@@ -29,7 +25,6 @@ import org.eclipse.ui.IEditorReference;
 import org.eclipse.ui.IPartListener2;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPartReference;
-import org.eclipse.ui.dialogs.ListSelectionDialog;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
  import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
@@ -189,7 +184,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         }
                         if (!display.isDisposed()) display.asyncExec(() -> {
                             if (!shell.isDisposed()) {
-                                selectAutomaticOwners(shell, project, settings,
+                                continueAutomaticPublish(shell, project, settings,
                                     expectedGit, headRevision, automaticPlan);
                             }
                         });
@@ -386,51 +381,20 @@ public final class OutgoingReadOnlyComparisonCoordinator {
         job.schedule();
     }
 
-    /**
-     * User choice applies to already identified native metadata owners.
-     * The object and its complete subordinate resources are exported by EDT;
-     * no custom parsing of .mdo, module or form files defines the scope.
-     */
-    private static void selectAutomaticOwners(Shell shell, IProject project,
+    /** Native EDT has already selected every changed owner automatically. */
+    private static void continueAutomaticPublish(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings,
             GitReceiveGuard.Baseline expectedGit, long headRevision,
-            OutgoingMetadataObjectPlan confirmed) {
-        if (confirmed.owners().isEmpty()) {
+            OutgoingMetadataObjectPlan nativePlan) {
+        if (nativePlan.owners().isEmpty()) {
             MessageDialog.openInformation(shell, "Автоматическое помещение",
                 "Штатное сравнение EDT не обнаружило изменённых объектов.");
             return;
         }
-        var available = new ArrayList<>(confirmed.owners().keySet());
-        var chooser = new ListSelectionDialog(shell, available,
-            ArrayContentProvider.getInstance(), new LabelProvider(),
-            "Выберите объекты для помещения. EDT экспортирует каждый "
-                + "выбранный объект полностью, включая подчинённые формы, "
-                + "модули, макеты и ресурсы.");
-        chooser.setTitle("Помещение: изменённые объекты EDT");
-        chooser.setInitialElementSelections(available);
-        if (chooser.open() != Window.OK) return;
-        Object[] choices = chooser.getResult();
-        if (choices == null || choices.length == 0) return;
-        var selected = new ArrayList<String>();
-        for (Object choice : choices) {
-            if (!(choice instanceof String owner) || !confirmed.owners().containsKey(owner)) {
-                MessageDialog.openError(shell, "Автоматическое помещение",
-                    "Выбранный объект отсутствует в штатном результате сравнения.");
-                return;
-            }
-            selected.add(owner);
-        }
-        try {
-            var plan = OutgoingMetadataObjectPlan.fromNativeChangedOwners(selected);
-            OutgoingMetadataExportCoordinator.preview(shell, project, settings,
-                expectedGit, headRevision, plan);
-        } catch (IOException ex) {
-            Platform.getLog(OutgoingReadOnlyComparisonCoordinator.class)
-                .log(new Status(IStatus.ERROR, PLUGIN,
-                    "Native outgoing object selection failed", ex));
-            MessageDialog.openWarning(shell, "Автоматическое помещение",
-                "Выбор объектов не подтверждён. Ничего не помещено.");
-        }
+        // EDT's own export operation includes each owner's subordinate
+        // metadata. Neither user selection nor file-based change detection.
+        OutgoingMetadataExportCoordinator.preview(shell, project, settings,
+            expectedGit, headRevision, nativePlan);
     }
 
     private static final class UnattestedSourceException extends IOException {
