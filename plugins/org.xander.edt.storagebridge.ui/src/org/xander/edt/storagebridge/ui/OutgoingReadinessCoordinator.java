@@ -107,25 +107,26 @@ public final class OutgoingReadinessCoordinator {
                             }
                             return;
                         }
-                        boolean manual = settings.manualOutgoing();
-                        boolean review = MessageDialog.openQuestion(shell,
-                            manual ? "Сверка для ручного помещения"
-                                   : "Автоматическое помещение: выбор объектов",
-                            "Актуальная версия хранилища: " + latest
-                            + "\nВетка: " + git.branch()
-                            + (manual
-                                ? "\n\nОткрыть штатный редактор сравнения EDT "
-                                  + "перед ручным помещением через Конфигуратор?"
-                                : "\n\nПрограммно сравнить конфигурации штатными "
-                                  + "средствами EDT и выбрать объекты для помещения?")
-                            + "\n\nБудет выполнена полная XML-выгрузка "
-                            + "базы-посредника. До отдельного подтверждения "
-                            + "помещения рабочий проект и хранилище "
-                            + "не изменяются.");
-                        if (review) {
-                            OutgoingReadOnlyComparisonCoordinator.review(
-                                shell, project, settings, git, latest);
+                        // The automatic command already expresses intent to
+                        // compare and publish. Do not ask for permission to
+                        // start its read-only preparation a second time.
+                        // Keep the original review confirmation for manual
+                        // Configurator handoff.
+                        if (settings.manualOutgoing()) {
+                            boolean review = MessageDialog.openQuestion(shell,
+                                "Сверка для ручного помещения",
+                                "Актуальная версия хранилища: " + latest
+                                + "\nВетка: " + git.branch()
+                                + "\n\nОткрыть штатный редактор сравнения EDT "
+                                + "перед ручным помещением через Конфигуратор?"
+                                + "\n\nБудет выполнена полная XML-выгрузка "
+                                + "базы-посредника. До отдельного подтверждения "
+                                + "помещения рабочий проект и хранилище "
+                                + "не изменяются.");
+                            if (!review) return;
                         }
+                        OutgoingReadOnlyComparisonCoordinator.review(
+                            shell, project, settings, git, latest);
                     });
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
