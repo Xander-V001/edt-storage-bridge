@@ -1158,6 +1158,87 @@ public final class ReceiveChangesCoordinator {
                 ? Set.of() : selected;
             GitReceiveGuard.requireUnchanged(project, git);
 
+            if (automatic) {
+                // The automatic command is not an unattended choice in the
+                // manual editor. It uses EDT's PUBLIC native headless manager:
+                // compare the exact existing staged scope, set every changed
+                // node to GET_FROM_OTHER and startMerge without any editor.
+                // A native terminal MERGE_PROCESS_FINISHED is mandatory.
+                if (!selectedPendingNames.containsAll(pending)) {
+                    throw new IOException("Не все ожидающие изменения вошли "
+                        + "в область автоматического объединения EDT.");
+                }
+                phase.set("Контроль снимка перед автоматическим Merge EDT");
+                if (!intermediaryInventoryUnchanged(journal, detect, jobProgress)) {
+                    throw new IOException("База-посредник изменилась "
+                        + "после подготовки автоматического объединения.");
+                }
+                long headBeforeMerge = readLatestRevisionOrUnknown(
+                    executable, transport, settings, jobProgress::isCanceled);
+                if (headBeforeMerge != revisionForReview.get()) {
+                    throw new IOException("Хранилище изменилось после выгрузки. "
+                        + "Автоматическое объединение не начинается.");
+                }
+                phase.set("Штатное автоматическое объединение EDT");
+                final org.xander.edt.storagebridge.edt.IncomingNativeAutomaticMerge.Result
+                    mergeResult;
+                try {
+                    mergeResult = EdtPublicServiceBridge.mergeIncomingAutomatically(
+                        nativeDescriptor, jobProgress);
+                } catch (org.xander.edt.storagebridge.edt
+                        .IncomingNativeAutomaticMerge.UncertainMergeException ex) {
+                    // EDT may still be reading XML and changing the project.
+                    // Do not delete staging or release the live exclusion
+                    // while its native merge status is still unknown.
+                    editorOwnsStaging = true;
+                    throw ex;
+                }
+                phase.set("Проверка результата автоматического объединения EDT");
+                GitReceiveGuard.Baseline postMergeGit =
+                    GitReceiveGuard.requireSafePostMergeGit(project, git);
+                GitReceiveGuard.requireSameBranchAndHead(project, postMergeGit);
+                if (!intermediaryInventoryUnchanged(journal, detect, jobProgress)) {
+                    throw new IOException("База-посредник изменилась "
+                        + "во время автоматического Merge EDT.");
+                }
+                long finalHead = readLatestRevisionOrUnknown(
+                    executable, transport, settings, jobProgress::isCanceled);
+                if (finalHead != revisionForReview.get()) {
+                    throw new IOException("Версия хранилища изменилась во время "
+                        + "автоматического Merge EDT. PENDING сохранён.");
+                }
+                Set<String> pendingNow = ReceivePendingStore.get(project,
+                    settings.address(), branch, intermediaryIdentity);
+                if (!pendingNow.equals(pending)) {
+                    throw new IOException("Ожидающие изменения были изменены "
+                        + "во время автоматического Merge EDT.");
+                }
+                int receivedCount = ReceiveCompletionRecorder.reviewedNativeSelective(
+                    project, settings.address(), intermediaryIdentity,
+                    branch, finalHead, pendingNow, Set.of());
+                if (effectiveFull) {
+                    ReceivePendingStore.replaceKeptLocalAfterFullMerge(
+                        project, settings.address(), branch,
+                        intermediaryIdentity, Set.of());
+                    if (initialFullReview) {
+                        journal.markInitialReviewPrepared();
+                    }
+                }
+                BridgeActivator.getDefault().getLog().info(
+                    "Native incoming auto-merge completed: nativeDiffs="
+                    + mergeResult.differences() + "; mergeExecuted="
+                    + mergeResult.merged() + "; reviewedRevision=" + finalHead
+                    + "; acknowledgedPending=" + receivedCount
+                    + "; full=" + effectiveFull);
+                informationOnUi(shell, "Изменения получены автоматически",
+                    "EDT применила все отличия из хранилища без "
+                    + "открытия редактора сравнения.\\n"
+                    + "Обработанная версия хранилища: " + finalHead + ".\\n"
+                    + "Ожидавших изменений обработано: " + receivedCount
+                    + ".\\nПри необходимости создайте новый коммит Git.");
+                return;
+            }
+
             // Selection in this dialog means "show in comparison", NOT
             // "safe to accept remotely". Native EDT two-way comparison
             // automatically prechecks differences for taking the other side.
