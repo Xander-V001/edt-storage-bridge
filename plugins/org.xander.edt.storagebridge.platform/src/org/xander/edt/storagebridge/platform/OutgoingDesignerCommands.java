@@ -54,9 +54,8 @@ public final class OutgoingDesignerCommands {
             requirePath(selectedFilesList);
         }
         if (stage == Stage.COMMIT && (comment == null || comment.isBlank()
-                || comment.length() > 200 || comment.contains("\n")
-                || comment.contains("\r"))) {
-            throw new IllegalArgumentException("Nonempty single-line commit comment required");
+                || comment.indexOf('\0') >= 0)) {
+            throw new IllegalArgumentException("Nonempty safe commit comment required");
         }
         var cmd = new ArrayList<String>();
         cmd.add(c.executable().toString());
@@ -93,8 +92,13 @@ public final class OutgoingDesignerCommands {
                 cmd.add("/ConfigurationRepositoryCommit");
                 cmd.add("-Objects");
                 cmd.add(selectedObjectsXml.toString());
-                cmd.add("-comment");
-                cmd.add(comment);
+                // Official 1C Designer supports multiple -comment arguments:
+                // one per line, preserving the Git HEAD commit description.
+                // ProcessBuilder passes each argument directly (no shell).
+                for (String line : comment.stripTrailing().lines().toList()) {
+                    cmd.add("-comment");
+                    cmd.add(line);
+                }
             }
         }
         cmd.add("/Out");
