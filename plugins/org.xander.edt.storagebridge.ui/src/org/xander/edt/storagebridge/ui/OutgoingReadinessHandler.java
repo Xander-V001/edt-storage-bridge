@@ -10,7 +10,7 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
 
-/** Explicit, read-only first step toward EDT -> classic storage publishing. */
+/** Main-menu command for the existing EDT -> classic repository publish workflow. */
 public final class OutgoingReadinessHandler extends AbstractHandler {
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -22,7 +22,7 @@ public final class OutgoingReadinessHandler extends AbstractHandler {
         Shell shell = HandlerUtil.getActiveShell(event);
         if (project == null || !project.isAccessible()) {
             MessageDialog.openInformation(shell,
-                "Проверка отправки в хранилище",
+                "Поместить изменения в хранилище",
                 "Выберите открытый проект EDT в Навигаторе.");
             return null;
         }
@@ -32,7 +32,7 @@ public final class OutgoingReadinessHandler extends AbstractHandler {
                     || settings.infobaseAddress().isBlank()
                     || settings.platformExecutable().isBlank()) {
                 MessageDialog.openInformation(shell,
-                    "Проверка отправки в хранилище",
+                    "Поместить изменения в хранилище",
                     "Сначала настройте существующее подключение к хранилищу "
                     + "через «Работа с хранилищем».");
                 return null;
@@ -40,7 +40,7 @@ public final class OutgoingReadinessHandler extends AbstractHandler {
             OutgoingReadinessCoordinator.check(shell, project, settings);
         } catch (StorageException | RuntimeException ex) {
             MessageDialog.openError(shell,
-                "Проверка отправки в хранилище",
+                "Поместить изменения в хранилище",
                 "Не удалось прочитать защищённые настройки проекта EDT.");
         }
         return null;
