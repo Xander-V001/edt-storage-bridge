@@ -167,51 +167,40 @@ public final class OutgoingMetadataExportCoordinator {
                     leaseReleased = true;
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (shell.isDisposed()) return;
-                        MessageDialog.openInformation(shell,
-                            "Экспорт метаданных EDT завершён",
-                            "Объектов с изменениями: " + plan.owners().size()
-                            + "\nСформировано XML/ресурсов: " + fileCount
-                            + "\nУдалённых объектов (через родителя Configuration): "
-                            + plan.removedOwners().size()
-                            + "\n\nОтчёт и файлы: " + resultDir
-                            + "\n\nЭто диагностический экспорт без изменений "
-                            + "проекта, базы и хранилища. "
-                            + "Списки Lock/Load/Commit не сформированы.");
-                        if (approvedPlan != null && !shell.isDisposed()
-                                && settings.manualOutgoing()) {
-                            if (MessageDialog.openQuestion(shell,
-                                    "Ручное помещение через Конфигуратор",
-                                    "Подготовить кандидат конфигурации (.cf) "
-                                    + "из актуальной базы-посредника и "
-                                    + "выбранных изменений EDT?\n\n"
-                                    + "Для сборки файла будет создана "
-                                    + "временная файловая база 1С. "
-                                    + "Рабочую базу и хранилище плагин "
-                                    + "не изменяет, Lock/Load/Commit "
-                                    + "автоматически не выполняет.")) {
+                        if (settings.manualOutgoing()) {
+                            // Preserve the existing diagnostic and handoff
+                            // prompts exclusively for manual Configurator mode.
+                            MessageDialog.openInformation(shell,
+                                "Экспорт метаданных EDT завершён",
+                                "Объектов с изменениями: " + plan.owners().size()
+                                + "\nСформировано XML/ресурсов: " + fileCount
+                                + "\nУдалённых объектов: " + plan.removedOwners().size()
+                                + "\n\nОтчёт и файлы: " + resultDir);
+                            if (approvedPlan != null && !shell.isDisposed()
+                                    && MessageDialog.openQuestion(shell,
+                                        "Ручное помещение через Конфигуратор",
+                                        "Подготовить кандидат конфигурации (.cf) "
+                                        + "из актуальной базы-посредника и "
+                                        + "выбранных изменений EDT?\n\n"
+                                        + "Для сборки файла будет создана "
+                                        + "временная файловая база 1С. "
+                                        + "Рабочую базу и хранилище плагин "
+                                        + "не изменяет, Lock/Load/Commit "
+                                        + "автоматически не выполняет.")) {
                                 OutgoingManualHandoffCoordinator.prepare(
                                     shell, project, settings, expectedGit,
                                     reviewedRevision, approvedPlan,
                                     resultDir.resolve("xml"));
                             }
-                        } else if (approvedPlan != null && !shell.isDisposed()) {
-                            if (MessageDialog.openQuestion(shell,
-                                    "Экспериментальная запись целых объектов",
-                                    "Штатный экспорт охватил все выбранные "
-                                    + "метаданные и их подчинённые файлы. "
-                                    + "Подготовить ТЕСТОВОЕ помещение "
-                                    + approvedPlan.classicOwners().size()
-                                    + " объектов? "
-                                    + (approvedPlan.capturesAllRootChildren()
-                                        ? "Для удаления будет рекурсивно захвачен "
-                                          + "корень конфигурации. "
-                                        : "")
-                                    + "Рабочие хранилища не использовать. "
-                                    + "Перед записью будут ещё два подтверждения.")) {
-                                OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
-                                    shell, project, settings, expectedGit,
-                                    reviewedRevision, plan, approvedPlan);
-                            }
+                        } else if (approvedPlan != null) {
+                            // The user already requested automatic placement.
+                            // Do not interrupt the normal flow with diagnostic
+                            // preview and "prepare another test" questions.
+                            // The separate explicit REAL-WRITE safety gate
+                            // inside confirmTestWrite is intentionally retained.
+                            OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
+                                shell, project, settings, expectedGit,
+                                reviewedRevision, plan, approvedPlan);
                         } else if (approvedPlan == null && !shell.isDisposed()) {
                             MessageDialog.openInformation(shell,
                                 "Помещение объектов пока заблокировано",
