@@ -64,6 +64,7 @@ public final class OutgoingMetadataExportCoordinator {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 Path folder = null;
+                boolean leaseReleased = false;
                 long started = System.nanoTime();
                 String phase = "PREFLIGHT";
                 try {
@@ -159,6 +160,11 @@ public final class OutgoingMetadataExportCoordinator {
                     final Path resultDir = folder;
                     final int fileCount = files;
                     final OutgoingWholeObjectWritePlan approvedPlan = qualifiedWrite;
+                    // A successful preview hands off to another phase that
+                    // acquires this same lease. Release synchronously before
+                    // posting to SWT, never in a racing Job.finally block.
+                    lease.close();
+                    leaseReleased = true;
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (shell.isDisposed()) return;
                         MessageDialog.openInformation(shell,
@@ -266,12 +272,14 @@ public final class OutgoingMetadataExportCoordinator {
                     return new Status(IStatus.ERROR, PLUGIN,
                         "Outgoing all-metadata read-only preview failed");
                 } finally {
-                    try {
-                        lease.close();
-                    } catch (Exception ex) {
-                        Platform.getLog(OutgoingMetadataExportCoordinator.class)
-                            .log(new Status(IStatus.WARNING, PLUGIN,
-                                "Unable to release outgoing preview lease", ex));
+                    if (!leaseReleased) {
+                        try {
+                            lease.close();
+                        } catch (Exception ex) {
+                            Platform.getLog(OutgoingMetadataExportCoordinator.class)
+                                .log(new Status(IStatus.WARNING, PLUGIN,
+                                    "Unable to release outgoing preview lease", ex));
+                        }
                     }
                 }
             }
