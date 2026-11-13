@@ -50,6 +50,23 @@ public final class OutgoingDesignerCommandsTest {
     }
 
     @Test
+    public void usesFullMultilineGitMessageAsNativeDesignerComments() {
+        var args = OutgoingDesignerCommands.arguments(
+            connection(), OutgoingDesignerCommands.Stage.COMMIT,
+            absolute("objects.xml"), absolute("export"), absolute("list.txt"),
+            absolute("commit.log"), "Исправлен расчёт пособия\n\nЗадача 123: проверка формы\n");
+        var comments = new java.util.ArrayList<String>();
+        for (int i = 0; i + 1 < args.size(); i++) {
+            if ("-comment".equals(args.get(i))) comments.add(args.get(i + 1));
+        }
+        assertEquals(java.util.List.of("Исправлен расчёт пособия", "",
+            "Задача 123: проверка формы"), comments);
+        assertFalse(args.contains("EDT Storage Bridge: metadata objects"));
+        assertTrue(args.contains("/ConfigurationRepositoryCommit"));
+        assertFalse(args.contains("-force"));
+    }
+
+    @Test
     public void refusesMissingScopesAndMissingComment() {
         Path path = absolute("objects.xml"),
             out = absolute("log");
