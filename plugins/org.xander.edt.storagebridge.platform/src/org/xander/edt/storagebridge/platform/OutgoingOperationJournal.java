@@ -3,7 +3,6 @@ package org.xander.edt.storagebridge.platform;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -15,9 +14,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Local, durable, redacted, append-only diagnostics for a native write.
- * One project/repository/IB/branch scope is permanently blocked after
- * a possibly-executed native write fails until manual reconciliation.
+ * Local, durable, redacted, append-only diagnostics for ONE native write.
+ * Each invocation owns an independent UUID directory. Older journals are
+ * NEVER consulted and cannot block the start of a new invocation.
  *
  * No raw argv, passwords or Designer output are ever logged by this class.
  * Native stderr/logs are copied only through a redacting runner.
@@ -47,57 +46,15 @@ public final class OutgoingOperationJournal {
             .resolve("outgoing").resolve(sha256(scope));
         Files.createDirectories(root);
         lockDown(root);
-        Path active = root.resolve("active.txt");
-        // Never overwrite a possibly incomplete native operation: it might
-        // already have captured objects or committed a new storage version.
-        if (Files.exists(active, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException(
-                "Unresolved previous outgoing operation. Inspect local outgoing journal");
-        }
+        // Always start a new independent run. Historical active.txt files
+        // from older releases are ignored; this version never creates one.
         String id = UUID.randomUUID().toString();
         Path folder = Files.createDirectory(root.resolve(id));
         lockDown(folder);
         var journal = new OutgoingOperationJournal(folder, id);
-        // Write all startup evidence before creating the active marker.
         journal.event("BEGIN", "git=" + gitSha + " revision=" + version);
         journal.state("PREPARED");
-        try {
-            Files.writeString(active, id + "\n", StandardCharsets.US_ASCII,
-                java.nio.file.StandardOpenOption.CREATE_NEW);
-        } catch (IOException e) {
-            journal.event("FAILED", "unable-to-create-active-marker");
-            throw e;
-        }
         return journal;
-    }
-
-    /**
-     * Read-only diagnostic lookup of the last operation whose completion
-     * could not be proven. Never removes locks or resets a journal.
-     */
-    public static Path unresolvedDirectory(Path workspaceState, String scope)
-            throws IOException {
-        Objects.requireNonNull(workspaceState);
-        if (scope == null || scope.isBlank())
-            throw new IllegalArgumentException("No operation scope");
-        Path base = workspaceState.toAbsolutePath().normalize()
-            .resolve("outgoing").resolve(sha256(scope));
-        Path active = base.resolve("active.txt");
-        if (!Files.exists(active, LinkOption.NOFOLLOW_LINKS)) return null;
-        if (!Files.isRegularFile(active, LinkOption.NOFOLLOW_LINKS)
-                || Files.size(active) > 128)
-            throw new IOException("Corrupted outgoing active-operation marker");
-        String id = Files.readString(active, StandardCharsets.US_ASCII).trim();
-        try {
-            UUID.fromString(id);
-        } catch (IllegalArgumentException ex) {
-            throw new IOException("Invalid outgoing operation ID", ex);
-        }
-        Path folder = base.resolve(id);
-        if (!Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)
-                || Files.isSymbolicLink(folder))
-            throw new IOException("Unresolved native operation folder missing");
-        return folder;
     }
 
     /**
@@ -171,40 +128,25 @@ public final class OutgoingOperationJournal {
     }
 
     /**
-     * Release the operation marker after a successful native Designer
-     * ConfigurationRepositoryCommit (exit code 0). The plugin intentionally
-     * does NOT fetch or store the repository revision after Commit. A developer
-     * must explicitly receive the new revision before their next publication.
-     *
-     * If Commit did not return successfully, retain the active marker to
-     * prevent unsafe automatic retries.
+     * Finalize only this invocation after native Designer Commit (exit 0).
+     * No repository HEAD read, historical marker check or cross-run lock.
      */
     public void completedAfterNativeCommit() throws IOException {
         if (!"COMMIT_PROCESS_OK".equals(Files.readString(marker,
                 StandardCharsets.US_ASCII).trim())) {
             throw new IOException("No confirmed native Commit process outcome");
         }
-        Path active = directory.getParent().resolve("active.txt");
-        if (!Files.isRegularFile(active, LinkOption.NOFOLLOW_LINKS)
-                || !runId.equals(Files.readString(active,
-                    StandardCharsets.US_ASCII).trim())) {
-            throw new IOException("Operation marker identity changed");
-        }
         event("COMMIT_SUCCEEDED", "native-designer-exit-zero");
         state("COMPLETED");
-        Files.delete(active);
     }
 
-    /** Before any mutation, a cancellation can safely discard the active marker. */
+    /** Abort this invocation before Lock; other runs are not affected. */
     public void abortBeforeMutation() throws IOException {
         if (!"PREPARED".equals(Files.readString(marker,
                 StandardCharsets.US_ASCII).trim()))
             throw new IOException("Cannot abort a possibly mutating operation");
         event("ABORT", "before-lock");
         state("ABORTED");
-        Path active = directory.getParent().resolve("active.txt");
-        if (runId.equals(Files.readString(active, StandardCharsets.US_ASCII).trim()))
-            Files.delete(active);
     }
 
     public synchronized void event(String code, String safeMessage)
