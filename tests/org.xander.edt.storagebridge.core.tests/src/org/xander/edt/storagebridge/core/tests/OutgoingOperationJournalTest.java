@@ -28,7 +28,7 @@ public final class OutgoingOperationJournalTest {
     }
 
     @Test
-    public void cleanAbortAndVerifiedReleaseAreDifferent() throws Exception {
+    public void cleanAbortAndSuccessfulCommitReleaseAreDifferent() throws Exception {
         Path folder = Files.createTempDirectory("outgoing-journal-test-");
         try {
             var before = OutgoingOperationJournal.begin(folder, "test-source", SHA, 100);
@@ -41,7 +41,13 @@ public final class OutgoingOperationJournalTest {
             after.after("LOAD", 0);
             after.before("COMMIT");
             after.after("COMMIT", 0);
-            after.verified(102);
+            after.completedAfterNativeCommit();
+            assertEquals("COMPLETED", Files.readString(
+                after.directory().resolve("state.txt")).trim());
+            assertTrue(Files.readString(after.directory().resolve("events.log"))
+                .contains("COMMIT_SUCCEEDED"));
+            assertNull(OutgoingOperationJournal.unresolvedDirectory(
+                folder, "test-source"));
             var next = OutgoingOperationJournal.begin(folder, "test-source", SHA, 102);
             next.abortBeforeMutation();
         } finally { clean(folder); }
@@ -54,13 +60,13 @@ public final class OutgoingOperationJournalTest {
             var op = OutgoingOperationJournal.begin(root, "test-lock-state",
                 SHA, 50);
             assertThrows(IOException.class, () -> op.before("COMMIT"));
-            assertThrows(IOException.class, () -> op.verified(51));
+            assertThrows(IOException.class, () -> op.completedAfterNativeCommit());
             op.before("LOCK");
             assertThrows(IOException.class, () -> op.before("LOAD"));
             assertThrows(IOException.class, op::abortBeforeMutation);
             op.after("LOCK", 0);
             op.before("LOAD");
-            assertThrows(IOException.class, () -> op.verified(51));
+            assertThrows(IOException.class, () -> op.completedAfterNativeCommit());
         } finally { clean(root); }
     }
 
