@@ -1213,9 +1213,9 @@ public final class ReceiveChangesCoordinator {
                     throw new IOException("Ожидающие изменения были изменены "
                         + "во время автоматического Merge EDT.");
                 }
-                int receivedCount = ReceiveCompletionRecorder.reviewedNativeSelective(
+                int receivedCount = ReceiveCompletionRecorder.reviewedAutomaticNativeMerge(
                     project, settings.address(), intermediaryIdentity,
-                    branch, finalHead, pendingNow, Set.of());
+                    branch, finalHead, pendingNow);
                 if (effectiveFull) {
                     ReceivePendingStore.replaceKeptLocalAfterFullMerge(
                         project, settings.address(), branch,
