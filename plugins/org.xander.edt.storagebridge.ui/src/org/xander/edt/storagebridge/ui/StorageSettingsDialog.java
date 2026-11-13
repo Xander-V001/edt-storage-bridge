@@ -201,11 +201,11 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         outgoingCommentSuffix.setLayoutData(suffixLayout);
         outgoingCommentSuffix.setText(saved == null
             ? "" : saved.outgoingCommentSuffix());
-        outgoingCommentSuffix.setMessage("Например: (VAVULIN Ai)");
+        outgoingCommentSuffix.setMessage("Необязательная пометка");
         outgoingCommentSuffix.setToolTipText(
             "Необязательная пометка в конце первой строки описания "
             + "последнего Git-коммита при автоматическом помещении. "
-            + "Например: Исправлен расчёт пособия (VAVULIN Ai). "
+            + "Пометка добавляется в конец первой строки. "
             + "Последующие строки описания Git сохраняются.");
 
         Group revisions = new Group(content, SWT.NONE);
