@@ -67,6 +67,41 @@ public final class OutgoingDesignerCommandsTest {
     }
 
     @Test
+    public void additionalCommentIsAppendedToSubjectOnly() {
+        String message = "Исправлен расчёт пособия при изменении среднего заработка";
+        String expected = message + " (VAVULIN Ai)";
+        assertEquals(expected, OutgoingDesignerCommands.withAdditionalComment(
+            message, "  (VAVULIN Ai)  "));
+        assertEquals(message, OutgoingDesignerCommands.withAdditionalComment(
+            message, "   "));
+    }
+
+    @Test
+    public void additionalCommentPreservesMultilineGitDescription() {
+        String git = "Исправлен расчёт пособия\n\nПодробности:\n- исправлена форма";
+        String complete = OutgoingDesignerCommands.withAdditionalComment(
+            git, "(VAVULIN Ai)");
+        assertEquals("Исправлен расчёт пособия (VAVULIN Ai)\n\n"
+            + "Подробности:\n- исправлена форма", complete);
+        var args = OutgoingDesignerCommands.arguments(
+            connection(), OutgoingDesignerCommands.Stage.COMMIT,
+            absolute("objects.xml"), absolute("export"), absolute("list.txt"),
+            absolute("commit.log"), complete);
+        var comments = new java.util.ArrayList<String>();
+        for (int i = 0; i + 1 < args.size(); i++) {
+            if ("-comment".equals(args.get(i))) comments.add(args.get(i + 1));
+        }
+        assertEquals(java.util.List.of("Исправлен расчёт пособия (VAVULIN Ai)",
+            "", "Подробности:", "- исправлена форма"), comments);
+    }
+
+    @Test
+    public void additionalCommentRejectsEmbeddedLineBreaks() {
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingDesignerCommands.withAdditionalComment("Тест", "лишний\nтекст"));
+    }
+
+    @Test
     public void refusesMissingScopesAndMissingComment() {
         Path path = absolute("objects.xml"),
             out = absolute("log");
