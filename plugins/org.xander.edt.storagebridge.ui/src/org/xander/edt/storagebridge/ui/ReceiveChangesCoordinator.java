@@ -117,7 +117,7 @@ public final class ReceiveChangesCoordinator {
     }
 
     /** Explicit caller-selected transport mode; never inferred from old pending items. */
-    public enum ReceiveMode { INCREMENTAL, FULL_REVIEW }
+    public enum ReceiveMode { INCREMENTAL, FULL_REVIEW, AUTOMATIC }
 
     /**
      * Invoked only from SWT UI. All long-running operations are executed by
@@ -159,7 +159,9 @@ public final class ReceiveChangesCoordinator {
         }
         Job job = new Job((mode == ReceiveMode.FULL_REVIEW
                 ? "1С: Получить полную конфигурацию из хранилища — "
-                : "1С: Получение изменений из хранилища — ")
+                : mode == ReceiveMode.AUTOMATIC
+                    ? "1С: Автоматическое получение всех изменений — "
+                    : "1С: Получение изменений с ручным сравнением — ")
                 + project.getName()) {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
@@ -206,6 +208,7 @@ public final class ReceiveChangesCoordinator {
             new AtomicReference<>();
         Path conversionRoot = null;
         boolean editorOwnsStaging = false;
+        final boolean automatic = mode == ReceiveMode.AUTOMATIC;
         AtomicReference<String> phase = new AtomicReference<>("Проверка настроек");
         AtomicBoolean updateAttempted = new AtomicBoolean(false);
         // Native exit=0 is not yet a verified post-update base inventory.
@@ -312,8 +315,9 @@ public final class ReceiveChangesCoordinator {
             final Set<String> keptBeforeReview = ReceivePendingStore.keptLocal(
                 project, settings.address(), branch, intermediaryIdentity);
             final boolean fullDueToKeptLocal =
-                mode == ReceiveMode.INCREMENTAL && !keptBeforeReview.isEmpty();
-            if (fullDueToKeptLocal && !confirmOnUi(shell,
+                (mode == ReceiveMode.INCREMENTAL || automatic)
+                    && !keptBeforeReview.isEmpty();
+            if (!automatic && fullDueToKeptLocal && !confirmOnUi(shell,
                     "Требуется полное сравнение EDT",
                     "При предыдущем получении часть изменений из "
                         + "хранилища оставлена локально (объектов: "
@@ -441,13 +445,25 @@ public final class ReceiveChangesCoordinator {
             if (!retryPendingOnly && !freshUpdateApproved
                     && (!recovery || resumePrepared)
                     && !confirmOnUi(shell,
-                        fullReview
-                            ? "Получить полную конфигурацию из хранилища"
-                            : "Получить изменения из хранилища",
-                        ReceiveConfirmationTexts.freshReceive(
-                            settings.address(), settings.infobaseAddress(),
-                            fullReview, fullReview),
-                        "Обновить и сравнить")) {
+                        automatic
+                            ? "Получить изменения (автоматически)"
+                            : fullReview
+                                ? "Получить полную конфигурацию из хранилища"
+                                : "Получить изменения из хранилища",
+                        automatic
+                            ? "Получить ВСЕ изменения из хранилища в проект EDT "
+                                + "без окна сравнения?\\n\\n"
+                                + "Вариант из хранилища будет принят для "
+                                + "КАЖДОГО отличия, включая удаление объектов. "
+                                + "Уже закоммиченные локальные отличия "
+                                + "могут быть заменены. Git должен быть чистым. "
+                                + "При необходимости будет выполнена полная "
+                                + "XML-выгрузка базы-посредника."
+                            : ReceiveConfirmationTexts.freshReceive(
+                                settings.address(), settings.infobaseAddress(),
+                                fullReview, fullReview),
+                        automatic ? "Получить и применить всё"
+                            : "Обновить и сравнить")) {
                 return;
             }
 
@@ -923,7 +939,7 @@ public final class ReceiveChangesCoordinator {
                     + platformFullDump + "; rootOrLanguageChange="
                     + rootOrLanguageChange + "; recovery=" + recovery
                     + "; missingFromRemote=" + absentFromRemote.size());
-                boolean accept = confirmOnUi(shell,
+                boolean accept = automatic || confirmOnUi(shell,
                     "Требуется полное сравнение EDT",
                     "Почему требуется полное сравнение:\n"
                     + whyFull + "\n"
