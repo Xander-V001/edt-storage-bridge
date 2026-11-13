@@ -73,42 +73,9 @@ public final class OutgoingReadinessCoordinator {
                     int pending = ReceivePendingStore.get(project,
                         settings.address(), git.branch(), intermediary).size();
 
-                    // Automatically determine candidates for ALL metadata
-                    // types. Origin validation is still required before Commit.
-                    String outgoingCandidates = "";
-                    if (latest == reviewed && pending == 0) {
-                        var published = OutgoingPublishedGitStore.read(project,
-                            settings.address(), intermediary, git.branch());
-                        if (published == null) {
-                            outgoingCandidates = "Нет подтверждённой Git-точки "
-                                + "последнего реального помещения. "
-                                + "Вычислять отправку через HEAD~1 нельзя.";
-                        } else {
-                            if (published.revision() > latest) {
-                                throw new java.io.IOException(
-                                    "Publication is newer than current repository");
-                            }
-                            var candidates = OutgoingGitDiffReader.inspect(
-                                Path.of(project.getLocation().toOSString()),
-                                published.head(), git.head(), monitor::isCanceled);
-                            var list = new StringBuilder(
-                                "По Git автоматически найдены кандидаты: файлов "
-                                + candidates.files().size() + ", объектов "
-                                + candidates.ownerChanges().size() + ".");
-                            int count = 0;
-                            for (String owner : candidates.ownerChanges().keySet()) {
-                                if (count++ == 12) {
-                                    list.append("\n…и другие");
-                                    break;
-                                }
-                                list.append("\n• ").append(owner);
-                            }
-                            list.append("\nЭто пока НЕ список для записи: "
-                                + "в Git могут быть также полученные изменения "
-                                + "из хранилища.");
-                            outgoingCandidates = list.toString();
-                        }
-                    }
+                    // Metadata candidates are determined only by the native
+                    // EDT comparison performed in the next stage. Git is a
+                    // stability guard, never an outgoing object-diff engine.
                     GitReceiveGuard.requireUnchanged(project, git);
                     monitor.worked(1);
 
