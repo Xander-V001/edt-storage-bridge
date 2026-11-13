@@ -6,6 +6,10 @@
       name="%command.inspect"/>
     <command id="org.xander.edt.storagebridge.ui.openStorageSettings"
       name="%command.storage"/>
+    <command id="org.xander.edt.storagebridge.ui.receiveAutomatic"
+      name="%command.receiveAutomatic"/>
+    <command id="org.xander.edt.storagebridge.ui.receiveManual"
+      name="%command.receiveManual"/>
     <command id="org.xander.edt.storagebridge.ui.fullReview"
       name="%command.fullReview"/>
     <command id="org.xander.edt.storagebridge.ui.outgoingReadiness"
@@ -19,6 +23,12 @@
       commandId="org.xander.edt.storagebridge.ui.openStorageSettings"
       class="org.xander.edt.storagebridge.ui.OpenStorageSettingsHandler"/>
     <handler
+      commandId="org.xander.edt.storagebridge.ui.receiveAutomatic"
+      class="org.xander.edt.storagebridge.ui.AutomaticStorageReceiveHandler"/>
+    <handler
+      commandId="org.xander.edt.storagebridge.ui.receiveManual"
+      class="org.xander.edt.storagebridge.ui.ManualStorageReceiveHandler"/>
+    <handler
       commandId="org.xander.edt.storagebridge.ui.fullReview"
       class="org.xander.edt.storagebridge.ui.FullStorageReviewHandler"/>
     <handler
@@ -28,10 +38,10 @@
   <extension point="org.eclipse.ui.menus">
     <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
       <menu id="org.xander.edt.storagebridge.ui.menu" label="%menu.bridge">
-        <command commandId="org.xander.edt.storagebridge.ui.openStorageSettings" style="push"/>
+        <command commandId="org.xander.edt.storagebridge.ui.receiveAutomatic" style="push"/>
+        <command commandId="org.xander.edt.storagebridge.ui.receiveManual" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.fullReview" style="push"/>
         <command commandId="org.xander.edt.storagebridge.ui.outgoingReadiness" style="push"/>
-        <command commandId="org.xander.edt.storagebridge.ui.inspectProject" style="push"/>
       </menu>
     </menuContribution>
 
