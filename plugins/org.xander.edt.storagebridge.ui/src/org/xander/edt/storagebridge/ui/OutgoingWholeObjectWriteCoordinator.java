@@ -80,7 +80,10 @@ public final class OutgoingWholeObjectWriteCoordinator {
                 String phase = "PREFLIGHT";
                 boolean mutationStarted = false;
                 try {
-                    GitReceiveGuard.requireUnchanged(project, reviewedGit);
+                    // Fetch the text attached to the verified Git HEAD
+                    // before any native repository mutation can begin.
+                    String commitComment = GitReceiveGuard.requireHeadCommitMessage(
+                        project, reviewedGit);
                     if (monitor.isCanceled()) return Status.CANCEL_STATUS;
                     String source = settings.infobaseType().name() + ":"
                         + settings.infobaseAddress().trim();
@@ -187,7 +190,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.COMMIT,
                         commitXml, exportRoot, loadList,
-                        "EDT Storage Bridge: metadata objects",
+                        commitComment,
                         TIMEOUT, journal, monitor::isCanceled);
 
                     // The official Designer Commit returned exit code 0.
