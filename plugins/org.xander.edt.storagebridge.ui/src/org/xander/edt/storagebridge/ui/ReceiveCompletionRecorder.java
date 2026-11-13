@@ -73,6 +73,35 @@ public final class ReceiveCompletionRecorder {
     }
 
     /**
+     * Automatic EDT merge completed with every native changed node selected
+     * to GET_FROM_OTHER, a terminal native MERGE_PROCESS_FINISHED event,
+     * stable Git/IB and verified repository HEAD. There are no local choices.
+     * We record REVIEWED, not APPLIED: EDT can serialize bytes differently.
+     *
+     * The coordinator must attest the above native conditions BEFORE calling.
+     */
+    public static int reviewedAutomaticNativeMerge(IProject project,
+            String repository, String intermediary, String branch,
+            long revision, Set<String> allPending) throws BackingStoreException {
+        requireCheckpointVersion(project, repository, intermediary, branch, revision);
+        var current = ReceivePendingStore.get(
+            project, repository, branch, intermediary);
+        if (!current.equals(allPending)) {
+            throw new IllegalStateException(
+                "Automatic native EDT scope does not cover all pending changes");
+        }
+        // Record the reviewed checkpoint first, then clear pending:
+        // interrupted persistence can re-review but cannot lose the debt.
+        ReceiveRevisionStore.recordReviewed(
+            project, repository, intermediary, branch, revision);
+        if (!current.isEmpty()) {
+            ReceivePendingStore.acknowledgeNativeReviewedScope(
+                project, repository, branch, intermediary, current, Set.of());
+        }
+        return current.size();
+    }
+
+    /**
      * Native EDT finished a selective merge. The developer explicitly
      * confirmed that EVERY native 1C change in this pending batch was shown
      * and considered. We cannot infer the choice of individual checkboxes
