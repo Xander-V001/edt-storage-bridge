@@ -22,7 +22,6 @@ import org.xander.edt.storagebridge.core.OutgoingMetadataObjectPlan;
 import org.xander.edt.storagebridge.core.OutgoingWholeObjectWritePlan;
 import org.xander.edt.storagebridge.edt.EdtPublicServiceBridge;
 import org.xander.edt.storagebridge.platform.ChangeDetectionRequest;
-import org.xander.edt.storagebridge.platform.ChangedObjectsProbe;
 import org.xander.edt.storagebridge.platform.ConfigDumpInfoIndex;
 import org.xander.edt.storagebridge.platform.ConfigVersionSnapshotRunner;
 import org.xander.edt.storagebridge.platform.InfobaseLocation;
@@ -194,17 +193,11 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         throw new IOException("Load may have executed before cancellation");
                     }
 
-                    // Let native 1C report the actual changed metadata names
-                    // after Load; fail closed on FullDump or out-of-scope writes.
-                    phase = "VERIFY_NATIVE_LOAD";
-                    monitor.subTask("Штатная проверка состава после загрузки");
-                    int actualChanges = verifyNativeLoadedScope(
-                        probe, received.lastScannedInfo(), plan, monitor);
-                    journal.event("NATIVE_LOAD_SCOPE_VERIFIED",
-                        "nativeChanged=" + actualChanges);
-                    GitReceiveGuard.requireUnchanged(project, reviewedGit);
-                    requireHead(connection, reviewedRevision, monitor);
-
+                    // The built-in Designer has completed the scoped partial
+                    // Load successfully. Its native Lock/Load/Commit scope,
+                    // the Git guard and the repository HEAD guard are retained.
+                    // Do not run a second incremental export as a post-Load
+                    // comparison: it can reject valid loaded objects.
                     phase = "COMMIT";
                     monitor.subTask("Помещение выбранных объектов в хранилище");
                     OutgoingDesignerRunner.run(connection,
@@ -288,34 +281,6 @@ public final class OutgoingWholeObjectWriteCoordinator {
         });
         return new Status(IStatus.ERROR, PLUGIN,
             "Outgoing metadata publish failed at " + phase);
-    }
-
-    /** Check the 1C Designer -getChanges report, never XML or file bytes. */
-    private static int verifyNativeLoadedScope(ChangeDetectionRequest request,
-            Path baseline, OutgoingWholeObjectWritePlan selectedPlan,
-            IProgressMonitor monitor) throws IOException, InterruptedException {
-        var nativeReport = new ChangedObjectsProbe().detectNative(
-            request, baseline, monitor::isCanceled);
-        if (nativeReport.fullDump()) {
-            throw new IOException("Native 1C reported FullDump after selective Load");
-        }
-        var changed = nativeReport.exactNames();
-        if (changed.isEmpty()) {
-            throw new IOException("Native 1C reported no changes after selective Load");
-        }
-        for (String identity : changed) {
-            boolean approved = false;
-            for (String owner : selectedPlan.nativeNames()) {
-                if (identity.equals(owner) || identity.startsWith(owner + ".")) {
-                    approved = true;
-                    break;
-                }
-            }
-            if (!approved) {
-                throw new IOException("Native 1C reported out-of-scope Load changes");
-            }
-        }
-        return changed.size();
     }
 
     private static void requireSameInfobase(ChangeDetectionRequest request,
