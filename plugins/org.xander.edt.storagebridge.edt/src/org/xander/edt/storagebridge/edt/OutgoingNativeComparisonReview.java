@@ -1,6 +1,8 @@
 package org.xander.edt.storagebridge.edt;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.function.BooleanSupplier;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -18,6 +20,7 @@ import org.eclipse.core.runtime.jobs.Job;
 import com._1c.g5.v8.bm.core.IBmTransaction;
 import com._1c.g5.v8.bm.integration.IBmTask;
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessBatch;
+import com._1c.g5.v8.dt.compare.core.CompareMergeProcessDescriptor;
 import com._1c.g5.v8.dt.compare.core.CompareMergeProcessBatchStatus;
 import com._1c.g5.v8.dt.compare.core.ComparisonProcessHandle;
 import com._1c.g5.v8.dt.compare.core.ComparisonProcessStatus;
@@ -57,6 +60,9 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
                 if (handle.equals(current) && status != null) {
                     if ("COMPARISON_PROCESS_FINISHED".equals(status.name())) {
                         scheduleCapture();
+                    } else if ("COMPARISON_MERGE_PROCESS_CANCELLED".equals(status.name())) {
+                        failure = new IOException("Native EDT comparison was cancelled");
+                        captured.countDown();
                     }
                 }
             }
@@ -74,6 +80,28 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
         } catch (RuntimeException ignored) {
             // The editor will start the native process after subscription.
         }
+    }
+
+    /**
+     * Official EDT comparison API, without creating or closing a UI editor.
+     * Only the native manager decides which metadata nodes differ.
+     */
+    public void startWithoutEditor(CompareMergeProcessDescriptor descriptor)
+            throws IOException {
+        if (descriptor == null || !handle.equals(descriptor.getHandle())) {
+            throw new IOException("Native EDT comparison descriptor mismatch");
+        }
+        try {
+            manager.startComparison(new CompareMergeProcessBatch(descriptor));
+        } catch (RuntimeException | LinkageError ex) {
+            throw new IOException("Native EDT comparison could not be started", ex);
+        }
+    }
+
+    /** Discard the headless comparison session after the evidence is captured. */
+    public void stopWithoutEditor() {
+        try { manager.stop(handle); }
+        catch (RuntimeException ignored) { /* Session may already be released. */ }
     }
 
     private synchronized void scheduleCapture() {
@@ -238,6 +266,37 @@ public final class OutgoingNativeComparisonReview implements AutoCloseable {
     public List<String> awaitNativeIdentities() throws IOException, InterruptedException {
         if (!captured.await(30, TimeUnit.SECONDS)) {
             throw new IOException("Native EDT comparison never completed or was closed early");
+        }
+        if (failure != null) throw failure;
+        if (identities == null) {
+            throw new IOException("Native EDT comparison evidence is incomplete");
+        }
+        return identities;
+    }
+
+    /**
+     * Wait for a native comparison with explicit cancellation and timeout.
+     * This is used by background Jobs only, never the SWT display thread.
+     */
+    public List<String> awaitNativeIdentities(Duration timeout,
+            BooleanSupplier cancelled) throws IOException, InterruptedException {
+        Objects.requireNonNull(timeout);
+        Objects.requireNonNull(cancelled);
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("Native comparison timeout must be positive");
+        }
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (captured.getCount() != 0) {
+            if (cancelled.getAsBoolean()) {
+                throw new IOException("Native EDT comparison cancelled by user");
+            }
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                throw new IOException("Native EDT comparison timed out; status="
+                    + manager.getStatus(handle));
+            }
+            captured.await(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(250)),
+                TimeUnit.NANOSECONDS);
         }
         if (failure != null) throw failure;
         if (identities == null) {
