@@ -166,6 +166,22 @@ public final class EdtPublicServiceBridge {
                 selectedObjects, initialFullReview, monitor);
     }
 
+    /**
+     * Perform complete incoming EDT accept-all merge without a UI editor.
+     * A terminal MERGE_PROCESS_FINISHED event is required for success.
+     */
+    public static IncomingNativeAutomaticMerge.Result mergeIncomingAutomatically(
+            CompareMergeProcessDescriptor descriptor, IProgressMonitor monitor)
+            throws IOException, InterruptedException {
+        try {
+            return new IncomingNativeAutomaticMerge(
+                ServiceAccess.get(IComparisonManager.class))
+                .run(descriptor, monitor);
+        } catch (com._1c.g5.wiring.ServiceUnavailableException ex) {
+            throw new IOException("Native EDT comparison manager is unavailable", ex);
+        }
+    }
+
     /** Prove that deleted top-level metadata actually disappeared after EDT Merge. */
     public static java.util.Set<String> confirmedRemovedTopLevel(
             IProject project, java.util.Set<String> missingFromRepository)
