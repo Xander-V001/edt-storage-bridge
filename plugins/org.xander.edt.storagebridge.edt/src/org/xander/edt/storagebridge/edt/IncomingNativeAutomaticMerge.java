@@ -94,6 +94,7 @@ public final class IncomingNativeAutomaticMerge {
         };
         boolean mergeScheduled = false;
         boolean nativeFinished = false;
+        boolean nativeTerminal = false;
         manager.addStatusListener(listener);
         try {
             manager.startComparison(batch);
@@ -156,13 +157,22 @@ public final class IncomingNativeAutomaticMerge {
                 await(signal, finished, cancelled, lastStatus,
                     MERGE_TIMEOUT, monitor, "merge");
                 nativeFinished = true;
-            } catch (IOException | InterruptedException ex) {
+            } catch (IOException ex) {
+                if (cancelled[0]) {
+                    // Native EDT supplied an explicit terminal cancellation or
+                    // discard event. Stage cleanup and another attempt are safe.
+                    nativeTerminal = true;
+                    throw new IOException("Native EDT automatic merge was cancelled", ex);
+                }
                 throw new UncertainMergeException(
                     "Native EDT Merge may still be active; staged files preserved", ex);
+            } catch (InterruptedException ex) {
+                throw new UncertainMergeException(
+                    "Native EDT Merge wait interrupted; stage preserved", ex);
             }
             return new Result(checked.differences(), true);
         } catch (RuntimeException | LinkageError ex) {
-            if (mergeScheduled && !nativeFinished) {
+            if (mergeScheduled && !nativeFinished && !nativeTerminal) {
                 throw new UncertainMergeException(
                     "Native EDT Merge state is uncertain; staged files preserved", ex);
             }
@@ -170,7 +180,7 @@ public final class IncomingNativeAutomaticMerge {
         } finally {
             try { manager.removeStatusListener(listener); }
             catch (RuntimeException ignored) { }
-            if (!mergeScheduled || nativeFinished) {
+            if (!mergeScheduled || nativeFinished || nativeTerminal) {
                 try { manager.stop(handle); }
                 catch (RuntimeException ignored) { }
             }
