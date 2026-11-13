@@ -117,10 +117,10 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     String scope = project.getLocationURI().normalize()
                         + "\0" + settings.address().trim()
                         + "\0" + source + "\0" + branch;
-                    if (OutgoingOperationJournal.unresolvedDirectory(
-                            state, scope) != null) {
-                        throw new IOException("Unresolved previous native write");
-                    }
+                    // A new automatic placement does not depend on any
+                    // historical run or journal marker. The current lease,
+                    // Git/revision checks and native 1C Lock/Load/Commit
+                    // remain the only execution gates.
                     journal = OutgoingOperationJournal.begin(state, scope,
                         reviewedGit.head(), reviewedRevision);
                     Path root = journal.directory();
@@ -193,8 +193,8 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     // The official Designer Commit returned exit code 0.
                     // Do not read or record repository HEAD here: receiving
                     // the new revision is an explicit subsequent user action.
-                    // The journal may complete ONLY after a successful native
-                    // COMMIT stage, so failed/uncertain operations stay blocked.
+                    // Only this invocation's journal is finalized after a
+                    // successful COMMIT; future invocations are independent.
                     phase = "FINISH";
                     journal.completedAfterNativeCommit();
                     if (!display.isDisposed()) display.asyncExec(() -> {
@@ -253,7 +253,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                 "Помещение остановлено",
                 (mutationStarted
                     ? "Конфигуратор мог изменить тестовую базу или хранилище. "
-                      + "Нельзя повторять операцию до ручной сверки."
+                      + "Проверьте состояние базы и захватов перед повтором."
                     : "Запись в хранилище не начиналась.")
                 + (diagnostic == null ? "" :
                     "\nЖурнал: " + diagnostic)
