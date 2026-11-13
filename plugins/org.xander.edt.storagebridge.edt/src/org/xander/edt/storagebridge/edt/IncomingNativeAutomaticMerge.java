@@ -148,11 +148,22 @@ public final class IncomingNativeAutomaticMerge {
                 throw new IOException("EDT comparison tree changed while selecting changes");
             }
             if (monitor.isCanceled()) throw new InterruptedException();
+            // startMerge can schedule an asynchronous native EDT write before
+            // returning (or throwing). The moment it is invoked, its outcome
+            // becomes potentially mutating: never stop its session or delete
+            // staged XML on a non-OK/exception result without a terminal event.
+            mergeScheduled = true;
             IStatus scheduled = manager.startMerge(batch, monitor);
             if (scheduled == null || !scheduled.isOK()) {
-                throw new IOException("EDT refused to schedule the native merge");
+                if (cancelled[0]) {
+                    nativeTerminal = true;
+                    throw new IOException(
+                        "EDT explicitly cancelled the automatic native merge");
+                }
+                throw new UncertainMergeException(
+                    "EDT did not confirm native Merge scheduling; "
+                    + "staged XML preserved until EDT restart");
             }
-            mergeScheduled = true;
             try {
                 await(signal, finished, cancelled, lastStatus,
                     MERGE_TIMEOUT, monitor, "merge");
