@@ -244,8 +244,10 @@ public final class EdtSelectiveReviewService {
      * while still using EDT's own full merge engine. Procedure-level granularity
      * is NOT evidence that native EDT failed to apply or persist a merge.
      *
-     * Deletion of main-side objects remains available as a user-selectable EDT
-     * action. The plugin does not execute deletions automatically.
+     * Deletion of main-side objects is supported by native EDT. In manual
+     * mode the user selects it in the comparison editor; in automatic mode
+     * the headless native merge explicitly chooses GET_FROM_OTHER for every
+     * changed node, including removals, after a clean-Git preflight.
      */
     public static ComparisonProcessSettings incomingMergeSettings() {
         return ComparisonProcessSettings.builder(MatchingStrategy.UUID_THEN_NAME)
