@@ -611,7 +611,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     + "адрес базы-посредника и путь к платформе 1С.");
                 return;
             }
-            Shell parent = getShell().getParent();
+            Composite parent = getShell().getParent();
             Shell workbenchShell = parent == null ? null : parent.getShell();
             if (workbenchShell == null || workbenchShell.isDisposed()) {
                 setErrorMessage("Главное окно EDT недоступно для помещения.");
