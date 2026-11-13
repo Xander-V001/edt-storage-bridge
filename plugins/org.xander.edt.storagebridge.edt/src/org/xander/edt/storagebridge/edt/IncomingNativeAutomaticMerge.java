@@ -3,6 +3,8 @@ package org.xander.edt.storagebridge.edt;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -18,7 +20,9 @@ import com._1c.g5.v8.dt.compare.core.ComparisonProcessStatus;
 import com._1c.g5.v8.dt.compare.core.IComparisonManager;
 import com._1c.g5.v8.dt.compare.core.IComparisonSession;
 import com._1c.g5.v8.dt.compare.model.ComparisonNode;
+import com._1c.g5.v8.dt.compare.model.ComparisonSide;
 import com._1c.g5.v8.dt.compare.model.MergeRule;
+import com._1c.g5.v8.dt.compare.model.TopComparisonNode;
 
 /**
  * Native 1C:EDT two-way compare/merge without opening its editor.
@@ -45,7 +49,9 @@ public final class IncomingNativeAutomaticMerge {
 
     public record Result(int differences, boolean merged) {}
 
-    private record Snapshot(long rootId, int differences) {}
+    private record Snapshot(long rootId, int differences,
+            List<Long> changedTopNodes) {}
+    private record Visit(ComparisonNode node, boolean coveredByTop) {}
 
     private final IComparisonManager manager;
 
@@ -107,13 +113,36 @@ public final class IncomingNativeAutomaticMerge {
             boolean rulesSet = session.setMergeRuleToSubtree(
                 original.rootId(), MergeRule.GET_FROM_OTHER);
             boolean selected = session.setMustBeMerged(original.rootId(), true, true);
-            if (!rulesSet || !selected) {
-                throw new IOException(
-                    "EDT refused accept-all merge settings; open manual comparison");
+            // Item order is independent of content merge rules in EDT.
+            // Prefer the imported repository order in every collection.
+            session.setOrderSideToSubtree(original.rootId(), ComparisonSide.OTHER);
+            Snapshot checked = null;
+            if (rulesSet && selected) {
+                try { checked = inspect(session, true); }
+                catch (IOException notAllSelected) {
+                    // Synthetic root merge flags can be unsupported by
+                    // native EDT. Retry only with actual changed top owners,
+                    // then validate the ENTIRE resulting comparison tree.
+                }
             }
-            // Do not start a partial merge when some native node did not
-            // take the remote choice (module procedures, forms, deletions etc).
-            Snapshot checked = inspect(session, true);
+            if (checked == null) {
+                if (original.changedTopNodes().isEmpty()) {
+                    throw new IOException(
+                        "Native EDT changed nodes have no supported top-level scope");
+                }
+                for (long topId : original.changedTopNodes()) {
+                    if (!session.setMergeRuleToSubtree(
+                            topId, MergeRule.GET_FROM_OTHER)
+                            || !session.setMustBeMerged(topId, true, true)) {
+                        throw new IOException(
+                            "EDT refused accept-all settings for a native object");
+                    }
+                    session.setOrderSideToSubtree(topId, ComparisonSide.OTHER);
+                }
+                // No native merge if even one changed node is not taking
+                // the other side. Native comparison itself is read-only.
+                checked = inspect(session, true);
+            }
             if (checked.differences() != original.differences()) {
                 throw new IOException("EDT comparison tree changed while selecting changes");
             }
@@ -168,14 +197,22 @@ public final class IncomingNativeAutomaticMerge {
                     ComparisonNode root = session.getRootNode();
                     if (root == null) throw new IllegalStateException(
                         "Native EDT comparison has no tree root");
-                    var stack = new ArrayDeque<ComparisonNode>();
-                    stack.push(root);
+                    var stack = new ArrayDeque<Visit>();
+                    stack.push(new Visit(root, false));
+                    var changedTopNodes = new ArrayList<Long>();
                     int visited = 0, changed = 0;
                     while (!stack.isEmpty()) {
-                        ComparisonNode node = stack.pop();
+                        Visit current = stack.pop();
+                        ComparisonNode node = current.node();
                         if (++visited > MAX_NODES) {
                             throw new IllegalStateException("Native comparison is too large");
                         }
+                        var flags = node.getComparisonFlags();
+                        boolean differs = flags != null && flags.hasDiffsMainOther();
+                        boolean topOwner = node instanceof TopComparisonNode
+                            && differs && !current.coveredByTop();
+                        if (topOwner) changedTopNodes.add(node.bmGetId());
+                        boolean covered = current.coveredByTop() || topOwner;
                         var children = node.<ComparisonNode>getChildren();
                         boolean childHasDiff = false;
                         for (int i = 0; i < children.size(); i++) {
@@ -185,11 +222,9 @@ public final class IncomingNativeAutomaticMerge {
                             }
                             var f = child.getComparisonFlags();
                             if (f != null && f.hasDiffsMainOther()) childHasDiff = true;
-                            stack.push(child);
+                            stack.push(new Visit(child, covered));
                         }
-                        var flags = node.getComparisonFlags();
-                        if (node != root && !childHasDiff && flags != null
-                                && flags.hasDiffsMainOther()) {
+                        if (node != root && !childHasDiff && differs) {
                             changed++;
                             if (checkRules) {
                                 var merge = node.getMergeSettings();
@@ -208,7 +243,8 @@ public final class IncomingNativeAutomaticMerge {
                                 "Unclassified native root differences cannot be auto-merged");
                         }
                     }
-                    return new Snapshot(root.bmGetId(), changed);
+                    return new Snapshot(root.bmGetId(), changed,
+                        List.copyOf(changedTopNodes));
                 }
             });
         } catch (RuntimeException | LinkageError ex) {
