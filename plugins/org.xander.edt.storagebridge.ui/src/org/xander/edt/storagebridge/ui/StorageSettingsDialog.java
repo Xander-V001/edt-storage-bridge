@@ -41,6 +41,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Text infobasePassword;
     private Text platformExecutable;
     private Button manualOutgoing;
+    private Text outgoingCommentSuffix;
     private StorageProjectSettings.Snapshot saved;
     private Label observedRevisionLabel;
     private Label appliedRevisionLabel;
@@ -191,6 +192,21 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "автоматический путь. При установленном флажке запись выполняешь "
             + "сам в Конфигураторе; плагин только готовит файл сравнения.");
         outgoingHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+
+        new Label(outgoing, SWT.NONE).setText(
+            "Дополнительный комментарий при помещении в хранилище:");
+        outgoingCommentSuffix = new Text(outgoing, SWT.BORDER | SWT.SINGLE);
+        GridData suffixLayout = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        suffixLayout.widthHint = 560;
+        outgoingCommentSuffix.setLayoutData(suffixLayout);
+        outgoingCommentSuffix.setText(saved == null
+            ? "" : saved.outgoingCommentSuffix());
+        outgoingCommentSuffix.setMessage("Например: (VAVULIN Ai)");
+        outgoingCommentSuffix.setToolTipText(
+            "Необязательная пометка в конце первой строки описания "
+            + "последнего Git-коммита при автоматическом помещении. "
+            + "Например: Исправлен расчёт пособия (VAVULIN Ai). "
+            + "Последующие строки описания Git сохраняются.");
 
         Group revisions = new Group(content, SWT.NONE);
         revisions.setText("Состояние синхронизации");
@@ -575,7 +591,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     ? InfobaseType.SERVER : InfobaseType.FILE,
                 infobaseAddress.getText(), platformExecutable.getText(),
                 infobaseUsername.getText(), infobasePassword.getText(),
-                manualOutgoing.getSelection());
+                manualOutgoing.getSelection(), outgoingCommentSuffix.getText());
             setErrorMessage(null);
             return true;
         } catch (IllegalArgumentException ex) {
