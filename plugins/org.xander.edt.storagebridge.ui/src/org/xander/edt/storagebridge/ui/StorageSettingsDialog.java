@@ -20,6 +20,8 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.TabFolder;
+import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Text;
 import org.osgi.service.prefs.BackingStoreException;
 import org.xander.edt.storagebridge.ui.StorageProjectSettings.InfobaseType;
@@ -75,10 +77,26 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         }
 
         Composite content = new Composite(root, SWT.NONE);
-        content.setLayout(new GridLayout(2, false));
+        content.setLayout(new GridLayout(1, false));
         content.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        Group connection = new Group(content, SWT.NONE);
+        TabFolder tabs = new TabFolder(content, SWT.NONE);
+        tabs.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        TabItem mainTab = new TabItem(tabs, SWT.NONE);
+        mainTab.setText("Основная");
+        Composite mainContent = new Composite(tabs, SWT.NONE);
+        mainContent.setLayout(new GridLayout(2, false));
+        mainTab.setControl(mainContent);
+
+        TabItem connectionTab = new TabItem(tabs, SWT.NONE);
+        connectionTab.setText("Подключение к хранилищу");
+        Composite connectionContent = new Composite(tabs, SWT.NONE);
+        connectionContent.setLayout(new GridLayout(2, false));
+        connectionTab.setControl(connectionContent);
+        tabs.setSelection(mainTab);
+
+        Group connection = new Group(connectionContent, SWT.NONE);
         connection.setText("Подключение");
         connection.setLayout(new GridLayout(2, false));
         GridData connectionData = new GridData(SWT.FILL, SWT.TOP, true, false);
@@ -87,31 +105,38 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
         address = addText(connection, "Адрес хранилища:", SWT.BORDER,
             saved == null ? "" : saved.address());
-        username = addText(connection, "Пользователь:", SWT.BORDER,
+        Composite repositoryCredentials = compactRow(connection, 4);
+        GridData repositoryRowData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        repositoryRowData.horizontalSpan = 2;
+        repositoryCredentials.setLayoutData(repositoryRowData);
+        username = addText(repositoryCredentials, "Пользователь:", SWT.BORDER,
             saved == null ? "" : saved.username());
-        password = addText(connection, "Пароль:", SWT.BORDER | SWT.PASSWORD,
+        password = addText(repositoryCredentials, "Пароль:", SWT.BORDER | SWT.PASSWORD,
             saved == null ? "" : saved.password());
 
-        Group platform = new Group(content, SWT.NONE);
+        Group platform = new Group(connectionContent, SWT.NONE);
         platform.setText("База 1С, подключённая к хранилищу");
-        platform.setLayout(new GridLayout(3, false));
+        platform.setLayout(new GridLayout(1, false));
         GridData platformData = new GridData(SWT.FILL, SWT.TOP, true, false);
         platformData.horizontalSpan = 2;
         platform.setLayoutData(platformData);
 
-        new Label(platform, SWT.NONE).setText("Тип информационной базы:");
-        infobaseType = new Combo(platform, SWT.DROP_DOWN | SWT.READ_ONLY);
+        Composite infobaseLocationRow = compactRow(platform, 5);
+        infobaseLocationRow.setLayoutData(
+            new GridData(SWT.FILL, SWT.CENTER, true, false));
+        new Label(infobaseLocationRow, SWT.NONE).setText("Тип информационной базы:");
+        infobaseType = new Combo(infobaseLocationRow, SWT.DROP_DOWN | SWT.READ_ONLY);
         infobaseType.setItems(new String[] { "Файловая (/F)", "Серверная (/S)" });
         infobaseType.select(saved != null && saved.infobaseType() == InfobaseType.SERVER ? 1 : 0);
-        GridData typeData = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        typeData.horizontalSpan = 2;
+        GridData typeData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        typeData.widthHint = 165;
         infobaseType.setLayoutData(typeData);
 
-        new Label(platform, SWT.NONE).setText("Адрес базы-посредника:");
-        infobaseAddress = new Text(platform, SWT.BORDER);
+        new Label(infobaseLocationRow, SWT.NONE).setText("Адрес базы-посредника:");
+        infobaseAddress = new Text(infobaseLocationRow, SWT.BORDER);
         infobaseAddress.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         infobaseAddress.setText(saved == null ? "" : saved.infobaseAddress());
-        Button browseBase = new Button(platform, SWT.PUSH);
+        Button browseBase = new Button(infobaseLocationRow, SWT.PUSH);
         browseBase.setText("Обзор...");
         browseBase.setEnabled(infobaseType.getSelectionIndex() == 0);
         browseBase.addListener(SWT.Selection, event -> {
@@ -125,19 +150,25 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         infobaseType.addListener(SWT.Selection, event ->
             browseBase.setEnabled(infobaseType.getSelectionIndex() == 0));
 
-        infobaseUsername = addText(platform, "Пользователь информационной базы (/N):",
+        Composite infobaseCredentials = compactRow(platform, 4);
+        infobaseCredentials.setLayoutData(
+            new GridData(SWT.FILL, SWT.CENTER, true, false));
+        infobaseUsername = addText(infobaseCredentials,
+            "Пользователь информационной базы (/N):",
             SWT.BORDER, saved == null ? "" : saved.infobaseUsername());
-        new Label(platform, SWT.NONE).setText("");
-        infobasePassword = addText(platform, "Пароль информационной базы (/P):",
-            SWT.BORDER | SWT.PASSWORD,
+        infobasePassword = addText(infobaseCredentials,
+            "Пароль информационной базы (/P):", SWT.BORDER | SWT.PASSWORD,
             saved == null ? "" : saved.infobasePassword());
-        new Label(platform, SWT.NONE).setText("");
 
-        new Label(platform, SWT.NONE).setText("Платформа 1С (1cv8.exe):");
-        platformExecutable = new Text(platform, SWT.BORDER);
-        platformExecutable.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Composite executableRow = compactRow(platform, 3);
+        executableRow.setLayoutData(
+            new GridData(SWT.FILL, SWT.CENTER, true, false));
+        new Label(executableRow, SWT.NONE).setText("Платформа 1С (1cv8.exe):");
+        platformExecutable = new Text(executableRow, SWT.BORDER);
+        platformExecutable.setLayoutData(
+            new GridData(SWT.FILL, SWT.CENTER, true, false));
         platformExecutable.setText(saved == null ? "" : saved.platformExecutable());
-        Button browseExecutable = new Button(platform, SWT.PUSH);
+        Button browseExecutable = new Button(executableRow, SWT.PUSH);
         browseExecutable.setText("Обзор...");
         browseExecutable.addListener(SWT.Selection, event -> {
             FileDialog chooser = new FileDialog(getShell(), SWT.OPEN);
@@ -159,8 +190,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "Другие базы, подключённые к проекту EDT, не используются. "
             + "Сохранение полей не запускает Конфигуратор.");
         GridData hintData = new GridData(SWT.FILL, SWT.TOP, true, false);
-        hintData.horizontalSpan = 3;
-        hintData.widthHint = 560;
+        hintData.widthHint = 960;
         hint.setLayoutData(hintData);
 
         Label security = new Label(platform, SWT.WRAP);
@@ -169,11 +199,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "через параметры процесса и могут быть видны администраторам "
             + "компьютера. Учитывайте это при настройке доступа.");
         GridData securityData = new GridData(SWT.FILL, SWT.TOP, true, false);
-        securityData.horizontalSpan = 3;
-        securityData.widthHint = 560;
+        securityData.widthHint = 960;
         security.setLayoutData(securityData);
 
-        Group outgoing = new Group(content, SWT.NONE);
+        Group outgoing = new Group(connectionContent, SWT.NONE);
         outgoing.setText("Помещение в хранилище");
         outgoing.setLayout(new GridLayout(1, false));
         GridData outgoingData = new GridData(SWT.FILL, SWT.TOP, true, false);
@@ -219,7 +248,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "автоматического помещения (или ручной режим, если он выбран).");
         publishChanges.addListener(SWT.Selection, event -> publishFromDialog());
 
-        Group revisions = new Group(content, SWT.NONE);
+        Group revisions = new Group(mainContent, SWT.NONE);
         revisions.setText("Состояние синхронизации");
         revisions.setLayout(new GridLayout(2, false));
         GridData revisionsData = new GridData(SWT.FILL, SWT.TOP, true, false);
@@ -288,10 +317,11 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             SWT.Selection, event -> clearLocalMarks());
         refreshLocalMarksCount();
 
-        Label note = new Label(content, SWT.WRAP);
+        Label note = new Label(mainContent, SWT.WRAP);
         note.setText("Получение обновит только существующую базу хранилища "
-            + "после подтверждения. Затем можно выбрать отдельные объекты "
-            + "для сравнения и объединения с EDT. Непринятые объекты "
+            + "после подтверждения. Автоматический режим применит изменения "
+            + "без окна сравнения, ручной позволит выбрать объекты для "
+            + "объединения с EDT. Непринятые в ручном режиме объекты "
             + "останутся в журнале до подтверждения завершения разбора. "
             + "Другие базы EDT не используются.");
         GridData noteData = new GridData(SWT.FILL, SWT.TOP, true, false);
@@ -299,6 +329,19 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         noteData.widthHint = 560;
         note.setLayoutData(noteData);
         return root;
+    }
+
+    /**
+     * Small single-line group of paired SWT fields; no dialog-sized
+     * labels or redundant spacer columns.
+     */
+    private static Composite compactRow(Composite parent, int columns) {
+        Composite row = new Composite(parent, SWT.NONE);
+        GridLayout layout = new GridLayout(columns, false);
+        layout.marginWidth = 0;
+        layout.marginHeight = 0;
+        row.setLayout(layout);
+        return row;
     }
 
     private static Text addText(Composite parent, String caption, int style, String initial) {
