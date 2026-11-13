@@ -206,26 +206,22 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         "EDT Storage Bridge: metadata objects",
                         TIMEOUT, journal, monitor::isCanceled);
 
-                    phase = "VERIFY_HEAD";
-                    long current = head(connection, monitor);
-                    journal.observedRevision("AFTER_COMMIT", current);
-                    if (current != reviewedRevision + 1) {
-                        throw new IOException("Repository version after commit is unexpected");
-                    }
-                    journal.verified(current);
-                    boolean saved = OutgoingPublishCheckpoint.save(
-                        project, settings, reviewedGit, current,
-                        probe, journal, monitor);
-                    final long verified = current;
-                    final boolean checkpointSaved = saved;
+                    // The official Designer Commit returned exit code 0.
+                    // Do not read or record repository HEAD here: receiving
+                    // the new revision is an explicit subsequent user action.
+                    // The journal may complete ONLY after a successful native
+                    // COMMIT stage, so failed/uncertain operations stay blocked.
+                    phase = "FINISH";
+                    journal.completedAfterNativeCommit();
                     if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed()) MessageDialog.openInformation(
-                            shell, "Тестовое помещение завершено",
-                            "Хранилище подтвердило версию " + verified
-                            + ". Объектов: " + plan.classicOwners().size()
-                            + ".\nДиагностика: " + root
-                            + (checkpointSaved ? "" :
-                                "\nЛокальная фиксация версии не сохранилась."));
+                            shell, "Помещение завершено",
+                            "Конфигуратор завершил помещение изменений "
+                            + "в хранилище. Объектов: "
+                            + plan.classicOwners().size()
+                            + ".\nДля получения новой версии хранилища "
+                            + "выполните обновление проекта отдельно."
+                            + "\nДиагностика: " + root);
                     });
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
