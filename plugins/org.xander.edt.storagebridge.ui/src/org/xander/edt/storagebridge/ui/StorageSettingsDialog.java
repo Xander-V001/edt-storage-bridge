@@ -208,6 +208,17 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "Пометка добавляется в конец первой строки. "
             + "Последующие строки описания Git сохраняются.");
 
+        Button publishChanges = new Button(outgoing, SWT.PUSH);
+        publishChanges.setText("Поместить изменения в хранилище");
+        publishChanges.setLayoutData(new GridData(
+            SWT.LEFT, SWT.CENTER, false, false));
+        publishChanges.setEnabled(saved != null);
+        publishChanges.setToolTipText(
+            "Сохранить настройки, проверить коммит Git и актуальность "
+            + "версии хранилища, затем выполнить существующий механизм "
+            + "автоматического помещения (или ручной режим, если он выбран).");
+        publishChanges.addListener(SWT.Selection, event -> publishFromDialog());
+
         Group revisions = new Group(content, SWT.NONE);
         revisions.setText("Состояние синхронизации");
         revisions.setLayout(new GridLayout(2, false));
@@ -581,6 +592,41 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             return;
         }
         super.buttonPressed(buttonId);
+    }
+
+    /**
+     * Save the current project options and close the modal dialog before
+     * starting the already implemented outgoing coordinator. The task must
+     * outlive this dialog and use the real EDT workbench shell.
+     */
+    private void publishFromDialog() {
+        if (!saveSettings()) return;
+        try {
+            StorageProjectSettings.Snapshot current =
+                StorageProjectSettings.load(project);
+            if (current.address().isBlank()
+                    || current.infobaseAddress().isBlank()
+                    || current.platformExecutable().isBlank()) {
+                setErrorMessage("Сначала заполните подключение к хранилищу, "
+                    + "адрес базы-посредника и путь к платформе 1С.");
+                return;
+            }
+            Shell parent = getShell().getParent();
+            Shell workbenchShell = parent == null ? null : parent.getShell();
+            if (workbenchShell == null || workbenchShell.isDisposed()) {
+                setErrorMessage("Главное окно EDT недоступно для помещения.");
+                return;
+            }
+            close();
+            workbenchShell.getDisplay().asyncExec(() -> {
+                if (!workbenchShell.isDisposed() && project.isAccessible()) {
+                    OutgoingReadinessCoordinator.check(
+                        workbenchShell, project, current);
+                }
+            });
+        } catch (StorageException ex) {
+            setErrorMessage("Не удалось прочитать настройки Secure Storage EDT.");
+        }
     }
 
     private boolean saveSettings() {
