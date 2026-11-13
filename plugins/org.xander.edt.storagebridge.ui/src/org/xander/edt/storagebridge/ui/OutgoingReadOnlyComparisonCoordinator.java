@@ -182,6 +182,13 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                             automatic.stopWithoutEditor();
                             automatic.close();
                         }
+                        // The next stage obtains the same project/intermediary
+                        // lease. Release this stage's temporary XML, converted
+                        // model and lease BEFORE scheduling its UI continuation.
+                        // Otherwise the SWT thread may run first and the next
+                        // stage rejects our own still-active operation.
+                        closeQuietly(export, conversionRoot, lease);
+                        transferred = true;
                         if (!display.isDisposed()) display.asyncExec(() -> {
                             if (!shell.isDisposed()) {
                                 continueAutomaticPublish(shell, project, settings,
