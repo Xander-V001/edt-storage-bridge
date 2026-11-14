@@ -4,12 +4,25 @@ Bundle-Name: EDT Storage Bridge UI
 Bundle-SymbolicName: org.xander.edt.storagebridge.ui;singleton:=true
 Bundle-Version: 0.1.0.qualifier
 Bundle-Vendor: Xander-V001
-Bundle-RequiredExecutionEnvironment: JavaSE-17
+Bundle-Activator: org.xander.edt.storagebridge.ui.BridgeActivator
+Bundle-ActivationPolicy: lazy
+Bundle-RequiredExecutionEnvironment: JavaSE-25
 Bundle-Localization: plugin
 Require-Bundle: org.eclipse.core.commands,
  org.eclipse.core.resources,
  org.eclipse.core.runtime,
+ org.eclipse.core.jobs,
+ org.eclipse.swt,
  org.eclipse.ui,
  org.eclipse.ui.workbench,
  org.eclipse.jface,
- org.xander.edt.storagebridge.core
+ org.eclipse.equinox.preferences,
+ org.eclipse.equinox.security,
+ org.xander.edt.storagebridge.core,
+ org.xander.edt.storagebridge.platform,
+ org.xander.edt.storagebridge.edt
+Import-Package: com._1c.g5.v8.dt.compare.core,
+ com._1c.g5.wiring,
+ com.google.inject,
+ org.osgi.framework,
+ org.osgi.service.prefs

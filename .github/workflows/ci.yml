@@ -1,7 +1,6 @@
 name: Build and test (manual)
 
-# Resource policy: builds are permitted only by explicit user request.
-# Do not add push, pull_request, schedule, or workflow_run triggers.
+# Never build on push or PR. Explicit user approval required for every invocation.
 on:
   workflow_dispatch:
 
@@ -17,24 +16,135 @@ jobs:
   tycho:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      P2_USER: ${{ secrets.P2_USER }}
+      P2_TOKEN: ${{ secrets.P2_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Check authorized access to the 1C:EDT p2 repository
+        shell: bash
+        run: |
+          if [[ -z "$P2_USER" || -z "$P2_TOKEN" ]]; then
+            echo "::error title=1C ITS credentials missing::Configure repository Actions secrets P2_USER and P2_TOKEN before building against EDT 2026.2."
+            exit 1
+          fi
+          echo "1C p2 credentials: configured (values are never printed)."
+      - uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: '21'
+          distribution: zulu
+          java-version: '25'
+          java-package: jdk+fx
           cache: maven
-      - name: Set up pinned Maven 3.9.9
+      - name: Set up pinned Maven 3.9.9 and JDK 25
         uses: s4u/setup-maven-action@v1.20.0
         with:
           maven-version: '3.9.9'
-          java-version: '21'
+          java-version: '25'
+          checkout-enabled: false
+          settings-servers: '[{"id":"dt_repository","username":"${env.P2_USER}","password":"${env.P2_TOKEN}"}]'
       - name: Validate Maven and Java
         run: |
           java -version
           mvn --version
+      # A new OSGi qualifier makes each approved build updateable through p2,
+      # even when the feature's major/minor/micro version stays 0.1.0.
       - name: Compile, run OSGi tests, build p2 site
-        run: mvn -B -ntp clean verify
+        shell: bash
+        run: |
+          qualifier="$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_NUMBER}"
+          echo "Tycho OSGi build qualifier: $qualifier"
+          mvn -B -ntp "-DforceContextQualifier=$qualifier" clean verify
+
+      # The approved build already downloaded the exact EDT target bundles.
+      # This opt-in-build diagnostic never publishes vendor jars and cannot
+      # turn an otherwise successful build into a failure.
+      - name: Inspect EDT native export API (read-only, diagnostic)
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 .github/scripts/inspect-edt-export.py
+
+      - name: Normalize and verify offline p2 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(repository/org.xander.edt.storagebridge.p2/target/*.zip)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected one p2 archive, found ${#archives[@]}"
+            exit 1
+          fi
+          python3 .github/scripts/prepare-p2-site.py \
+            repository/org.xander.edt.storagebridge.p2/target/repository \
+            "${archives[0]}"
+
+      - name: Smoke-test offline ZIP with native Eclipse p2 Director
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(repository/org.xander.edt.storagebridge.p2/target/*.zip)
+          archive="$(realpath "${archives[0]}")"
+          repo="jar:file:${archive}!/"
+          # The standalone smoke POM intentionally has no Tycho parent or
+          # project target definition. Running the Director from the actual
+          # repository module fails before installing anything, because a
+          # separate Maven invocation cannot resolve edt-2026.2-target
+          # from the previous multi-module reactor (observed in CI #32).
+          # Here p2 must retrieve the actual ZIP payload independently.
+          mvn -B -ntp \
+            -f .github/p2-smoke/pom.xml \
+            org.eclipse.tycho:tycho-p2-director-plugin:5.0.2:director \
+            "-Drepositories=${repo}" \
+            "-DinstallIUs=org.xander.edt.storagebridge.core" \
+            "-Ddestination=${RUNNER_TEMP}/bridge-p2-install-test" \
+            "-Dshared=${RUNNER_TEMP}/bridge-p2-isolated-pool" \
+            "-Dprofile=BridgeP2Smoke"
+          # The Director exit status is the supported installation result.
+          # It may put bundles in a shared p2 pool instead of the destination;
+          # checking only the destination falsely failed CI #33 AFTER the
+          # Director explicitly reported "Operation completed" / BUILD SUCCESS.
+          # Checksums and the five ZIP payloads were already validated above.
+          echo "p2 Director completed installation of bridge core from offline ZIP."
+
+      - name: Validate p2 update-site contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="repository/org.xander.edt.storagebridge.p2/target/repository"
+          test -d "$site"
+          test -d "$site/features"
+          test -d "$site/plugins"
+          if ! { test -s "$site/content.jar" || test -s "$site/content.xml" || test -s "$site/content.xml.xz"; }; then
+            echo "::error::Missing p2 installable unit metadata (content)"
+            exit 1
+          fi
+          if ! { test -s "$site/artifacts.jar" || test -s "$site/artifacts.xml" || test -s "$site/artifacts.xml.xz"; }; then
+            echo "::error::Missing p2 artifact metadata"
+            exit 1
+          fi
+          test -n "$(find "$site/features" -maxdepth 1 -name 'org.xander.edt.storagebridge.feature_*.jar' -print -quit)"
+          for bundle in core platform edt ui; do
+            test -n "$(find "$site/plugins" -maxdepth 1 -name "org.xander.edt.storagebridge.${bundle}_*.jar" -print -quit)"
+          done
+          # This public site is allowed to host OUR code only, never vendor EDT jars.
+          if find "$site/plugins" "$site/features" -type f \
+              \( -name 'com._1c.*' -o -name 'com._1c_*' \) | grep -q .; then
+            echo "::error::Refusing to publish proprietary 1C platform bundles"
+            exit 1
+          fi
+          touch "$site/.nojekyll"
+          echo "Checked p2 metadata and the four bridge bundles."
+
+      # Upload the site from the SAME explicitly authorized CI run.
+      # This does not build anything else, nor does it run on push/PR.
+      - name: Stage GitHub Pages p2 update site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: repository/org.xander.edt.storagebridge.p2/target/repository
+          retention-days: 1
+          include-hidden-files: true
       - name: Upload p2 installation archive
         if: success()
         uses: actions/upload-artifact@v4
@@ -58,3 +168,22 @@ jobs:
           script: |
             const prune = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/prune-artifacts.cjs`);
             await prune({github, context, core});
+
+  # Runs ONLY when the manually dispatched build/tests succeeded.
+  # No checkout, Maven invocation, or other compilation occurs in this job.
+  publish:
+    needs: tycho
+    if: github.repository == 'Xander-V001/edt-storage-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish p2 update site to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

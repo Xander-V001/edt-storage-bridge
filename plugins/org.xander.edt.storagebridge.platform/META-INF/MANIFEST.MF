@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: EDT Storage Bridge Platform Read Only
+Bundle-SymbolicName: org.xander.edt.storagebridge.platform
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: Xander-V001
+Bundle-RequiredExecutionEnvironment: JavaSE-25
+Export-Package: org.xander.edt.storagebridge.platform

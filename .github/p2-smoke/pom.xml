@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <!-- Standalone p2 smoke test: deliberately NOT a Tycho reactor module.
+       Do not inherit the root parent pom or target-platform extension:
+       only the artifact ZIP and native p2 director should be involved. -->
+  <groupId>org.xander.edt.storagebridge.buildchecks</groupId>
+  <artifactId>p2-archive-install-smoke</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-p2-director-plugin</artifactId>
+        <version>5.0.2</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

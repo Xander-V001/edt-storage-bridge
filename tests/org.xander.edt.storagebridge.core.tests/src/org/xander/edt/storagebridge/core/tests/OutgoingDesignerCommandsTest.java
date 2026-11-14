@@ -1,0 +1,118 @@
+package org.xander.edt.storagebridge.core.tests;
+
+import static org.junit.Assert.*;
+import java.nio.file.Path;
+import org.junit.Test;
+import org.xander.edt.storagebridge.platform.OutgoingDesignerCommands;
+import org.xander.edt.storagebridge.platform.InfobaseLocation;
+
+public final class OutgoingDesignerCommandsTest {
+    /** Cross-platform absolute paths: Tycho tests run on Linux too. */
+    private static Path absolute(String file) {
+        return Path.of(System.getProperty("java.io.tmpdir"),
+            "edt-storage-native-command-test", file).toAbsolutePath();
+    }
+
+    private static OutgoingDesignerCommands.Connection connection() {
+        return new OutgoingDesignerCommands.Connection(
+            absolute("1cv8.exe"),
+            new InfobaseLocation(InfobaseLocation.Kind.FILE, "C:/test-ib"),
+            "testIB", "do-not-log-this-ib-pass",
+            "C:/test-repository", "test-repo-user",
+            "do-not-log-this-repository-pass");
+    }
+
+    @Test
+    public void noFullScopeOrForceInNativeCommands() {
+        Path xml = absolute("objects.xml"),
+            load = absolute("list.txt"),
+            export = absolute("export"),
+            out = absolute("console.txt");
+        for (var stage : OutgoingDesignerCommands.Stage.values()) {
+            var args = OutgoingDesignerCommands.arguments(
+                connection(), stage, xml, export, load, out, "Test changes");
+            assertTrue(args.contains("/Out"));
+            assertFalse(args.contains("-force"));
+            assertFalse(args.contains("-NoCheck"));
+            assertFalse(args.contains("-revised"));
+            if (stage == OutgoingDesignerCommands.Stage.LOAD) {
+                assertFalse(args.contains("-partial"));
+                assertTrue(args.contains("-listFile"));
+                assertFalse(args.contains("-Objects"));
+                assertTrue(args.contains("Hierarchical"));
+            } else {
+                assertTrue(args.contains("-Objects"));
+                assertFalse(args.contains("-listFile"));
+            }
+            assertFalse(args.toString().contains("secret-in-log"));
+        }
+        assertFalse(connection().toString().contains("do-not-log"));
+    }
+
+    @Test
+    public void usesFullMultilineGitMessageAsNativeDesignerComments() {
+        var args = OutgoingDesignerCommands.arguments(
+            connection(), OutgoingDesignerCommands.Stage.COMMIT,
+            absolute("objects.xml"), absolute("export"), absolute("list.txt"),
+            absolute("commit.log"), "Исправлен расчёт пособия\n\nЗадача 123: проверка формы\n");
+        var comments = new java.util.ArrayList<String>();
+        for (int i = 0; i + 1 < args.size(); i++) {
+            if ("-comment".equals(args.get(i))) comments.add(args.get(i + 1));
+        }
+        assertEquals(java.util.List.of("Исправлен расчёт пособия", "",
+            "Задача 123: проверка формы"), comments);
+        assertFalse(args.contains("EDT Storage Bridge: metadata objects"));
+        assertTrue(args.contains("/ConfigurationRepositoryCommit"));
+        assertFalse(args.contains("-force"));
+    }
+
+    @Test
+    public void additionalCommentIsAppendedToSubjectOnly() {
+        String message = "Исправлен расчёт пособия при изменении среднего заработка";
+        String expected = message + " (VAVULIN Ai)";
+        assertEquals(expected, OutgoingDesignerCommands.withAdditionalComment(
+            message, "  (VAVULIN Ai)  "));
+        assertEquals(message, OutgoingDesignerCommands.withAdditionalComment(
+            message, "   "));
+    }
+
+    @Test
+    public void additionalCommentPreservesMultilineGitDescription() {
+        String git = "Исправлен расчёт пособия\n\nПодробности:\n- исправлена форма";
+        String complete = OutgoingDesignerCommands.withAdditionalComment(
+            git, "(VAVULIN Ai)");
+        assertEquals("Исправлен расчёт пособия (VAVULIN Ai)\n\n"
+            + "Подробности:\n- исправлена форма", complete);
+        var args = OutgoingDesignerCommands.arguments(
+            connection(), OutgoingDesignerCommands.Stage.COMMIT,
+            absolute("objects.xml"), absolute("export"), absolute("list.txt"),
+            absolute("commit.log"), complete);
+        var comments = new java.util.ArrayList<String>();
+        for (int i = 0; i + 1 < args.size(); i++) {
+            if ("-comment".equals(args.get(i))) comments.add(args.get(i + 1));
+        }
+        assertEquals(java.util.List.of("Исправлен расчёт пособия (VAVULIN Ai)",
+            "", "Подробности:", "- исправлена форма"), comments);
+    }
+
+    @Test
+    public void additionalCommentRejectsEmbeddedLineBreaks() {
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingDesignerCommands.withAdditionalComment("Тест", "лишний\nтекст"));
+    }
+
+    @Test
+    public void refusesMissingScopesAndMissingComment() {
+        Path path = absolute("objects.xml"),
+            out = absolute("log");
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingDesignerCommands.arguments(connection(),
+                OutgoingDesignerCommands.Stage.LOCK, null, null, null, out, null));
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingDesignerCommands.arguments(connection(),
+                OutgoingDesignerCommands.Stage.LOAD, path, null, null, out, null));
+        assertThrows(IllegalArgumentException.class, () ->
+            OutgoingDesignerCommands.arguments(connection(),
+                OutgoingDesignerCommands.Stage.COMMIT, path, null, null, out, ""));
+    }
+}

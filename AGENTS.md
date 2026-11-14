@@ -1,23 +1,27 @@
-# Project rules — EDT Storage Bridge
+# Правила разработки EDT Storage Bridge — действующая редакция 21.10.2026
 
-These rules are binding for all development in this repository and chat.
+## Прежде чем отвечать или править
 
-## CI resources
-1. **Never start a build or tests after every commit.** GitHub Actions build/test workflows must use `workflow_dispatch` only. No automatic builds on push, pull requests, merging, cron schedules, release events, or branch changes.
-2. **Do not manually dispatch a build without an explicit user request for that specific build.** No hidden or duplicate builds. Reviewing Java/XML, creating commits, PRs or merging must not trigger compilation.
-3. **Avoid artifact accumulation.** After every manually requested successful build, delete obsolete artifacts from earlier builds while retaining one newest `edt-storage-bridge-p2` archive and one newest diagnostics artifact (if any). Newly uploaded artifacts expire after 3 days. A separate **manual** `Cleanup old build artifacts` workflow handles already accumulated artifacts without compiling code.
-4. Cleanup is scoped to artifacts named `edt-storage-bridge-p2` and `tycho-test-reports`; never delete unrelated project artifacts or GitHub releases.
-5. Keep GitHub Actions time usage minimal. Avoid duplicate jobs or matrix builds until explicitly approved.
+1. Открыть **действующий HEAD ветки**, [README.md](README.md), [docs/IMPLEMENTATION_CURRENT.md](docs/IMPLEMENTATION_CURRENT.md), [docs/RECEIVE_PIPELINE_CONTRACT.md](docs/RECEIVE_PIPELINE_CONTRACT.md), [docs/OUTGOING_IMPLEMENTATION_STATUS.md](docs/OUTGOING_IMPLEMENTATION_STATUS.md).
+2. Для точных команд 1С — читать [01: команды/файлы](docs/01_ОБЯЗАТЕЛЬНО_1С_КОМАНДЫ_И_ФАЙЛЫ.md). Для EDT — [02: публичные API/Merge](docs/02_ОБЯЗАТЕЛЬНО_EDT_API_И_MERGE.md). Для входящего кода — [03: методы/стадии](docs/03_ОБЯЗАТЕЛЬНО_МАРШРУТ_ДАННЫХ_И_ПРОВЕРКИ.md). Проверять сам исходник вызываемого метода и его call-site.
+3. Помечать утверждения **[ДОК]** (официальные материалы, с URL), **[КОД]** (реальный Java-код, с классом), **[ОПЫТ]** (конкретный лог или испытание) и **[?]** (не проверено). **CI green не доказывает работоспособность в установленной EDT и хранилище**.
+4. Если нет доступа к репозиторию, не описывать актуальную реализацию как лично проверенную. Не пользоваться старыми черновиками вместо HEAD.
+5. **Без отдельного разрешения не запускать** CI/сборку, установленную EDT, базу-посредник, рабочее хранилище и пользовательский VPS. Изменение документации ≠ разрешение испытать запись.
 
-## Safety
-6. Never use the user's VPS to build, test, host, or run this project without explicit permission.
-7. Never write to a working 1C infobase or configuration repository for development/testing. Only isolated disposable test data may be used with explicit agreement.
-8. No credentials, session tokens or local machine secrets in commits, build logs, or artifacts.
-9. Never label a plugin as tested in a 1C:EDT application until it has actually been installed and smoke-tested in that version.
-10. Treat repository state, staging base state, EDT project state, and Git state as separate; verify results before advancing checkpoints.
+## Неподменяемые определения
 
-## Code and workflow
-11. Prefer supported, versioned EDT/Eclipse APIs. No reflection/internal Eclipse/EDT shortcuts without a documented necessity and test plan.
-12. Keep exchange business logic independent from Eclipse UI and Git.
-13. Document changed behavior, expected invariants and known gaps in `docs/`. New API integrations require read-only proof before implementation of write operations.
-14. Development can be committed without running a build; clearly state that new changes remain unverified until the user requests a build.
+- `/ConfigurationRepositoryUpdateCfg` **меняет конфигурацию существующей ИБ-посредника**; `/DumpConfigToFiles -update` **создаёт/обновляет XML-представление**. Они не заменяют друг друга.
+- `ConfigDumpInfo.xml` — платформенный индекс метаданных, `changes.txt` — отчёт нативной дельты, каталог XML — собственно выгрузка, Git SHA — коммит другого репозитория, HEAD хранилища 1С — отдельная числовая версия.
+- `OBSERVED` (видели версию), `SCANNED` (прочли опись посредника), `REVIEWED` (разработчик рассмотрел изменения), `APPLIED` (доказано строгое полное применение) **различаются**. `PENDING` нельзя очищать на закрытии редактора. `KEPT_LOCAL` — зафиксированный наблюдателем EDT выбор сохранить локальное изменение, **не журнал отдельных процедур и не список для исходящего помещения**.
+- `IImportService.work(project,xml,target,monitor)` импортирует во **временную** EDT-модель; затем `IComparisonManager`/штатный EDT Merge управляет рабочим проектом. `MERGE_PROCESS_FINISHED` ≠ побайтовое равенство объектов ≠ APPLIED.
+- Git пользователя **не** является транспортом из классического хранилища; нельзя reset/checkout/rebase/автоматически коммитить/создавать служебные ветки.
+- Экспорт объекта EDT ≠ доказательство его правильной загрузки в 1С; `-Objects` (Lock/Commit) ≠ `-listFile` (XML); код завершения Designer 0 ≠ доказанная полнота состояния.
+
+## Приоритеты и безопасность
+
+- Не разрушать независимые локальные разработки при получении. Наблюдатель подключён к `ReceivePendingStore`; сохранённые `KEPT_LOCAL` теперь **до обновления ИБ заставляют предложить полную сверку** вместо выборочного получения. После полного Merge только старые и новые входящие локальные решения пересчитываются; посторонние локальные изменения в `KEPT_LOCAL` не добавлять. Отмена и неполный снимок не очищают историю. Исходящее помещение `KEPT_LOCAL` пока не использует. Новая ветка не испытана в EDT.
+- Быстрое получение не должно скрытно превращаться в полную обработку большой конфигурации. Полная сверка — явный маршрут.
+- Помещение реализовано в исходниках как **TEST-ONLY** и реально меняет 1С. Никаких тестов на рабочем хранилище, `-force`/автоматических Unlock/retry после неясного исхода, обхода проверок версии или удаления active-маркера.
+- Новые/удалённые объекты требуют родительского `Configuration.xml`, отдельной проверки Lock/Commit scope и безопасного поведения с остальными объектами.
+- Любое изменение кода: указать коммит, перечислить реально пройденные тесты, явно назвать отсутствие испытаний; актуализировать только канонические документы. Не добавлять новые датированные «истины» рядом с действующим контрактом.
+- Не допускать утечки паролей, командной строки, исходников из native логов; настройки — Eclipse Secure Storage и локальные preferences.
