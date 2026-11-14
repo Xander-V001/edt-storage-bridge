@@ -87,6 +87,10 @@ final class BridgeMcpServer implements AutoCloseable {
         return boundPort;
     }
 
+    synchronized boolean matches(int port, String token) {
+        return isRunning() && boundPort == port && token.equals(bearer);
+    }
+
     @Override
     public synchronized void close() {
         ServerSocket socket = listener;
