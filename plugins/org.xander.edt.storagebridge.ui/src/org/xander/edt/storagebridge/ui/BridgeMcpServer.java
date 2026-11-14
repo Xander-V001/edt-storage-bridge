@@ -460,7 +460,12 @@ final class BridgeMcpServer implements AutoCloseable {
             if (status != expectedStatus) {
                 throw new IOException("MCP HTTP status " + status);
             }
-            try (InputStream input = connection.getInputStream()) {
+            // HttpURLConnection exposes 4xx bodies via getErrorStream().
+            // A negative authorization test is successful only for HTTP 401.
+            InputStream responseStream = status >= 400
+                ? connection.getErrorStream() : connection.getInputStream();
+            if (responseStream == null) return "";
+            try (InputStream input = responseStream) {
                 return new String(input.readAllBytes(), StandardCharsets.UTF_8);
             }
         } finally {
