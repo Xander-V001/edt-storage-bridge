@@ -13,7 +13,8 @@ import org.osgi.service.prefs.Preferences;
 
 /**
  * One MCP endpoint for the entire EDT workspace, never per project.
- * The bearer credential is stored only in Eclipse Secure Storage.
+ * Optional bearer credential is stored only in Eclipse Secure Storage.
+ * An empty token permits local-only access (127.0.0.1); remote bind is never supported.
  */
 final class BridgeMcpSettings {
     static final int DEFAULT_PORT = 8769;
@@ -21,9 +22,12 @@ final class BridgeMcpSettings {
     private static final String TOKEN = "bearerToken";
     private static final String PORT = "port";
     private static final String AUTO_START = "autoStart";
+    private static final String AUTH_MODE = "authMode";
+    private static final String AUTH_NONE = "none";
+    private static final String AUTH_TOKEN = "token";
 
-    // The server only starts when a valid token has already been saved.
-    // Thus the default has no network effect on a fresh installation.
+    // Fresh workspaces use token-free loopback access. Legacy configured
+    // workspaces keep their previously saved token until explicitly cleared.
     record Snapshot(int port, String token, boolean autoStart) {}
 
     private BridgeMcpSettings() {}
@@ -33,10 +37,18 @@ final class BridgeMcpSettings {
     }
 
     static Snapshot load() throws StorageException {
-        int port = preferences().getInt(PORT, DEFAULT_PORT);
+        Preferences preferences = preferences();
+        int port = preferences.getInt(PORT, DEFAULT_PORT);
         if (port < 1024 || port > 65535) port = DEFAULT_PORT;
-        return new Snapshot(port, secrets().get(TOKEN, ""),
-            preferences().getBoolean(AUTO_START, true));
+
+        String mode = preferences.get(AUTH_MODE, "");
+        // Old releases saved a port and a mandatory token, but no mode.
+        // Do not accidentally turn off authentication when upgrading one.
+        boolean legacyWithSettings = mode.isEmpty()
+            && preferences.get(PORT, null) != null;
+        String token = AUTH_NONE.equals(mode) || (mode.isEmpty() && !legacyWithSettings)
+            ? "" : secrets().get(TOKEN, "");
+        return new Snapshot(port, token, preferences.getBoolean(AUTO_START, true));
     }
 
     static void save(int port, String token)
@@ -47,12 +59,17 @@ final class BridgeMcpSettings {
     static void save(int port, String token, boolean autoStart)
             throws StorageException, BackingStoreException, IOException {
         validate(port, token);
-        ISecurePreferences node = secrets();
-        node.put(TOKEN, token, true);
-        node.flush();
+        // Do not touch Secure Storage for anonymous loopback mode: otherwise
+        // a fresh installation could prompt for a master password on startup.
+        if (!token.isEmpty()) {
+            ISecurePreferences node = secrets();
+            node.put(TOKEN, token, true);
+            node.flush();
+        }
         Preferences preferences = preferences();
         preferences.putInt(PORT, port);
         preferences.putBoolean(AUTO_START, autoStart);
+        preferences.put(AUTH_MODE, token.isEmpty() ? AUTH_NONE : AUTH_TOKEN);
         preferences.flush();
     }
 
@@ -60,8 +77,8 @@ final class BridgeMcpSettings {
         if (port < 1024 || port > 65535) {
             throw new IllegalArgumentException("Порт MCP: укажите число от 1024 до 65535.");
         }
-        if (token == null || !token.matches("[0-9a-fA-F]{64}")) {
-            throw new IllegalArgumentException("Токен MCP должен содержать 64 шестнадцатеричных символа.");
+        if (token == null || (!token.isEmpty() && !token.matches("[0-9a-fA-F]{64}"))) {
+            throw new IllegalArgumentException("Токен MCP: оставьте поле пустым для локального доступа или укажите 64 шестнадцатеричных символа.");
         }
     }
 
