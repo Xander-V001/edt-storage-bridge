@@ -292,8 +292,11 @@ final class BridgeMcpServer implements AutoCloseable {
                 "protocolVersion", negotiated,
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
                 "serverInfo", Map.of("name", "edt-storage-bridge", "version", "0.1.0"),
-                "instructions", "Все изменения запускаются только после подтверждения в EDT. "
-                    + "Реальное помещение изменений в хранилище через MCP не доступно."));
+                "instructions", "Инструменты receive_changes и publish_changes запускают "
+                    + "автоматические операции без диалогов в EDT. "
+                    + "Получите operationId и вызывайте get_operation_status "
+                    + "до завершения. При failed/uncertain нельзя считать изменения "
+                    + "применёнными. Перед помещением проверяются Git, HEAD и PENDING."));
         }
         if (method.equals("ping")) return jsonResult(id, Map.of());
         if (method.equals("tools/list")) {
