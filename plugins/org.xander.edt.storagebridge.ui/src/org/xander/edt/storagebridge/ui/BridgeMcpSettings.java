@@ -1,5 +1,6 @@
 package org.xander.edt.storagebridge.ui;
 
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 
@@ -31,7 +32,7 @@ final class BridgeMcpSettings {
     }
 
     static void save(int port, String token)
-            throws StorageException, BackingStoreException {
+            throws StorageException, BackingStoreException, IOException {
         validate(port, token);
         ISecurePreferences node = secrets();
         node.put(TOKEN, token, true);
