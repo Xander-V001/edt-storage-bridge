@@ -128,13 +128,13 @@ final class BridgeMcpPanel extends Composite {
             + "check_repository_revision — актуальная версия в 1С\n"
             + "request_receive_changes — запросить выборочное получение\n"
             + "request_full_review — запросить полную сверку\n"
-            + "request_publish_readiness — запросить проверку перед помещением");
+            + "request_publish_changes — запросить помещение через EDT");
         list.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
         Label warning = new Label(tools, SWT.WRAP);
         warning.setText("Запросы действий требуют подтверждения в EDT. "
-            + "Автоматическое помещение изменений в хранилище через MCP "
-            + "не включено. Существующие алгоритмы получения и отправки "
-            + "не изменяются.");
+            + "MCP не выполняет прямой Commit. После подтверждения в EDT "
+            + "существующий сценарий помещения может записать изменения "
+            + "в хранилище. Алгоритмы обмена не изменяются.");
         warning.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
         GridData warningData = (GridData) warning.getLayoutData();
         warningData.widthHint = 580;
