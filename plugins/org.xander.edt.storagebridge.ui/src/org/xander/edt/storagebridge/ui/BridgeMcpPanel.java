@@ -1,6 +1,7 @@
 package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
+import org.eclipse.swt.widgets.Display;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -163,7 +164,7 @@ final class BridgeMcpPanel extends Composite {
             return true;
         } catch (IllegalArgumentException ex) {
             MessageDialog.openError(getShell(), "Неверные настройки MCP", ex.getMessage());
-        } catch (StorageException | BackingStoreException | RuntimeException ex) {
+        } catch (StorageException | BackingStoreException | IOException | RuntimeException ex) {
             MessageDialog.openError(getShell(), "MCP",
                 "Не удалось сохранить токен в защищённом хранилище EDT.");
         }
@@ -186,12 +187,13 @@ final class BridgeMcpPanel extends Composite {
     private void testServer() {
         test.setEnabled(false);
         state.setText("Проверка HTTP и MCP initialize / tools/list…");
+        Display display = getDisplay();
         Job probe = new Job("EDT Storage Bridge — проверка MCP") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 try {
                     String result = BridgeMcpServer.INSTANCE.probe();
-                    getDisplay().asyncExec(() -> {
+                    display.asyncExec(() -> {
                         if (!isDisposed()) {
                             updateStatus();
                             state.setText(result);
@@ -199,7 +201,7 @@ final class BridgeMcpPanel extends Composite {
                     });
                     return Status.OK_STATUS;
                 } catch (IOException | RuntimeException ex) {
-                    getDisplay().asyncExec(() -> {
+                    display.asyncExec(() -> {
                         if (!isDisposed()) {
                             updateStatus();
                             state.setText("Проверка не пройдена: " +
@@ -210,7 +212,7 @@ final class BridgeMcpPanel extends Composite {
                     return new Status(IStatus.WARNING, BridgeActivator.PLUGIN_ID,
                         "MCP self-test failed (" + ex.getClass().getSimpleName() + ")");
                 } finally {
-                    getDisplay().asyncExec(() -> {
+                    display.asyncExec(() -> {
                         if (!isDisposed()) test.setEnabled(BridgeMcpServer.INSTANCE.isRunning());
                     });
                 }
