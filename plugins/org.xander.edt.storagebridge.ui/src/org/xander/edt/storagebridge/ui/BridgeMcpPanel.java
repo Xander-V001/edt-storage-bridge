@@ -159,8 +159,16 @@ final class BridgeMcpPanel extends Composite {
     boolean save() {
         if (!canSave) return false;
         try {
-            BridgeMcpSettings.save(Integer.parseInt(portText.getText().trim()),
-                tokenText.getText().trim());
+            int newPort = Integer.parseInt(portText.getText().trim());
+            String newToken = tokenText.getText().trim();
+            if (BridgeMcpServer.INSTANCE.isRunning()
+                    && !BridgeMcpServer.INSTANCE.matches(newPort, newToken)) {
+                MessageDialog.openError(getShell(), "MCP запущен",
+                    "Сначала остановите MCP-сервер, затем сохраните новый "
+                    + "порт или токен и запустите сервер снова.");
+                return false;
+            }
+            BridgeMcpSettings.save(newPort, newToken);
             return true;
         } catch (IllegalArgumentException ex) {
             MessageDialog.openError(getShell(), "Неверные настройки MCP", ex.getMessage());
