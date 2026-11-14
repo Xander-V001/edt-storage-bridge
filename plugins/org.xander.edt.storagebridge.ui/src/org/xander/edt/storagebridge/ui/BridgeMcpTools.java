@@ -28,6 +28,8 @@ import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
  */
 final class BridgeMcpTools {
     private static final Set<String> UI_REQUESTS = ConcurrentHashMap.newKeySet();
+    private static final java.util.concurrent.Semaphore LIVE_REVISION_LIMIT =
+        new java.util.concurrent.Semaphore(1);
 
     private BridgeMcpTools() {}
 
@@ -62,9 +64,15 @@ final class BridgeMcpTools {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         if (requiresProject) {
-            schema.put("properties", Map.of("project",
-                Map.of("type", "string", "description",
-                    "Точное имя открытого проекта в рабочей области EDT")));
+            Map<String, Object> properties = new LinkedHashMap<>();
+            properties.put("project", Map.of("type", "string", "description",
+                "Точное имя открытого проекта в рабочей области EDT"));
+            if (name.equals("get_pending_changes")) {
+                properties.put("offset", Map.of("type", "integer", "minimum", 0));
+                properties.put("limit", Map.of("type", "integer", "minimum", 1,
+                    "maximum", 200));
+            }
+            schema.put("properties", properties);
             schema.put("required", List.of("project"));
         } else {
             schema.put("properties", Map.of());
@@ -86,7 +94,7 @@ final class BridgeMcpTools {
         return switch (name) {
             case "list_projects" -> listProjects();
             case "get_storage_status" -> status(project(args));
-            case "get_pending_changes" -> pending(project(args));
+            case "get_pending_changes" -> pending(project(args), args);
             case "check_repository_revision" -> liveRevision(project(args));
             case "request_receive_changes" ->
                 requestUi(project(args), "receive", "выборочное получение изменений");
@@ -170,7 +178,8 @@ final class BridgeMcpTools {
         return result;
     }
 
-    private static Object pending(IProject project) throws Exception {
+    private static Object pending(IProject project, Map<String, Object> args)
+            throws Exception {
         StorageProjectSettings.Snapshot settings = configured(project);
         String gitBranch = branch(project);
         if (gitBranch.isBlank()) {
@@ -179,12 +188,39 @@ final class BridgeMcpTools {
         List<String> objects = new ArrayList<>(ReceivePendingStore.get(
             project, settings.address(), gitBranch, intermediary(settings)));
         Collections.sort(objects);
-        return Map.of(
-            "project", project.getName(), "branch", gitBranch,
-            "count", objects.size(), "objects", objects);
+        int offset = integerArgument(args.get("offset"), 0, 0, Integer.MAX_VALUE);
+        int limit = integerArgument(args.get("limit"), 100, 1, 200);
+        int start = Math.min(offset, objects.size());
+        int end = (int) Math.min((long) objects.size(), (long) start + limit);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("project", project.getName());
+        result.put("branch", gitBranch);
+        result.put("count", objects.size());
+        result.put("offset", start);
+        result.put("objects", objects.subList(start, end));
+        result.put("hasMore", end < objects.size());
+        result.put("nextOffset", end < objects.size() ? end : null);
+        return result;
+    }
+
+    private static int integerArgument(Object raw, int def, int min, int max) {
+        if (raw == null) return def;
+        if (!(raw instanceof Number number)
+                || number.doubleValue() != number.intValue()) {
+            throw new IllegalArgumentException("offset/limit должны быть целыми.");
+        }
+        int value = number.intValue();
+        if (value < min || value > max) {
+            throw new IllegalArgumentException("offset/limit вне диапазона.");
+        }
+        return value;
     }
 
     private static Object liveRevision(IProject project) throws Exception {
+        if (!LIVE_REVISION_LIMIT.tryAcquire()) {
+            throw new IllegalArgumentException("Проверка версии через MCP уже выполняется.");
+        }
+        try {
         StorageProjectSettings.Snapshot settings = configured(project);
         var kind = settings.infobaseType() == StorageProjectSettings.InfobaseType.FILE
             ? InfobaseLocation.Kind.FILE : InfobaseLocation.Kind.SERVER;
@@ -198,6 +234,9 @@ final class BridgeMcpTools {
             Thread.currentThread()::isInterrupted);
         return Map.of("project", project.getName(), "latestRevision", version,
             "checkpointChanged", false);
+        } finally {
+            LIVE_REVISION_LIMIT.release();
+        }
     }
 
     private static Object requestUi(IProject project, String mode, String action) {
