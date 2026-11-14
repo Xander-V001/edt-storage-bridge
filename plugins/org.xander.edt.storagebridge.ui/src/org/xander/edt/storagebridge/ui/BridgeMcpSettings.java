@@ -28,6 +28,10 @@ final class BridgeMcpSettings {
 
     private BridgeMcpSettings() {}
 
+    static boolean autoStartEnabled() {
+        return preferences().getBoolean(AUTO_START, true);
+    }
+
     static Snapshot load() throws StorageException {
         int port = preferences().getInt(PORT, DEFAULT_PORT);
         if (port < 1024 || port > 65535) port = DEFAULT_PORT;
