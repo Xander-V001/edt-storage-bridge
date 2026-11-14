@@ -28,6 +28,7 @@ public final class BridgeActivator extends AbstractUIPlugin {
 
     @Override
     public void stop(BundleContext context) throws Exception {
+        BridgeMcpServer.INSTANCE.close();
         instance = null;
         injector = null;
         super.stop(context);
