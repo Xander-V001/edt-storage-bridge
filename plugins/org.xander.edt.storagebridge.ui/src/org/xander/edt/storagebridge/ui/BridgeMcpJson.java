@@ -150,9 +150,10 @@ final class BridgeMcpJson {
                 whitespace();
                 expect(':');
                 Object value = value(depth);
-                if (map.putIfAbsent(key, value) != null) {
+                if (map.containsKey(key)) {
                     throw new IllegalArgumentException("Duplicate JSON key");
                 }
+                map.put(key, value);
                 whitespace();
                 if (consume('}')) return map;
                 expect(',');
