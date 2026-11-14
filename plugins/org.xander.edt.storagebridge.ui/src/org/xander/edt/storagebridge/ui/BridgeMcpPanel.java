@@ -2,6 +2,7 @@ package org.xander.edt.storagebridge.ui;
 
 import java.io.IOException;
 import org.eclipse.swt.widgets.Display;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -59,7 +60,7 @@ final class BridgeMcpPanel extends Composite {
         new Label(settings, SWT.NONE).setText("Только 127.0.0.1");
         portText.addModifyListener(event -> updateEndpoint());
 
-        new Label(settings, SWT.NONE).setText("Токен доступа:");
+        new Label(settings, SWT.NONE).setText("Токен (необязательно):");
         tokenText = new Text(settings, SWT.BORDER | SWT.PASSWORD);
         tokenText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         Button toggle = new Button(settings, SWT.PUSH);
@@ -88,9 +89,11 @@ final class BridgeMcpPanel extends Composite {
         new Label(settings, SWT.NONE).setText("");
 
         Label scope = new Label(settings, SWT.WRAP);
-        scope.setText("Сервер общий для рабочей области EDT. MCP-клиент "
-            + "передаёт имя проекта каждому инструменту. "
-            + "Доступ только с этого компьютера, по токену. "
+        scope.setText("Сервер общий для рабочей области EDT и слушает только "
+            + "127.0.0.1. Пустой токен позволяет добавить сервер в Codex "
+            + "по одному URL, но любые локальные программы смогут вызывать "
+            + "MCP-инструменты, в том числе изменяющие проект и хранилище. "
+            + "Для дополнительной защиты создайте токен. "
             + "Порт не должен совпадать с портом другого MCP-сервера.");
         scope.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 3, 1));
 
@@ -151,8 +154,7 @@ final class BridgeMcpPanel extends Composite {
         try {
             var saved = BridgeMcpSettings.load();
             portText.setText(Integer.toString(saved.port()));
-            tokenText.setText(saved.token().isBlank()
-                ? BridgeMcpSettings.newToken() : saved.token());
+            tokenText.setText(saved.token());
             autoStart.setSelection(saved.autoStart());
         } catch (StorageException | RuntimeException ex) {
             canSave = false;
@@ -185,7 +187,7 @@ final class BridgeMcpPanel extends Composite {
             MessageDialog.openError(getShell(), "Неверные настройки MCP", ex.getMessage());
         } catch (StorageException | BackingStoreException | IOException | RuntimeException ex) {
             MessageDialog.openError(getShell(), "MCP",
-                "Не удалось сохранить токен в защищённом хранилище EDT.");
+                "Не удалось сохранить настройки MCP. Проверьте журнал EDT и Secure Storage.");
         }
         return false;
     }
@@ -245,11 +247,14 @@ final class BridgeMcpPanel extends Composite {
         if (!save()) return;
         int port = Integer.parseInt(portText.getText().trim());
         String token = tokenText.getText().trim();
-        String config = BridgeMcpJson.stringify(Map.of("mcpServers", Map.of(
-            "edt-storage-bridge", Map.of(
-                "type", "http",
-                "url", BridgeMcpSettings.url(port),
-                "headers", Map.of("Authorization", "Bearer " + token)))));
+        Map<String, Object> client = new LinkedHashMap<>();
+        client.put("type", "http");
+        client.put("url", BridgeMcpSettings.url(port));
+        if (!token.isEmpty()) {
+            client.put("headers", Map.of("Authorization", "Bearer " + token));
+        }
+        String config = BridgeMcpJson.stringify(
+            Map.of("mcpServers", Map.of("edt-storage-bridge", client)));
         Clipboard clipboard = new Clipboard(getDisplay());
         try {
             clipboard.setContents(new Object[] { config },
@@ -258,9 +263,12 @@ final class BridgeMcpPanel extends Composite {
             clipboard.dispose();
         }
         MessageDialog.openInformation(getShell(), "Конфигурация скопирована",
-            "JSON для MCP-клиента скопирован в буфер обмена. "
-            + "Он содержит секретный токен доступа. "
-            + "Не публикуйте его в Git или чатах.");
+            token.isEmpty()
+                ? "JSON для MCP-клиента скопирован. В локальном режиме "
+                    + "токен не требуется. Для Codex достаточно адреса сервера."
+                : "JSON для MCP-клиента скопирован в буфер обмена. "
+                    + "Он содержит секретный токен доступа. "
+                    + "Не публикуйте его в Git или чатах.");
     }
 
     private void updateEndpoint() {
@@ -278,7 +286,8 @@ final class BridgeMcpPanel extends Composite {
         test.setEnabled(running);
         state.setText(running
             ? "MCP запущен: " + BridgeMcpSettings.url(BridgeMcpServer.INSTANCE.port())
-                + " (локально, с авторизацией)"
+                + (tokenText.getText().trim().isEmpty()
+                    ? " (локально, без токена)" : " (локально, по токену)")
             : "MCP остановлен. " + (autoStart.getSelection()
                 ? "Автозапуск выбран (сохраните настройки; при следующем старте EDT)."
                 : "Автозапуск отключён (после сохранения настройки)."));
