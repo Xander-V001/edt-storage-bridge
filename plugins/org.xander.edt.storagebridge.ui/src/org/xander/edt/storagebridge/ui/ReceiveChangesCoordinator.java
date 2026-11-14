@@ -89,6 +89,9 @@ public final class ReceiveChangesCoordinator {
 
     private ReceiveChangesCoordinator() {}
 
+    private static final ThreadLocal<Boolean> MCP_UNATTENDED =
+        ThreadLocal.withInitial(() -> false);
+
     /**
      * Reuses the same project+intermediary exclusion as receive. No mutation
      * of the intermediary is permitted while outgoing source is snapshotted.
@@ -131,17 +134,39 @@ public final class ReceiveChangesCoordinator {
 
     public static void receive(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings, ReceiveMode mode) {
+        scheduleReceive(shell, project, settings, mode, null);
+    }
+
+    static void receiveFromMcp(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            BridgeMcpOperations.Operation operation) {
+        scheduleReceive(shell, project, settings, ReceiveMode.AUTOMATIC, operation);
+    }
+
+    private static void scheduleReceive(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings, ReceiveMode mode,
+            BridgeMcpOperations.Operation operation) {
         java.util.Objects.requireNonNull(mode, "mode");
         if (project == null || project.getLocationURI() == null) {
-            MessageDialog.openError(shell, "Работа с хранилищем",
-                "Не удалось определить существующий EDT-проект.");
+            if (operation != null) {
+                BridgeMcpOperations.failed(operation, "VALIDATE",
+                    "Не удалось определить существующий EDT-проект.", false);
+            } else {
+                MessageDialog.openError(shell, "Работа с хранилищем",
+                    "Не удалось определить существующий EDT-проект.");
+            }
             return;
         }
         String operationKey = project.getLocationURI().normalize().toString();
         if (!ACTIVE.add(operationKey)) {
-            MessageDialog.openInformation(shell, "Работа с хранилищем",
-                "Для этого проекта уже выполняется получение или открыт "
-                + "редактор объединения.");
+            if (operation != null) {
+                BridgeMcpOperations.failed(operation, "LOCK",
+                    "Для проекта уже выполняется получение или открыт Merge.", false);
+            } else {
+                MessageDialog.openInformation(shell, "Работа с хранилищем",
+                    "Для этого проекта уже выполняется получение или открыт "
+                    + "редактор объединения.");
+            }
             return;
         }
         // Different EDT projects may point to the same existing intermediary.
@@ -152,9 +177,14 @@ public final class ReceiveChangesCoordinator {
                 .toLowerCase(java.util.Locale.ROOT);
         if (!ACTIVE_INTERMEDIARIES.add(intermediaryKey)) {
             ACTIVE.remove(operationKey);
-            MessageDialog.openInformation(shell, "Работа с хранилищем",
-                "Для этой базы-посредника уже выполняется получение "
-                + "или открыт редактор сравнения другого проекта.");
+            if (operation != null) {
+                BridgeMcpOperations.failed(operation, "LOCK",
+                    "База-посредник занята другой операцией.", false);
+            } else {
+                MessageDialog.openInformation(shell, "Работа с хранилищем",
+                    "Для этой базы-посредника уже выполняется получение "
+                    + "или открыт редактор сравнения другого проекта.");
+            }
             return;
         }
         Job job = new Job((mode == ReceiveMode.FULL_REVIEW
@@ -168,8 +198,13 @@ public final class ReceiveChangesCoordinator {
                 AtomicReference<IStatus> outcome =
                     new AtomicReference<>(Status.OK_STATUS);
                 try {
+                    if (operation != null) {
+                        MCP_UNATTENDED.set(true);
+                        BridgeMcpOperations.stage(operation, "RECEIVE");
+                    }
                     receiveInBackground(shell, project, settings, operationKey,
-                        intermediaryKey, mode, SubMonitor.convert(monitor, 100), outcome);
+                        intermediaryKey, mode, SubMonitor.convert(monitor, 100), outcome,
+                        operation != null);
                 } catch (RuntimeException ex) {
                     // A failure must never leave the project permanently busy.
                     ACTIVE.remove(operationKey);
@@ -179,11 +214,28 @@ public final class ReceiveChangesCoordinator {
                         "Получение прервалось: "
                         + ex.getClass().getSimpleName());
                 } finally {
+                    MCP_UNATTENDED.remove();
                     monitor.done();
                 }
                 return outcome.get();
             }
         };
+        if (operation != null) {
+            job.addJobChangeListener(new org.eclipse.core.runtime.jobs.JobChangeAdapter() {
+                @Override
+                public void done(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
+                    IStatus result = event.getResult();
+                    if (result != null && result.isOK()) {
+                        BridgeMcpOperations.completed(operation, "RECEIVE",
+                            "Получение завершено; проверьте ревизию через get_storage_status.");
+                    } else {
+                        BridgeMcpOperations.failed(operation, "RECEIVE",
+                            result == null ? "Неизвестный результат задания EDT."
+                                : result.getMessage(), false);
+                    }
+                }
+            });
+        }
         job.setUser(true);
         job.setPriority(Job.LONG);
         job.schedule();
@@ -193,7 +245,7 @@ public final class ReceiveChangesCoordinator {
     private static void receiveInBackground(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings, String operationKey,
             String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
-            AtomicReference<IStatus> outcome) {
+            AtomicReference<IStatus> outcome, boolean unattended) {
         SelectiveDumpRunner.ExportResult export = null;
         // One native -update/-getChanges run produces XML and changed names.
         // Supplement XML in place for EDT, then transfer cleanup ownership.
@@ -443,7 +495,7 @@ public final class ReceiveChangesCoordinator {
             final boolean retryPendingOnly = canRetryPendingOnly;
             phase.set("Подтверждение получения из хранилища");
             if (!retryPendingOnly && !freshUpdateApproved
-                    && (!recovery || resumePrepared)
+                    && (!recovery || resumePrepared) && !unattended
                     && !confirmOnUi(shell,
                         automatic
                             ? "Получить изменения (автоматически)"
@@ -488,6 +540,7 @@ public final class ReceiveChangesCoordinator {
             // EDT if the native repository HEAD cannot be proved at all.
             // Unknown HEAD must never be replaced with a ConfigDumpInfo token.
             if (freshNativeUpdate && revisionBeforeUpdate < 1) {
+                if (unattended) throw new IOException("1С не подтвердила HEAD; получение запрещено.");
                 informationOnUi(shell, "Версия хранилища недоступна",
                     "1С не подтвердила номер последней версии хранилища. "
                     + "Обновление базы-посредника и сравнение EDT НЕ запускались. "
@@ -496,6 +549,7 @@ public final class ReceiveChangesCoordinator {
             }
             if (freshNativeUpdate
                     && previouslyReviewed > revisionBeforeUpdate) {
+                if (unattended) throw new IOException("HEAD меньше ранее обработанного; возможна подмена хранилища.");
                 informationOnUi(shell, "Версия хранилища уменьшилась",
                     "Ранее рассмотрена версия " + previouslyReviewed
                     + ", а текущее хранилище сообщает "
@@ -789,6 +843,7 @@ public final class ReceiveChangesCoordinator {
                     + "; before=" + revisionBeforeUpdate
                     + "; after=" + observedRevision
                     + "; native staged inventory remains journaled.");
+                if (unattended) throw new IOException("Хранилище изменилось во время обновления базы-посредника.");
                 informationOnUi(shell, "Версия хранилища изменилась",
                     "Пока 1С обновляла базу-посредник, хранилище перешло "
                     + "с версии " + revisionBeforeUpdate + " на "
@@ -804,6 +859,7 @@ public final class ReceiveChangesCoordinator {
             // waste a merge session which cannot be recorded as REVIEWED.
             // The exact pending identities are already journaled.
             if (revisionForReview.get() < 1) {
+                if (unattended) throw new IOException("Не подтверждена версия источника для автоматического Merge.");
                 informationOnUi(shell, "Версия хранилища не подтверждена",
                     (revisionProofIssue.get() != null
                         ? revisionProofIssue.get() : "1С не вернула подтверждённую версию.")
@@ -881,6 +937,7 @@ public final class ReceiveChangesCoordinator {
                         return;
                     }
                 }
+                if (unattended) throw new IOException("Пустая дельта без подтверждённой ревизии; нужна полная сверка.");
                 informationOnUi(shell, "Нет изменений для сравнения EDT",
                     "Штатная 1С не сообщила изменений объектов, но новая "
                     + "обработанная версия не может быть подтверждена "
@@ -994,6 +1051,7 @@ public final class ReceiveChangesCoordinator {
                 selectedList.addAll(exactNames);
                 if (selectedList.isEmpty()) {
                     // The version-only native export is not a merge source.
+                    if (unattended) throw new IOException("Нет достоверной области изменений для EDT.");
                     informationOnUi(shell, "Новых изменений нет",
                         "1С не обнаружила изменений относительно "
                         + "сохранённого снимка.");
@@ -1966,6 +2024,9 @@ public final class ReceiveChangesCoordinator {
     /** Concrete action names are safer than OK for a mutating Designer call. */
     private static boolean confirmOnUi(Shell shell, String title,
             String message, String action) throws Exception {
+        if (Boolean.TRUE.equals(MCP_UNATTENDED.get())) {
+            throw new IllegalStateException("Интерактивный запрос запрещён в MCP.");
+        }
         return choiceOnUi(shell, title, message, action, "Отмена") == 0;
     }
 
@@ -1984,6 +2045,7 @@ public final class ReceiveChangesCoordinator {
 
     private static void notifyOnUi(Shell shell, String title, String message,
             boolean error) {
+        if (Boolean.TRUE.equals(MCP_UNATTENDED.get())) return;
         Display display = Display.getDefault();
         if (display == null || display.isDisposed()) {
             return;
