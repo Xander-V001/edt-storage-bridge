@@ -20,10 +20,9 @@ public final class BridgeMcpStartup implements IStartup {
         try {
             if (!BridgeMcpSettings.autoStartEnabled()) return;
 
-            // A fresh workspace has no credential. A user must configure MCP
-            // once in EDT before an automatic listener can be created.
+            // Loopback-only mode requires no token or first-run setup.
+            // Previously configured workspaces retain their saved bearer.
             BridgeMcpSettings.Snapshot settings = BridgeMcpSettings.load();
-            if (settings.token().isBlank()) return;
             BridgeMcpSettings.validate(settings.port(), settings.token());
 
             BridgeMcpServer.INSTANCE.start(settings.port(), settings.token());
