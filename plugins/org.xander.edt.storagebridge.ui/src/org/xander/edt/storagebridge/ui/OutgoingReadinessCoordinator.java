@@ -30,7 +30,20 @@ public final class OutgoingReadinessCoordinator {
 
     public static void check(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings) {
+        checkInternal(shell, project, settings, null);
+    }
+
+    static void checkFromMcp(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            BridgeMcpOperations.Operation operation) {
+        checkInternal(shell, project, settings, operation);
+    }
+
+    private static void checkInternal(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            BridgeMcpOperations.Operation operation) {
         Objects.requireNonNull(shell);
+        if (operation != null) BridgeMcpOperations.stage(operation, "REVISION_PREFLIGHT");
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         Display display = shell.getDisplay();
@@ -96,6 +109,13 @@ public final class OutgoingReadinessCoordinator {
                                 reason += "\nНеобработанных входящих объектов: "
                                     + pending + ".";
                             }
+                            if (operation != null) {
+                                BridgeMcpOperations.failed(operation, "REVISION_GUARD",
+                                    reason + " HEAD=" + latest + ", REVIEWED=" + reviewed
+                                    + ", PENDING=" + pending
+                                    + ". Сначала обновите проект из хранилища.", false);
+                                return;
+                            }
                             boolean receive = MessageDialog.openQuestion(shell,
                                 "Перед помещением требуется обновление",
                                 reason + "\n\nЗапустить штатное получение "
@@ -112,7 +132,7 @@ public final class OutgoingReadinessCoordinator {
                         // start its read-only preparation a second time.
                         // Keep the original review confirmation for manual
                         // Configurator handoff.
-                        if (settings.manualOutgoing()) {
+                        if (settings.manualOutgoing() && operation == null) {
                             boolean review = MessageDialog.openQuestion(shell,
                                 "Сверка для ручного помещения",
                                 "Актуальная версия хранилища: " + latest
@@ -125,8 +145,13 @@ public final class OutgoingReadinessCoordinator {
                                 + "не изменяются.");
                             if (!review) return;
                         }
-                        OutgoingReadOnlyComparisonCoordinator.review(
-                            shell, project, settings, git, latest);
+                        if (operation == null) {
+                            OutgoingReadOnlyComparisonCoordinator.review(
+                                shell, project, settings, git, latest);
+                        } else {
+                            OutgoingReadOnlyComparisonCoordinator.reviewFromMcp(
+                                shell, project, settings, git, latest, operation);
+                        }
                     });
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
@@ -141,13 +166,18 @@ public final class OutgoingReadinessCoordinator {
                                 + "к хранилищу. Подробности — в EDT Error Log."
                             : "Не удалось подтвердить актуальность "
                                 + "версии хранилища. Помещение отменено.";
-                    display.asyncExec(() -> {
-                        if (!shell.isDisposed()) {
-                            MessageDialog.openWarning(shell,
-                                "Помещение не начато",
-                                message + "\nНичего не записано в 1С.");
-                        }
-                    });
+                    if (operation != null) {
+                        BridgeMcpOperations.failed(operation, "REVISION_PREFLIGHT",
+                            message, false);
+                    } else {
+                        display.asyncExec(() -> {
+                            if (!shell.isDisposed()) {
+                                MessageDialog.openWarning(shell,
+                                    "Помещение не начато",
+                                    message + "\nНичего не записано в 1С.");
+                            }
+                        });
+                    }
                     return new Status(IStatus.WARNING, BridgeActivator.PLUGIN_ID,
                         "Outgoing native revision preflight failed ("
                         + ex.getClass().getSimpleName() + ")");
@@ -156,6 +186,17 @@ public final class OutgoingReadinessCoordinator {
                 }
             }
         };
+        if (operation != null) {
+            job.addJobChangeListener(new org.eclipse.core.runtime.jobs.JobChangeAdapter() {
+                @Override
+                public void done(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
+                    if (event.getResult() == null || !event.getResult().isOK()) {
+                        BridgeMcpOperations.failed(operation, "REVISION_PREFLIGHT",
+                            "Не удалось завершить проверку версии хранилища.", false);
+                    }
+                }
+            });
+        }
         job.setUser(true);
         job.schedule();
     }
