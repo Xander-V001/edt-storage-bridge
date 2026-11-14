@@ -7,13 +7,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.equinox.security.storage.StorageException;
-import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbenchWindow;
@@ -23,11 +20,10 @@ import org.xander.edt.storagebridge.platform.RepositoryHistoryRequest;
 import org.xander.edt.storagebridge.platform.RepositoryLatestRevisionReader;
 
 /**
- * MCP adapter: only existing, public plugin workflows. No Designer write
- * commands, no direct repository commit, no hidden auto-merge.
+ * MCP adapter to existing EDT headless automatic receive/publish workflows.
+ * Mutations run asynchronously and report a durable operation ID.
  */
 final class BridgeMcpTools {
-    private static final Set<String> UI_REQUESTS = ConcurrentHashMap.newKeySet();
     private static final java.util.concurrent.Semaphore LIVE_REVISION_LIMIT =
         new java.util.concurrent.Semaphore(1);
 
@@ -47,15 +43,15 @@ final class BridgeMcpTools {
             tool("check_repository_revision", "Проверить версию хранилища",
                 "Через существующий механизм отчёта 1С прочитать актуальный номер версии. Только чтение, может быть длительным.",
                 true, false),
-            tool("request_receive_changes", "Получить изменения из хранилища",
-                "Запросить в EDT запуск существующего выборочного получения. Требует подтверждения в окне EDT; результат объединения не подтверждается автоматически.",
+            tool("receive_changes", "Обновить проект из хранилища",
+                "Автоматически получить и принять все отличия из хранилища через штатный headless Merge EDT. Без окон подтверждения или сравнения. Возвращает operationId.",
                 true, true),
-            tool("request_full_review", "Полная сверка с хранилищем",
-                "Запросить в EDT запуск существующей полной сверки. Требует подтверждения в окне EDT; без автоматического объединения.",
+            tool("publish_changes", "Поместить изменения в хранилище",
+                "Автоматически запустить штатную подготовку и Lock/Load/Commit 1С без диалогов. Только если Git чистый, актуальная ревизия обработана и проверена область записи. Возвращает operationId.",
                 true, true),
-            tool("request_publish_changes", "Поместить изменения в хранилище",
-                "Запросить существующий путь помещения. Только после явного подтверждения пользователя в EDT: дальнейший workflow может выполнять запись в хранилище.",
-                true, true)
+            tool("get_operation_status", "Результат операции",
+                "Получить текущее состояние и окончательный результат асинхронной операции получения или помещения по operationId.",
+                false, false)
         );
     }
 
@@ -74,6 +70,11 @@ final class BridgeMcpTools {
             }
             schema.put("properties", properties);
             schema.put("required", List.of("project"));
+        } else if (name.equals("get_operation_status")) {
+            schema.put("properties", Map.of("operationId",
+                Map.of("type", "string", "description",
+                    "Идентификатор, полученный от receive_changes или publish_changes")));
+            schema.put("required", List.of("operationId"));
         } else {
             schema.put("properties", Map.of());
         }
@@ -96,12 +97,10 @@ final class BridgeMcpTools {
             case "get_storage_status" -> status(project(args));
             case "get_pending_changes" -> pending(project(args), args);
             case "check_repository_revision" -> liveRevision(project(args));
-            case "request_receive_changes" ->
-                requestUi(project(args), "receive", "выборочное получение изменений");
-            case "request_full_review" ->
-                requestUi(project(args), "full", "полную сверку с хранилищем");
-            case "request_publish_changes" ->
-                requestUi(project(args), "publish", "помещение изменений в хранилище");
+            case "receive_changes" -> startUnattended(project(args), "receive");
+            case "publish_changes" -> startUnattended(project(args), "publish");
+            case "get_operation_status" -> BridgeMcpOperations.status(
+                (String) args.get("operationId"));
             default -> throw new IllegalArgumentException("Неизвестный MCP-инструмент.");
         };
     }
@@ -173,8 +172,8 @@ final class BridgeMcpTools {
         result.put("observedRevision", observed > 0 ? observed : null);
         result.put("reviewedRevision", reviewed > 0 ? reviewed : null);
         result.put("pendingCount", pendingCount >= 0 ? pendingCount : null);
-        result.put("canPublish", false);
-        result.put("publishNote", "Прямой бесконтрольный commit через MCP запрещён. Доступен запрос существующего сценария с подтверждением в EDT.");
+        result.put("canRequestPublish", true);
+        result.put("publishNote", "Помещение выполняется автоматически, только после проверки Git, версии хранилища и штатного состава изменений.");
         return result;
     }
 
@@ -239,64 +238,59 @@ final class BridgeMcpTools {
         }
     }
 
-    private static Object requestUi(IProject project, String mode, String action) {
-        String key = project.getName() + ":" + mode;
-        if (!UI_REQUESTS.add(key)) {
-            throw new IllegalArgumentException(
-                "Запрос для этого проекта уже ожидает подтверждения в EDT.");
-        }
+    private static Object startUnattended(IProject project, String action)
+            throws Exception {
+        StorageProjectSettings.Snapshot settings = configured(project);
+        BridgeMcpOperations.Operation operation =
+            BridgeMcpOperations.begin(project, action);
         Display display = PlatformUI.getWorkbench().getDisplay();
         if (display == null || display.isDisposed()) {
-            UI_REQUESTS.remove(key);
-            throw new IllegalStateException("Графический интерфейс EDT недоступен.");
+            BridgeMcpOperations.failed(operation, "START",
+                "EDT не запущена или её рабочая область недоступна.", false);
+            return operation.snapshot();
         }
         try {
             display.asyncExec(() -> {
                 try {
                     IWorkbenchWindow window =
                         PlatformUI.getWorkbench().getActiveWorkbenchWindow();
+                    if (window == null) {
+                        for (IWorkbenchWindow candidate :
+                                PlatformUI.getWorkbench().getWorkbenchWindows()) {
+                            if (candidate.getShell() != null
+                                    && !candidate.getShell().isDisposed()) {
+                                window = candidate;
+                                break;
+                            }
+                        }
+                    }
                     if (window == null || window.getShell().isDisposed()
-                            || !project.isAccessible()) return;
+                            || !project.isAccessible()) {
+                        BridgeMcpOperations.failed(operation, "START",
+                            "Не найдено рабочее окно или открытый проект EDT.", false);
+                        return;
+                    }
                     Shell shell = window.getShell();
-                    boolean approved = MessageDialog.openQuestion(shell,
-                        "Запрос MCP — EDT Storage Bridge",
-                        "MCP-клиент запросил " + action + " для проекта «"
-                        + project.getName() + "».\n\nВыполнить команду в EDT?"
-                        + "\n\nЭто не подтверждает принятие изменений или их помещение.");
-                    if (!approved) return;
-                    StorageProjectSettings.Snapshot settings = configured(project);
-                    switch (mode) {
-                        case "receive" -> ReceiveChangesCoordinator.receive(
-                            shell, project, settings,
-                            ReceiveChangesCoordinator.ReceiveMode.INCREMENTAL);
-                        case "full" -> ReceiveChangesCoordinator.receive(
-                            shell, project, settings,
-                            ReceiveChangesCoordinator.ReceiveMode.FULL_REVIEW);
-                        case "publish" -> OutgoingReadinessCoordinator.check(
-                            shell, project, settings);
-                        default -> throw new IllegalArgumentException("Invalid MCP operation");
+                    BridgeMcpOperations.stage(operation, "START");
+                    if ("receive".equals(action)) {
+                        ReceiveChangesCoordinator.receiveFromMcp(
+                            shell, project, settings, operation);
+                    } else if ("publish".equals(action)) {
+                        OutgoingReadinessCoordinator.checkFromMcp(
+                            shell, project, settings, operation);
+                    } else {
+                        throw new IllegalArgumentException("Unknown MCP action");
                     }
                 } catch (Exception ex) {
-                    IWorkbenchWindow window =
-                        PlatformUI.getWorkbench().getActiveWorkbenchWindow();
-                    if (window != null && !window.getShell().isDisposed()) {
-                        MessageDialog.openError(window.getShell(), "Ошибка MCP",
-                            "Не удалось запустить существующую команду. "
-                            + "Проверьте настройки и журнал EDT.");
-                    }
-                } finally {
-                    UI_REQUESTS.remove(key);
+                    BridgeMcpOperations.failed(operation, "START",
+                        "Не удалось запустить операцию: "
+                        + ex.getClass().getSimpleName(), false);
                 }
             });
         } catch (RuntimeException ex) {
-            UI_REQUESTS.remove(key);
-            throw ex;
+            BridgeMcpOperations.failed(operation, "START",
+                "EDT не приняла команду: " + ex.getClass().getSimpleName(), false);
         }
-        return Map.of("state", "awaiting_user_confirmation_in_edt",
-            "project", project.getName(),
-            "operation", mode,
-            "completed", false,
-            "note", "Команда будет запущена только после подтверждения в EDT. "
-                + "Этот ответ не является результатом выполнения.");
+        return operation.snapshot();
     }
 }
