@@ -20,18 +20,27 @@ final class BridgeMcpSettings {
     private static final String NODE = "org.xander.edt.storagebridge.ui";
     private static final String TOKEN = "bearerToken";
     private static final String PORT = "port";
+    private static final String AUTO_START = "autoStart";
 
-    record Snapshot(int port, String token) {}
+    // The server only starts when a valid token has already been saved.
+    // Thus the default has no network effect on a fresh installation.
+    record Snapshot(int port, String token, boolean autoStart) {}
 
     private BridgeMcpSettings() {}
 
     static Snapshot load() throws StorageException {
         int port = preferences().getInt(PORT, DEFAULT_PORT);
         if (port < 1024 || port > 65535) port = DEFAULT_PORT;
-        return new Snapshot(port, secrets().get(TOKEN, ""));
+        return new Snapshot(port, secrets().get(TOKEN, ""),
+            preferences().getBoolean(AUTO_START, true));
     }
 
     static void save(int port, String token)
+            throws StorageException, BackingStoreException, IOException {
+        save(port, token, preferences().getBoolean(AUTO_START, true));
+    }
+
+    static void save(int port, String token, boolean autoStart)
             throws StorageException, BackingStoreException, IOException {
         validate(port, token);
         ISecurePreferences node = secrets();
@@ -39,6 +48,7 @@ final class BridgeMcpSettings {
         node.flush();
         Preferences preferences = preferences();
         preferences.putInt(PORT, port);
+        preferences.putBoolean(AUTO_START, autoStart);
         preferences.flush();
     }
 
