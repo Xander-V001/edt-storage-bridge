@@ -381,7 +381,15 @@ final class BridgeMcpServer implements AutoCloseable {
                 Map.of("protocolVersion", PROTOCOL,
                     "clientInfo", Map.of("name", "edt-mcp-self-test", "version", "1.0"),
                     "capabilities", Map.of())), 200)));
-        if (!init.containsKey("result")) throw new IOException("MCP initialize rejected");
+        Map<String, Object> handshake;
+        try {
+            handshake = BridgeMcpJson.object(init.get("result"));
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("MCP initialize не вернул корректный результат.");
+        }
+        if (!PROTOCOL.equals(handshake.get("protocolVersion"))) {
+            throw new IOException("MCP сообщил неподдерживаемую версию протокола.");
+        }
         post(port, token, Map.of("jsonrpc", "2.0",
             "method", "notifications/initialized"), 202);
         Map<String, Object> listed = BridgeMcpJson.object(BridgeMcpJson.parse(
@@ -389,9 +397,46 @@ final class BridgeMcpServer implements AutoCloseable {
                 "method", "tools/list", "params", Map.of()), 200)));
         var result = BridgeMcpJson.object(listed.get("result"));
         if (!(result.get("tools") instanceof List<?> list) || list.isEmpty()) {
-            throw new IOException("MCP tools/list returned no tools");
+            throw new IOException("MCP tools/list вернул пустой список.");
         }
-        return "Проверка успешна: initialize и tools/list, инструментов: " + list.size();
+        var toolNames = new java.util.HashSet<String>();
+        try {
+            for (Object entry : list) {
+                toolNames.add(BridgeMcpJson.string(
+                    BridgeMcpJson.object(entry).get("name")));
+            }
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("MCP tools/list вернул повреждённое описание.");
+        }
+        if (!toolNames.containsAll(List.of("list_projects", "get_storage_status",
+                "get_pending_changes", "check_repository_revision",
+                "receive_changes", "publish_changes", "get_operation_status"))) {
+            throw new IOException("MCP tools/list не содержит все семь инструментов.");
+        }
+        // Exercise a read-only tool, not just tool discovery. This never starts
+        // 1C and never changes EDT projects.
+        Map<String, Object> invoked = BridgeMcpJson.object(BridgeMcpJson.parse(
+            post(port, token, Map.of("jsonrpc", "2.0", "id", 3,
+                "method", "tools/call", "params", Map.of(
+                    "name", "list_projects", "arguments", Map.of())), 200)));
+        Map<String, Object> toolResult;
+        try {
+            toolResult = BridgeMcpJson.object(invoked.get("result"));
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("MCP tools/call не вернул результат.");
+        }
+        if (!Boolean.FALSE.equals(toolResult.get("isError"))
+                || !(toolResult.get("content") instanceof List<?>)) {
+            throw new IOException("MCP list_projects не выполнился.");
+        }
+        // A second request with a wrong bearer MUST be denied at the HTTP
+        // transport level, before the tool can execute.
+        String wrongToken = (token.charAt(0) == '0' ? "1" : "0")
+            + token.substring(1);
+        post(port, wrongToken, Map.of("jsonrpc", "2.0", "id", 4,
+            "method", "tools/list", "params", Map.of()), 401);
+        return "Проверка успешна: initialize, список " + list.size()
+            + " инструментов, list_projects и защита токеном.";
     }
 
     private static String post(int port, String token, Object body,
