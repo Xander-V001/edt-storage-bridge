@@ -377,7 +377,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void okPressed() {
-        if (saveSettings()) {
+        if (saveSettings() && (mcpPanel == null || mcpPanel.save())) {
             super.okPressed();
         }
     }
@@ -431,10 +431,6 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     ? InfobaseType.SERVER : InfobaseType.FILE,
                 infobaseAddress.getText(), platformExecutable.getText(),
                 infobaseUsername.getText(), infobasePassword.getText());
-            if (mcpPanel != null && !mcpPanel.save()) {
-                setErrorMessage("Не удалось сохранить параметры MCP.");
-                return false;
-            }
             setErrorMessage(null);
             return true;
         } catch (IllegalArgumentException ex) {
