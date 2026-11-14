@@ -54,20 +54,45 @@ public final class OutgoingReadOnlyComparisonCoordinator {
     public static void review(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings,
             GitReceiveGuard.Baseline expectedGit, long headRevision) {
+        reviewInternal(shell, project, settings, expectedGit, headRevision, null);
+    }
+
+    static void reviewFromMcp(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline expectedGit, long headRevision,
+            BridgeMcpOperations.Operation operation) {
+        reviewInternal(shell, project, settings, expectedGit, headRevision, operation);
+    }
+
+    private static void reviewInternal(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline expectedGit, long headRevision,
+            BridgeMcpOperations.Operation operation) {
         Objects.requireNonNull(shell);
+        if (operation != null) BridgeMcpOperations.stage(operation, "OUTGOING_COMPARISON");
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         if (headRevision < 1) {
-            MessageDialog.openWarning(shell, "Сверка перед помещением",
-                "Версия хранилища не подтверждена.");
+            if (operation != null) {
+                BridgeMcpOperations.failed(operation, "OUTGOING_COMPARISON",
+                    "Версия хранилища не подтверждена.", false);
+            } else {
+                MessageDialog.openWarning(shell, "Сверка перед помещением",
+                    "Версия хранилища не подтверждена.");
+            }
             return;
         }
         final AutoCloseable lease;
         try {
             lease = ReceiveChangesCoordinator.acquireOutgoingReview(project, settings);
         } catch (IOException ex) {
-            MessageDialog.openInformation(shell, "Сверка перед помещением",
-                "Для проекта или базы-посредника уже выполняется операция.");
+            if (operation != null) {
+                BridgeMcpOperations.failed(operation, "OUTGOING_COMPARISON",
+                    "База-посредник или проект заняты другой операцией.", false);
+            } else {
+                MessageDialog.openInformation(shell, "Сверка перед помещением",
+                    "Для проекта или базы-посредника уже выполняется операция.");
+            }
             return;
         }
         Display display = shell.getDisplay();
@@ -164,7 +189,7 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     // the existing read-only EDT comparison editor.
                     // Both routes obtain their scope from the native model,
                     // never from a custom filesystem/XML difference engine.
-                    if (!settings.manualOutgoing()) {
+                    if (operation != null || !settings.manualOutgoing()) {
                         monitor.subTask("Штатное сравнение EDT без открытия редактора");
                         var automatic = EdtPublicServiceBridge
                             .observeOutgoingNativeComparison(descriptor);
@@ -192,7 +217,11 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                         if (!display.isDisposed()) display.asyncExec(() -> {
                             if (!shell.isDisposed()) {
                                 continueAutomaticPublish(shell, project, settings,
-                                    expectedGit, headRevision, automaticPlan);
+                                    expectedGit, headRevision, automaticPlan, operation);
+                            } else if (operation != null) {
+                                BridgeMcpOperations.failed(operation,
+                                    "OUTGOING_COMPARISON",
+                                    "Рабочее окно EDT закрылось во время операции.", false);
                             }
                         });
                         return Status.OK_STATUS;
@@ -347,7 +376,10 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     Thread.currentThread().interrupt();
                     return Status.CANCEL_STATUS;
                 } catch (UnattestedSourceException ex) {
-                    if (!display.isDisposed()) display.asyncExec(() -> {
+                    if (operation != null) BridgeMcpOperations.failed(operation,
+                        "SOURCE_ATTESTATION",
+                        "Исходный снимок базы не привязан к текущему HEAD.", false);
+                    else if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
                                 "Невозможно подтвердить состояние хранилища",
@@ -367,7 +399,11 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                     Platform.getLog(OutgoingReadOnlyComparisonCoordinator.class)
                         .log(new Status(IStatus.ERROR, PLUGIN,
                             "Outgoing read-only EDT comparison failed", ex));
-                    if (!display.isDisposed()) display.asyncExec(() -> {
+                    if (operation != null) BridgeMcpOperations.failed(operation,
+                        "OUTGOING_COMPARISON",
+                        "Штатное сравнение EDT завершилось ошибкой: "
+                        + ex.getClass().getSimpleName(), false);
+                    else if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed()) {
                             MessageDialog.openWarning(shell,
                                 "Сверка EDT с хранилищем не выполнена",
@@ -384,6 +420,17 @@ public final class OutgoingReadOnlyComparisonCoordinator {
                 }
             }
         };
+        if (operation != null) {
+            job.addJobChangeListener(new org.eclipse.core.runtime.jobs.JobChangeAdapter() {
+                @Override
+                public void done(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
+                    if (event.getResult() == null || !event.getResult().isOK()) {
+                        BridgeMcpOperations.failed(operation, "OUTGOING_COMPARISON",
+                            "Подготовка штатного сравнения EDT не завершилась.", false);
+                    }
+                }
+            });
+        }
         job.setUser(true);
         job.schedule();
     }
@@ -392,16 +439,27 @@ public final class OutgoingReadOnlyComparisonCoordinator {
     private static void continueAutomaticPublish(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings,
             GitReceiveGuard.Baseline expectedGit, long headRevision,
-            OutgoingMetadataObjectPlan nativePlan) {
+            OutgoingMetadataObjectPlan nativePlan,
+            BridgeMcpOperations.Operation operation) {
         if (nativePlan.owners().isEmpty()) {
-            MessageDialog.openInformation(shell, "Автоматическое помещение",
-                "Штатное сравнение EDT не обнаружило изменённых объектов.");
+            if (operation != null) {
+                BridgeMcpOperations.completed(operation, "NO_CHANGES",
+                    "Штатное сравнение EDT не обнаружило изменённых объектов.");
+            } else {
+                MessageDialog.openInformation(shell, "Автоматическое помещение",
+                    "Штатное сравнение EDT не обнаружило изменённых объектов.");
+            }
             return;
         }
         // EDT's own export operation includes each owner's subordinate
         // metadata. Neither user selection nor file-based change detection.
-        OutgoingMetadataExportCoordinator.preview(shell, project, settings,
-            expectedGit, headRevision, nativePlan);
+        if (operation == null) {
+            OutgoingMetadataExportCoordinator.preview(shell, project, settings,
+                expectedGit, headRevision, nativePlan);
+        } else {
+            OutgoingMetadataExportCoordinator.previewFromMcp(shell, project, settings,
+                expectedGit, headRevision, nativePlan, operation);
+        }
     }
 
     private static final class UnattestedSourceException extends IOException {
