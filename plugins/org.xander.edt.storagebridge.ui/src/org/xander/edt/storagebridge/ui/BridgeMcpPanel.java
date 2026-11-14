@@ -32,6 +32,7 @@ final class BridgeMcpPanel extends Composite {
     private Button start;
     private Button stop;
     private Button test;
+    private Button autoStart;
     private boolean canSave = true;
 
     BridgeMcpPanel(Composite parent) {
@@ -93,6 +94,12 @@ final class BridgeMcpPanel extends Composite {
             + "Порт не должен совпадать с портом другого MCP-сервера.");
         scope.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 3, 1));
 
+        autoStart = new Button(settings, SWT.CHECK);
+        autoStart.setText("Автоматически запускать MCP-сервер при старте EDT");
+        autoStart.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1));
+        autoStart.setSelection(true);
+        autoStart.addListener(SWT.Selection, event -> updateStatus());
+
         Group controls = new Group(this, SWT.NONE);
         controls.setText("Управление");
         controls.setLayout(new GridLayout(4, false));
@@ -146,6 +153,7 @@ final class BridgeMcpPanel extends Composite {
             portText.setText(Integer.toString(saved.port()));
             tokenText.setText(saved.token().isBlank()
                 ? BridgeMcpSettings.newToken() : saved.token());
+            autoStart.setSelection(saved.autoStart());
         } catch (StorageException | RuntimeException ex) {
             canSave = false;
             portText.setText(Integer.toString(BridgeMcpSettings.DEFAULT_PORT));
@@ -155,6 +163,7 @@ final class BridgeMcpPanel extends Composite {
                 + "Управление сервером недоступно до восстановления доступа.");
         }
         updateEndpoint();
+        autoStart.setEnabled(canSave);
         start.setEnabled(canSave);
     }
 
@@ -170,7 +179,7 @@ final class BridgeMcpPanel extends Composite {
                     + "порт или токен и запустите сервер снова.");
                 return false;
             }
-            BridgeMcpSettings.save(newPort, newToken);
+            BridgeMcpSettings.save(newPort, newToken, autoStart.getSelection());
             return true;
         } catch (IllegalArgumentException ex) {
             MessageDialog.openError(getShell(), "Неверные настройки MCP", ex.getMessage());
@@ -270,7 +279,9 @@ final class BridgeMcpPanel extends Composite {
         state.setText(running
             ? "MCP запущен: " + BridgeMcpSettings.url(BridgeMcpServer.INSTANCE.port())
                 + " (локально, с авторизацией)"
-            : "MCP остановлен. Автоматический запуск при старте EDT отключён.");
+            : "MCP остановлен. " + (autoStart.getSelection()
+                ? "Автозапуск выбран (сохраните настройки; при следующем старте EDT)."
+                : "Автозапуск отключён (после сохранения настройки)."));
         state.getParent().layout();
     }
 }
