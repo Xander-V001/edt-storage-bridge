@@ -265,10 +265,13 @@ final class BridgeMcpServer implements AutoCloseable {
     }
 
     private boolean authorized(String authorization) {
+        String expected = bearer;
+        if (expected == null) return false; // closed listener
+        // Only the loopback socket can reach this handler; when the user has
+        // not set a token, local MCP clients can connect by URL alone.
+        if (expected.isEmpty()) return true;
         if (!authorization.startsWith("Bearer ")) return false;
         String supplied = authorization.substring("Bearer ".length());
-        String expected = bearer;
-        if (expected == null) return false;
         return MessageDigest.isEqual(
             supplied.getBytes(StandardCharsets.UTF_8),
             expected.getBytes(StandardCharsets.UTF_8));
@@ -429,14 +432,16 @@ final class BridgeMcpServer implements AutoCloseable {
                 || !(toolResult.get("content") instanceof List<?>)) {
             throw new IOException("MCP list_projects не выполнился.");
         }
-        // A second request with a wrong bearer MUST be denied at the HTTP
-        // transport level, before the tool can execute.
-        String wrongToken = (token.charAt(0) == '0' ? "1" : "0")
-            + token.substring(1);
-        post(port, wrongToken, Map.of("jsonrpc", "2.0", "id", 4,
-            "method", "tools/list", "params", Map.of()), 401);
+        if (!token.isEmpty()) {
+            // A wrong bearer must be rejected before executing the tool.
+            String wrongToken = (token.charAt(0) == '0' ? "1" : "0")
+                + token.substring(1);
+            post(port, wrongToken, Map.of("jsonrpc", "2.0", "id", 4,
+                "method", "tools/list", "params", Map.of()), 401);
+        }
         return "Проверка успешна: initialize, список " + list.size()
-            + " инструментов, list_projects и защита токеном.";
+            + " инструментов, list_projects; локальный доступ "
+            + (token.isEmpty() ? "без токена." : "с защитой токеном.");
     }
 
     private static String post(int port, String token, Object body,
@@ -446,7 +451,9 @@ final class BridgeMcpServer implements AutoCloseable {
         connection.setConnectTimeout(3000);
         connection.setReadTimeout(5000);
         connection.setRequestMethod("POST");
-        connection.setRequestProperty("Authorization", "Bearer " + token);
+        if (!token.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json, text/event-stream");
         connection.setDoOutput(true);
