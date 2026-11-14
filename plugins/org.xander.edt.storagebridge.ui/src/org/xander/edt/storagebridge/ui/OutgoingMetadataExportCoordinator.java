@@ -44,18 +44,44 @@ public final class OutgoingMetadataExportCoordinator {
             StorageProjectSettings.Snapshot settings,
             GitReceiveGuard.Baseline expectedGit, long reviewedRevision,
             OutgoingMetadataObjectPlan plan) {
+        previewInternal(shell, project, settings, expectedGit, reviewedRevision,
+            plan, null);
+    }
+
+    static void previewFromMcp(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline expectedGit, long reviewedRevision,
+            OutgoingMetadataObjectPlan plan,
+            BridgeMcpOperations.Operation operation) {
+        previewInternal(shell, project, settings, expectedGit, reviewedRevision,
+            plan, operation);
+    }
+
+    private static void previewInternal(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline expectedGit, long reviewedRevision,
+            OutgoingMetadataObjectPlan plan,
+            BridgeMcpOperations.Operation operation) {
         Objects.requireNonNull(shell);
+        if (operation != null) BridgeMcpOperations.stage(operation, "NATIVE_EDT_EXPORT");
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         Objects.requireNonNull(expectedGit);
         Objects.requireNonNull(plan);
-        if (plan.owners().isEmpty() || shell.isDisposed()) return;
+        if (plan.owners().isEmpty() || shell.isDisposed()) {
+            if (operation != null) BridgeMcpOperations.failed(operation,
+                "NATIVE_EDT_EXPORT", "Нет области экспорта или EDT закрыта.", false);
+            return;
+        }
 
         final AutoCloseable lease;
         try {
             lease = ReceiveChangesCoordinator.acquireOutgoingReview(project, settings);
         } catch (IOException ex) {
-            MessageDialog.openWarning(shell, "Экспорт метаданных",
+            if (operation != null) BridgeMcpOperations.failed(operation,
+                "NATIVE_EDT_EXPORT", "Для проекта или базы уже выполняется операция.",
+                false);
+            else MessageDialog.openWarning(shell, "Экспорт метаданных",
                 "Для этой базы или проекта уже выполняется другая операция.");
             return;
         }
@@ -166,8 +192,12 @@ public final class OutgoingMetadataExportCoordinator {
                     lease.close();
                     leaseReleased = true;
                     if (!display.isDisposed()) display.asyncExec(() -> {
-                        if (shell.isDisposed()) return;
-                        if (settings.manualOutgoing()) {
+                        if (shell.isDisposed()) {
+                            if (operation != null) BridgeMcpOperations.failed(operation,
+                                "NATIVE_EDT_EXPORT", "Окно EDT закрыто.", false);
+                            return;
+                        }
+                        if (settings.manualOutgoing() && operation == null) {
                             // Preserve the existing diagnostic and handoff
                             // prompts exclusively for manual Configurator mode.
                             MessageDialog.openInformation(shell,
@@ -198,9 +228,19 @@ public final class OutgoingMetadataExportCoordinator {
                             // preview and "prepare another test" questions.
                             // The separate explicit REAL-WRITE safety gate
                             // inside confirmTestWrite is intentionally retained.
-                            OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
-                                shell, project, settings, expectedGit,
-                                reviewedRevision, plan, approvedPlan);
+                            if (operation == null) {
+                                OutgoingWholeObjectWriteCoordinator.confirmTestWrite(
+                                    shell, project, settings, expectedGit,
+                                    reviewedRevision, plan, approvedPlan);
+                            } else {
+                                OutgoingWholeObjectWriteCoordinator.publishFromMcp(
+                                    shell, project, settings, expectedGit,
+                                    reviewedRevision, plan, approvedPlan, operation);
+                            }
+                        } else if (approvedPlan == null && operation != null) {
+                            BridgeMcpOperations.failed(operation, "WRITE_SCOPE",
+                                "Экспорт или состав объектов не прошёл проверку "
+                                + "допустимой области частичной загрузки.", false);
                         } else if (approvedPlan == null && !shell.isDisposed()) {
                             MessageDialog.openInformation(shell,
                                 "Помещение объектов пока заблокировано",
@@ -214,6 +254,8 @@ public final class OutgoingMetadataExportCoordinator {
                     return Status.OK_STATUS;
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
+                    if (operation != null) BridgeMcpOperations.failed(operation,
+                        "NATIVE_EDT_EXPORT", "Экспорт EDT прерван.", false);
                     return Status.CANCEL_STATUS;
                 } catch (Exception ex) {
                     // The outgoing stage has no side effects on 1C yet.
@@ -244,7 +286,9 @@ public final class OutgoingMetadataExportCoordinator {
                         .log(new Status(IStatus.ERROR, PLUGIN,
                             "Native metadata export preview failed at " + phase, ex));
                     final Path diagnostic = folder;
-                    if (!display.isDisposed()) display.asyncExec(() -> {
+                    if (operation != null) BridgeMcpOperations.failed(operation,
+                        phase, "Штатный экспорт EDT не выполнен: " + failureCode, false);
+                    else if (!display.isDisposed()) display.asyncExec(() -> {
                         if (shell.isDisposed()) return;
                         MessageDialog.openWarning(shell,
                             "Экспорт метаданных EDT не выполнен",
@@ -273,6 +317,17 @@ public final class OutgoingMetadataExportCoordinator {
                 }
             }
         };
+        if (operation != null) {
+            job.addJobChangeListener(new org.eclipse.core.runtime.jobs.JobChangeAdapter() {
+                @Override
+                public void done(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
+                    if (event.getResult() == null || !event.getResult().isOK()) {
+                        BridgeMcpOperations.failed(operation, "NATIVE_EDT_EXPORT",
+                            "Штатный экспорт не завершился.", false);
+                    }
+                }
+            });
+        }
         job.setUser(true);
         job.schedule();
     }
