@@ -204,7 +204,7 @@ public final class ReceiveChangesCoordinator {
                     }
                     receiveInBackground(shell, project, settings, operationKey,
                         intermediaryKey, mode, SubMonitor.convert(monitor, 100), outcome,
-                        operation != null);
+                        operation);
                 } catch (RuntimeException ex) {
                     // A failure must never leave the project permanently busy.
                     ACTIVE.remove(operationKey);
@@ -245,7 +245,9 @@ public final class ReceiveChangesCoordinator {
     private static void receiveInBackground(Shell shell, IProject project,
             StorageProjectSettings.Snapshot settings, String operationKey,
             String intermediaryKey, ReceiveMode mode, SubMonitor jobProgress,
-            AtomicReference<IStatus> outcome, boolean unattended) {
+            AtomicReference<IStatus> outcome,
+            BridgeMcpOperations.Operation operation) {
+        final boolean unattended = operation != null;
         SelectiveDumpRunner.ExportResult export = null;
         // One native -update/-getChanges run produces XML and changed names.
         // Supplement XML in place for EDT, then transfer cleanup ownership.
@@ -926,6 +928,9 @@ public final class ReceiveChangesCoordinator {
                             "Native no-delta receive: reviewedRevision="
                             + observedRevision + "; previousReviewed="
                             + previouslyReviewed + "; no EDT merge necessary");
+                        if (unattended) BridgeMcpOperations.completed(operation,
+                            "NO_CHANGES", "1С подтвердила отсутствие изменений объектов. "
+                            + "Обработанная версия хранилища: " + observedRevision);
                         informationOnUi(shell, "Версия хранилища проверена",
                             "1С подтвердила отсутствие изменений объектов"
                             + (recovery
@@ -1288,6 +1293,10 @@ public final class ReceiveChangesCoordinator {
                     + mergeResult.merged() + "; reviewedRevision=" + finalHead
                     + "; acknowledgedPending=" + receivedCount
                     + "; full=" + effectiveFull);
+                if (unattended) BridgeMcpOperations.completed(operation, "RECEIVE",
+                    "EDT применила входящие отличия. Ревизия: " + finalHead
+                    + ", обработано PENDING: " + receivedCount
+                    + ", native differences: " + mergeResult.differences());
                 informationOnUi(shell, "Изменения получены автоматически",
                     "EDT применила все отличия из хранилища без "
                     + "открытия редактора сравнения.\n"
@@ -1854,6 +1863,9 @@ public final class ReceiveChangesCoordinator {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logFailure(phase.get(), ex);
+            if (unattended) BridgeMcpOperations.failed(operation, phase.get(),
+                "Операция прервана. Проверьте журнал EDT и состояние базы.",
+                updateAttempted.get());
             outcome.set(Status.CANCEL_STATUS);
             informationOnUi(shell, "Работа с хранилищем",
                 "Операция прервана на этапе: " + phase.get()
@@ -1862,6 +1874,12 @@ public final class ReceiveChangesCoordinator {
             // No arbitrary exception messages or Designer output are logged:
             // connection strings and credentials may be embedded in them.
             logFailure(phase.get(), ex);
+            if (unattended) BridgeMcpOperations.failed(operation, phase.get(),
+                "Получение остановлено: " + safeReason(ex)
+                + (updateAttempted.get()
+                    ? ". База-посредник могла измениться: нужна диагностика перед повтором."
+                    : ". Обновление базы не начиналось."),
+                updateAttempted.get());
             String databaseState = updateAttempted.get()
                 ? "Команда обновления базы-посредника уже могла выполняться. "
                   + "Не повторяйте её до проверки состояния базы."
