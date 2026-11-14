@@ -55,19 +55,46 @@ public final class OutgoingWholeObjectWriteCoordinator {
             GitReceiveGuard.Baseline reviewedGit, long reviewedRevision,
             OutgoingMetadataObjectPlan sourcePlan,
             OutgoingWholeObjectWritePlan previewPlan) {
+        publishInternal(shell, project, settings, reviewedGit,
+            reviewedRevision, sourcePlan, previewPlan, null);
+    }
+
+    static void publishFromMcp(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline reviewedGit, long reviewedRevision,
+            OutgoingMetadataObjectPlan sourcePlan,
+            OutgoingWholeObjectWritePlan previewPlan,
+            BridgeMcpOperations.Operation operation) {
+        publishInternal(shell, project, settings, reviewedGit,
+            reviewedRevision, sourcePlan, previewPlan, operation);
+    }
+
+    private static void publishInternal(Shell shell, IProject project,
+            StorageProjectSettings.Snapshot settings,
+            GitReceiveGuard.Baseline reviewedGit, long reviewedRevision,
+            OutgoingMetadataObjectPlan sourcePlan,
+            OutgoingWholeObjectWritePlan previewPlan,
+            BridgeMcpOperations.Operation operation) {
         Objects.requireNonNull(shell);
+        if (operation != null) BridgeMcpOperations.stage(operation, "PUBLISH_PREFLIGHT");
         Objects.requireNonNull(project);
         Objects.requireNonNull(settings);
         Objects.requireNonNull(reviewedGit);
         Objects.requireNonNull(sourcePlan);
         Objects.requireNonNull(previewPlan);
-        if (shell.isDisposed()) return;
+        if (shell.isDisposed()) {
+            if (operation != null) BridgeMcpOperations.failed(operation,
+                "PUBLISH_PREFLIGHT", "Рабочее окно EDT закрыто.", false);
+            return;
+        }
 
         final AutoCloseable lease;
         try {
             lease = ReceiveChangesCoordinator.acquireOutgoingReview(project, settings);
         } catch (IOException ex) {
-            MessageDialog.openWarning(shell, "Помещение не начато",
+            if (operation != null) BridgeMcpOperations.failed(operation,
+                "PUBLISH_PREFLIGHT", "Проект или база-посредник заняты.", false);
+            else MessageDialog.openWarning(shell, "Помещение не начато",
                 "Для проекта или базы-посредника уже выполняется операция.");
             return;
         }
@@ -162,6 +189,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     // intermediary or its repository captures.
                     mutationStarted = true;
                     phase = "LOCK";
+                    if (operation != null) BridgeMcpOperations.stage(operation, phase);
                     monitor.subTask("Захват выбранных объектов с подчинёнными");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOCK,
@@ -170,6 +198,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     requireHead(connection, reviewedRevision, monitor);
 
                     phase = "LOAD";
+                    if (operation != null) BridgeMcpOperations.stage(operation, phase);
                     monitor.subTask("Частичная загрузка объектов из XML");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.LOAD,
@@ -187,6 +216,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     // Do not run a second incremental export as a post-Load
                     // comparison: it can reject valid loaded objects.
                     phase = "COMMIT";
+                    if (operation != null) BridgeMcpOperations.stage(operation, phase);
                     monitor.subTask("Помещение выбранных объектов в хранилище");
                     OutgoingDesignerRunner.run(connection,
                         OutgoingDesignerCommands.Stage.COMMIT,
@@ -201,7 +231,11 @@ public final class OutgoingWholeObjectWriteCoordinator {
                     // successful COMMIT; future invocations are independent.
                     phase = "FINISH";
                     journal.completedAfterNativeCommit();
-                    if (!display.isDisposed()) display.asyncExec(() -> {
+                    if (operation != null) BridgeMcpOperations.completed(operation, phase,
+                        "Штатный Designer COMMIT завершился с кодом 0. Объектов: "
+                        + plan.classicOwners().size()
+                        + ". Независимая проверка содержимого хранилища не выполнялась.");
+                    else if (!display.isDisposed()) display.asyncExec(() -> {
                         if (!shell.isDisposed()) MessageDialog.openInformation(
                             shell, "Помещение завершено",
                             "Конфигуратор завершил помещение изменений "
@@ -215,7 +249,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     return fail(journal, mutationStarted, phase, ex,
-                        shell, display);
+                        shell, display, operation);
                 } catch (Exception ex) {
                     return fail(journal, mutationStarted, phase, ex,
                         shell, display);
@@ -229,13 +263,25 @@ public final class OutgoingWholeObjectWriteCoordinator {
                 }
             }
         };
+        if (operation != null) {
+            job.addJobChangeListener(new org.eclipse.core.runtime.jobs.JobChangeAdapter() {
+                @Override
+                public void done(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
+                    if (event.getResult() == null || !event.getResult().isOK()) {
+                        BridgeMcpOperations.failed(operation, "PUBLISH",
+                            "Автоматическое помещение не завершилось.", false);
+                    }
+                }
+            });
+        }
         job.setUser(true);
         job.schedule();
     }
 
     private static IStatus fail(OutgoingOperationJournal journal,
             boolean mutationStarted, String phase, Exception ex,
-            Shell shell, Display display) {
+            Shell shell, Display display,
+            BridgeMcpOperations.Operation operation) {
         if (journal != null) {
             try {
                 if (mutationStarted) {
@@ -252,7 +298,13 @@ public final class OutgoingWholeObjectWriteCoordinator {
             .log(new Status(IStatus.ERROR, PLUGIN,
                 "Outgoing metadata publish failed at " + phase, ex));
         Path diagnostic = journal == null ? null : journal.directory();
-        if (!display.isDisposed()) display.asyncExec(() -> {
+        if (operation != null) BridgeMcpOperations.failed(operation, phase,
+            "Ошибка " + ex.getClass().getSimpleName()
+            + (mutationStarted
+                ? ". Результат операций 1С неизвестен; проверьте базу и захваты."
+                : ". Запись в хранилище не начиналась."),
+            mutationStarted);
+        else if (!display.isDisposed()) display.asyncExec(() -> {
             if (!shell.isDisposed()) MessageDialog.openWarning(shell,
                 "Помещение остановлено",
                 (mutationStarted
