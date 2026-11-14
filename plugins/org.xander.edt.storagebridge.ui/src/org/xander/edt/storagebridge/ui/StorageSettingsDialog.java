@@ -51,6 +51,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Button clearLocalMarksButton;
     private Label localMarksCountLabel;
     private String activeBranch;
+    private BridgeMcpPanel mcpPanel;
 
     public StorageSettingsDialog(Shell shell, IProject project) {
         super(shell);
@@ -334,6 +335,11 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
         note.setLayoutData(noteData);
+
+        TabItem mcpTab = new TabItem(tabs, SWT.NONE);
+        mcpTab.setText("MCP");
+        mcpPanel = new BridgeMcpPanel(tabs);
+        mcpTab.setControl(mcpPanel);
         return root;
     }
 
@@ -605,7 +611,9 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void okPressed() {
-        if (saveSettings()) {
+        // MCP configuration is separate: receiving/publishing never depends
+        // on MCP token validation. Persist it only on explicit Save.
+        if (saveSettings() && (mcpPanel == null || mcpPanel.save())) {
             super.okPressed();
         }
     }
