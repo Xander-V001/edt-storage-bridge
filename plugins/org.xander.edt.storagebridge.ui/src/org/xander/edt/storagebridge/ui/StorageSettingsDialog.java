@@ -19,6 +19,8 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.TabFolder;
+import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Text;
 import org.osgi.service.prefs.BackingStoreException;
 import org.xander.edt.storagebridge.ui.StorageProjectSettings.InfobaseType;
@@ -44,6 +46,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
     private Label appliedRevisionLabel;
     private Button refreshVersionsButton;
     private String activeBranch;
+    private BridgeMcpPanel mcpPanel;
 
     public StorageSettingsDialog(Shell shell, IProject project) {
         super(shell);
@@ -69,9 +72,15 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             saved = null;
         }
 
-        Composite content = new Composite(root, SWT.NONE);
+        TabFolder tabs = new TabFolder(root, SWT.TOP);
+        tabs.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        TabItem repositoryTab = new TabItem(tabs, SWT.NONE);
+        repositoryTab.setText("Хранилище 1С");
+
+        Composite content = new Composite(tabs, SWT.NONE);
         content.setLayout(new GridLayout(2, false));
         content.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        repositoryTab.setControl(content);
 
         Group connection = new Group(content, SWT.NONE);
         connection.setText("Подключение");
@@ -232,6 +241,12 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
         noteData.horizontalSpan = 2;
         noteData.widthHint = 560;
         note.setLayoutData(noteData);
+
+        TabItem mcpTab = new TabItem(tabs, SWT.NONE);
+        mcpTab.setText("MCP");
+        mcpPanel = new BridgeMcpPanel(tabs);
+        mcpTab.setControl(mcpPanel);
+        tabs.setSelection(repositoryTab);
         return root;
     }
 
@@ -416,6 +431,10 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
                     ? InfobaseType.SERVER : InfobaseType.FILE,
                 infobaseAddress.getText(), platformExecutable.getText(),
                 infobaseUsername.getText(), infobasePassword.getText());
+            if (mcpPanel != null && !mcpPanel.save()) {
+                setErrorMessage("Не удалось сохранить параметры MCP.");
+                return false;
+            }
             setErrorMessage(null);
             return true;
         } catch (IllegalArgumentException ex) {
