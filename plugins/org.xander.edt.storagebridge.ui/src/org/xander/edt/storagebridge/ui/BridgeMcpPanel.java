@@ -286,8 +286,8 @@ final class BridgeMcpPanel extends Composite {
         test.setEnabled(running);
         state.setText(running
             ? "MCP запущен: " + BridgeMcpSettings.url(BridgeMcpServer.INSTANCE.port())
-                + (tokenText.getText().trim().isEmpty()
-                    ? " (локально, без токена)" : " (локально, по токену)")
+                + (BridgeMcpServer.INSTANCE.requiresAuthentication()
+                    ? " (локально, по токену)" : " (локально, без токена)")
             : "MCP остановлен. " + (autoStart.getSelection()
                 ? "Автозапуск выбран (сохраните настройки; при следующем старте EDT)."
                 : "Автозапуск отключён (после сохранения настройки)."));
