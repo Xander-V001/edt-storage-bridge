@@ -2,7 +2,8 @@
 <?eclipse version="3.4"?>
 <plugin>
   <!-- Eclipse invokes IStartup on a background thread after the workbench starts.
-       The listener is opened only when saved MCP credentials and autoStart allow it. -->
+       The listener is opened when autoStart is enabled; loopback-only mode may
+       be used without a bearer token, and saved tokens remain protected. -->
   <extension point="org.eclipse.ui.startup">
     <startup class="org.xander.edt.storagebridge.ui.BridgeMcpStartup"/>
   </extension>
