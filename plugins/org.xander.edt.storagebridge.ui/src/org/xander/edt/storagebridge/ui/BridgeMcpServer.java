@@ -294,7 +294,9 @@ final class BridgeMcpServer implements AutoCloseable {
             return errorHttp(415, "Unsupported Media Type");
         }
         String accept = request.header("accept").toLowerCase(Locale.ROOT);
-        if (!accept.contains("application/json") && !accept.contains("*/*")) {
+        if (!accept.contains("application/json")
+                && !accept.contains("text/event-stream")
+                && !accept.contains("*/*")) {
             return errorHttp(406, "Not Acceptable");
         }
         try {
@@ -326,7 +328,9 @@ final class BridgeMcpServer implements AutoCloseable {
                 return errorHttp(400, "Unsupported Protocol Version");
             }
 
-            noteCall(method);
+            if (!"1".equals(request.header("x-bridge-self-test"))) {
+                noteCall(method);
+            }
             boolean isInitialize = method.equals("initialize");
             if (!isInitialize) {
                 String session = request.header("mcp-session-id");
@@ -641,6 +645,7 @@ final class BridgeMcpServer implements AutoCloseable {
             connection.setRequestProperty("MCP-Protocol-Version", PROTOCOL);
         }
         connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("X-Bridge-Self-Test", "1");
         connection.setRequestProperty("Accept",
             sse ? "application/json, text/event-stream" : "application/json");
         connection.setDoOutput(true);
