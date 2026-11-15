@@ -1,14 +1,11 @@
 package org.xander.edt.storagebridge.ui;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -21,23 +18,27 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
 /**
- * Local-only, bounded MCP Streamable HTTP JSON transport (handshake-era
- * protocol: 2025-06-18 / 2025-11-25). No SSE/server-initiated requests.
+ * Loopback-only MCP Streamable HTTP transport.
  *
- * Uses only java.base sockets because Eclipse/EDT OSGi target may not export
- * jdk.httpserver or a third-party MCP SDK dependency. The implementation is
- * deliberately narrow: JSON-RPC initialize, ping, tools/list, tools/call.
+ * Use the JDK HTTP server for HTTP framing, chunked requests and connection
+ * handling (as used by other Eclipse MCP integrations). Keep our independent
+ * JSON-RPC dispatcher and seven Storage Bridge tools: no third-party code.
+ * Protocol support is the sessionless 2025-11-25-compatible JSON response
+ * subset; there is no SSE stream or server-initiated call.
  */
 final class BridgeMcpServer implements AutoCloseable {
     static final BridgeMcpServer INSTANCE = new BridgeMcpServer();
     private static final int MAX_HEADERS = 12 * 1024;
     private static final int MAX_BODY = 256 * 1024;
-    private static final int SOCKET_TIMEOUT_MS = 20_000;
     private static final String PROTOCOL = "2025-11-25";
     private static final AtomicInteger THREAD_ID = new AtomicInteger();
 
-    private volatile ServerSocket listener;
+    private volatile HttpServer listener;
     private volatile ThreadPoolExecutor workers;
     private volatile String bearer;
     private volatile int boundPort;
@@ -47,19 +48,15 @@ final class BridgeMcpServer implements AutoCloseable {
     synchronized void start(int port, String token) throws IOException {
         BridgeMcpSettings.validate(port, token);
         if (isRunning()) {
-            if (boundPort == port && bearer.equals(token)) return;
+            if (boundPort == port && token.equals(bearer)) return;
             throw new IllegalStateException(
                 "MCP уже запущен. Остановите его перед сменой порта или токена.");
         }
-        ServerSocket socket = new ServerSocket();
-        try {
-            socket.setReuseAddress(false);
-            socket.bind(new InetSocketAddress(
-                InetAddress.getByName("127.0.0.1"), port), 16);
-        } catch (IOException ex) {
-            socket.close();
-            throw new IOException("Порт MCP занят или недоступен.");
-        }
+
+        // Do not use InetAddress.getLoopbackAddress() here: its selected
+        // address family may be IPv6, while the advertised URL is IPv4.
+        HttpServer server = HttpServer.create(new InetSocketAddress(
+            InetAddress.getByName("127.0.0.1"), port), 16);
         ThreadPoolExecutor pool = new ThreadPoolExecutor(
             2, 4, 30, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(32),
@@ -70,17 +67,26 @@ final class BridgeMcpServer implements AutoCloseable {
                 return thread;
             },
             new ThreadPoolExecutor.AbortPolicy());
-        bearer = token;
-        boundPort = port;
-        workers = pool;
-        listener = socket;
-        Thread acceptor = new Thread(() -> accept(socket, pool), "EDT-Storage-MCP-accept");
-        acceptor.setDaemon(true);
-        acceptor.start();
+        try {
+            server.createContext("/mcp", this::serve);
+            server.setExecutor(pool);
+            bearer = token;
+            boundPort = port;
+            server.start();
+            workers = pool;
+            listener = server;
+        } catch (RuntimeException ex) {
+            // Never leave a half-started listener or worker pool behind.
+            server.stop(0);
+            pool.shutdownNow();
+            bearer = null;
+            boundPort = 0;
+            throw ex;
+        }
     }
 
     synchronized boolean isRunning() {
-        return listener != null && !listener.isClosed();
+        return listener != null;
     }
 
     synchronized int port() {
@@ -97,58 +103,40 @@ final class BridgeMcpServer implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        ServerSocket socket = listener;
+        HttpServer server = listener;
         listener = null;
         bearer = null;
         boundPort = 0;
-        if (socket != null) {
-            try { socket.close(); } catch (IOException ignored) { }
-        }
+        if (server != null) server.stop(0);
         ThreadPoolExecutor pool = workers;
         workers = null;
         if (pool != null) pool.shutdownNow();
     }
 
-    private void accept(ServerSocket socket, ThreadPoolExecutor pool) {
-        while (!socket.isClosed()) {
+    private void serve(HttpExchange exchange) throws IOException {
+        try (exchange) {
+            Response response;
             try {
-                Socket client = socket.accept();
-                try {
-                    pool.execute(() -> serve(client));
-                } catch (RuntimeException rejected) {
-                    client.close();
-                }
-            } catch (IOException ex) {
-                if (!socket.isClosed()) {
-                    BridgeActivator activator = BridgeActivator.getDefault();
-                    if (activator != null) {
-                        activator.getLog().warn("MCP listener stopped (" +
-                            ex.getClass().getSimpleName() + ")");
-                    }
-                }
-                break;
+                response = handle(read(exchange));
+            } catch (HttpRequestFailure ex) {
+                response = errorHttp(ex.status, ex.message);
+            } catch (RuntimeException ex) {
+                // Never disclose tool arguments, bearer or configuration.
+                response = errorHttp(500, "Internal Server Error");
             }
-        }
-        // A failed accept should not leave a misleading green status.
-        synchronized (this) {
-            if (listener == socket) close();
+            write(exchange, response);
         }
     }
 
-    private void serve(Socket client) {
-        try (client) {
-            client.setSoTimeout(SOCKET_TIMEOUT_MS);
-            Request request = read(client.getInputStream());
-            Response response = handle(request);
-            write(client.getOutputStream(), response);
-        } catch (Exception ex) {
-            // Don't print raw request headers, tokens, passwords or tool arguments.
-            try {
-                if (!client.isClosed()) {
-                    write(client.getOutputStream(),
-                        new Response(400, "Bad Request", "{\"error\":\"Bad request\"}"));
-                }
-            } catch (IOException ignored) { }
+    private static final class HttpRequestFailure extends IOException {
+        private static final long serialVersionUID = 1L;
+        final int status;
+        final String message;
+
+        HttpRequestFailure(int status, String message) {
+            super(message);
+            this.status = status;
+            this.message = message;
         }
     }
 
@@ -159,54 +147,52 @@ final class BridgeMcpServer implements AutoCloseable {
         }
     }
 
-    private record Response(int status, String reason, String body) {}
-
-    private static Request read(InputStream input) throws IOException {
-        ByteArrayOutputStream headers = new ByteArrayOutputStream();
-        int state = 0;
-        while (state < 4) {
-            int next = input.read();
-            if (next < 0) throw new IOException("Incomplete HTTP request");
-            if (headers.size() >= MAX_HEADERS) throw new IOException("Oversize HTTP header");
-            headers.write(next);
-            state = switch (state) {
-                case 0 -> next == '\r' ? 1 : 0;
-                case 1 -> next == '\n' ? 2 : (next == '\r' ? 1 : 0);
-                case 2 -> next == '\r' ? 3 : 0;
-                case 3 -> next == '\n' ? 4 : 0;
-                default -> 0;
-            };
-        }
-        String raw = headers.toString(StandardCharsets.ISO_8859_1);
-        String[] lines = raw.substring(0, raw.length() - 4).split("\r\n");
-        if (lines.length == 0) throw new IOException("Missing request line");
-        String[] first = lines[0].split(" ", -1);
-        if (first.length != 3 || !first[2].equals("HTTP/1.1")) {
-            throw new IOException("Unsupported HTTP request");
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 1; i < lines.length; i++) {
-            int colon = lines[i].indexOf(':');
-            if (colon <= 0) throw new IOException("Invalid HTTP header");
-            String key = lines[i].substring(0, colon).trim().toLowerCase(Locale.ROOT);
-            String value = lines[i].substring(colon + 1).trim();
-            if (map.putIfAbsent(key, value) != null) {
-                throw new IOException("Duplicated HTTP header");
+    private static Request read(HttpExchange exchange) throws IOException {
+        Headers source = exchange.getRequestHeaders();
+        Map<String, String> headers = new LinkedHashMap<>();
+        int size = 0;
+        for (var entry : source.entrySet()) {
+            if (entry.getValue() == null || entry.getValue().size() != 1) {
+                // Ambiguous authentication, Origin or Host is never admitted.
+                throw new HttpRequestFailure(400, "Bad Request");
+            }
+            String key = entry.getKey().toLowerCase(Locale.ROOT);
+            String value = entry.getValue().get(0);
+            size += key.length() + value.length() + 4;
+            if (size > MAX_HEADERS) {
+                throw new HttpRequestFailure(431, "Request Header Fields Too Large");
+            }
+            if (headers.putIfAbsent(key, value) != null) {
+                throw new HttpRequestFailure(400, "Bad Request");
             }
         }
-        if (map.containsKey("transfer-encoding")) {
-            throw new IOException("Chunked HTTP requests not supported");
+
+        String path = exchange.getRequestURI().getRawPath();
+        if (path == null || path.length() > MAX_HEADERS) {
+            throw new HttpRequestFailure(414, "URI Too Long");
         }
-        int length;
-        try {
-            length = Integer.parseInt(map.getOrDefault("content-length", "0"));
-        } catch (NumberFormatException ex) {
-            throw new IOException("Invalid content length");
+        String contentLength = headers.get("content-length");
+        if (contentLength != null) {
+            try {
+                long length = Long.parseLong(contentLength.trim());
+                if (length < 0) throw new HttpRequestFailure(400, "Bad Request");
+                if (length > MAX_BODY) {
+                    throw new HttpRequestFailure(413, "Payload Too Large");
+                }
+            } catch (NumberFormatException ex) {
+                throw new HttpRequestFailure(400, "Bad Request");
+            }
         }
-        if (length < 0 || length > MAX_BODY) throw new IOException("Body size limit");
-        byte[] body = input.readNBytes(length);
-        if (body.length != length) throw new IOException("Incomplete request body");
-        return new Request(first[0], first[1], map,
+        // HttpServer decodes Transfer-Encoding: chunked and supports standard
+        // HTTP clients. Only a bounded number of bytes is retained.
+        byte[] body;
+        try (InputStream in = exchange.getRequestBody()) {
+            body = in.readNBytes(MAX_BODY + 1);
+        }
+        if (body.length > MAX_BODY) {
+            throw new HttpRequestFailure(413, "Payload Too Large");
+        }
+        return new Request(exchange.getRequestMethod(), path, headers,
             new String(body, StandardCharsets.UTF_8));
     }
 
@@ -228,6 +214,11 @@ final class BridgeMcpServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             // No server-to-client SSE stream is implemented.
             return errorHttp(405, "Method Not Allowed");
+        }
+        if (request.method().equals("OPTIONS")) {
+            // Local non-browser clients do not require CORS preflight; the
+            // existing strict Host/Origin check already ran above.
+            return new Response(204, "No Content", "");
         }
         if (!request.method().equals("POST")) return errorHttp(405, "Method Not Allowed");
         String type = request.header("content-type").toLowerCase(Locale.ROOT);
@@ -363,17 +354,23 @@ final class BridgeMcpServer implements AutoCloseable {
         return new Response(status, text, "{\"error\":\"" + text + "\"}");
     }
 
-    private static void write(OutputStream out, Response response) throws IOException {
+    private static void write(HttpExchange exchange, Response response) throws IOException {
         byte[] body = response.body().getBytes(StandardCharsets.UTF_8);
-        String headers = "HTTP/1.1 " + response.status() + " " + response.reason() + "\r\n"
-            + "Content-Type: application/json; charset=utf-8\r\n"
-            + "Cache-Control: no-store\r\n"
-            + "X-Content-Type-Options: nosniff\r\n"
-            + "Connection: close\r\n"
-            + "Content-Length: " + body.length + "\r\n\r\n";
-        out.write(headers.getBytes(StandardCharsets.US_ASCII));
-        out.write(body);
-        out.flush();
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Cache-Control", "no-store");
+        headers.set("X-Content-Type-Options", "nosniff");
+        if (response.status() == 405) {
+            headers.set("Allow", "POST, OPTIONS");
+        }
+        if (response.status() == 202 || response.status() == 204) {
+            exchange.sendResponseHeaders(response.status(), -1);
+            return;
+        }
+        headers.set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(response.status(), body.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(body);
+        }
     }
 
     /** Actual protocol probe: initialize, notification, tools/list over HTTP. */
@@ -436,6 +433,13 @@ final class BridgeMcpServer implements AutoCloseable {
                 || !(toolResult.get("content") instanceof List<?>)) {
             throw new IOException("MCP list_projects не выполнился.");
         }
+        // Exercise a real chunked request: clients may omit Content-Length.
+        Map<String, Object> chunkedPing = BridgeMcpJson.object(BridgeMcpJson.parse(
+            post(port, token, Map.of("jsonrpc", "2.0", "id", 6,
+                "method", "ping", "params", Map.of()), 200, true)));
+        if (!chunkedPing.containsKey("result")) {
+            throw new IOException("MCP HTTP chunked ping не вернул результат.");
+        }
         if (!token.isEmpty()) {
             // A wrong bearer must be rejected before executing the tool.
             String wrongToken = (token.charAt(0) == '0' ? "1" : "0")
@@ -450,6 +454,11 @@ final class BridgeMcpServer implements AutoCloseable {
 
     private static String post(int port, String token, Object body,
             int expectedStatus) throws IOException {
+        return post(port, token, body, expectedStatus, false);
+    }
+
+    private static String post(int port, String token, Object body,
+            int expectedStatus, boolean chunked) throws IOException {
         HttpURLConnection connection = (HttpURLConnection)
             new URL(BridgeMcpSettings.url(port)).openConnection();
         connection.setConnectTimeout(3000);
@@ -463,7 +472,11 @@ final class BridgeMcpServer implements AutoCloseable {
         connection.setDoOutput(true);
         try {
             byte[] bytes = BridgeMcpJson.stringify(body).getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(bytes.length);
+            if (chunked) {
+                connection.setChunkedStreamingMode(512);
+            } else {
+                connection.setFixedLengthStreamingMode(bytes.length);
+            }
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(bytes);
             }
