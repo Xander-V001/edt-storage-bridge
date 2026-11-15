@@ -18,6 +18,10 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
+
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -123,6 +127,12 @@ final class BridgeMcpServer implements AutoCloseable {
             } catch (RuntimeException ex) {
                 // Never disclose tool arguments, bearer or configuration.
                 response = errorHttp(500, "Internal Server Error");
+            }
+            if (response.status() >= 400 && response.status() != 405) {
+                // No raw headers, credentials, URIs or tool arguments in logs.
+                Platform.getLog(BridgeMcpServer.class).log(new Status(
+                    IStatus.WARNING, BridgeActivator.PLUGIN_ID,
+                    "MCP HTTP request rejected, status=" + response.status()));
             }
             write(exchange, response);
         }
@@ -272,8 +282,10 @@ final class BridgeMcpServer implements AutoCloseable {
         // Only the loopback socket can reach this handler; when the user has
         // not set a token, local MCP clients can connect by URL alone.
         if (expected.isEmpty()) return true;
-        if (!authorization.startsWith("Bearer ")) return false;
-        String supplied = authorization.substring("Bearer ".length());
+        if (!authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            return false;
+        }
+        String supplied = authorization.substring(7);
         return MessageDigest.isEqual(
             supplied.getBytes(StandardCharsets.UTF_8),
             expected.getBytes(StandardCharsets.UTF_8));
@@ -366,6 +378,18 @@ final class BridgeMcpServer implements AutoCloseable {
         Headers headers = exchange.getResponseHeaders();
         headers.set("Cache-Control", "no-store");
         headers.set("X-Content-Type-Options", "nosniff");
+        // CORS is only enabled for the exact local MCP origin that passed the
+        // request admission check; never reflect an arbitrary Origin.
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        String port = ":" + INSTANCE.port();
+        if (origin != null && (origin.equalsIgnoreCase("http://127.0.0.1" + port)
+                || origin.equalsIgnoreCase("http://localhost" + port))) {
+            headers.set("Access-Control-Allow-Origin", origin);
+            headers.set("Vary", "Origin");
+            headers.set("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+            headers.set("Access-Control-Allow-Headers",
+                "Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id");
+        }
         if (response.status() == 405) {
             headers.set("Allow", "POST, OPTIONS");
         }
@@ -455,7 +479,7 @@ final class BridgeMcpServer implements AutoCloseable {
                 "method", "tools/list", "params", Map.of()), 401);
         }
         return "Проверка успешна: initialize, список " + list.size()
-            + " инструментов, list_projects; локальный доступ "
+            + " инструментов, list_projects, chunked ping; локальный доступ "
             + (token.isEmpty() ? "без токена." : "с защитой токеном.");
     }
 
