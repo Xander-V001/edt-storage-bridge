@@ -26,6 +26,8 @@ import org.osgi.service.prefs.BackingStoreException;
 
 /** Separate MCP tab inside the existing project settings dialog. */
 final class BridgeMcpPanel extends Composite {
+    private static final int DESCRIPTION_WIDTH = 680;
+
     private Text portText;
     private Text tokenText;
     private Label state;
@@ -47,22 +49,27 @@ final class BridgeMcpPanel extends Composite {
     private void createControls() {
         Group settings = new Group(this, SWT.NONE);
         settings.setText("MCP-сервер EDT Storage Bridge");
-        settings.setLayout(new GridLayout(3, false));
+        settings.setLayout(new GridLayout(4, false));
         settings.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
         new Label(settings, SWT.NONE).setText("Адрес:");
         endpoint = new Label(settings, SWT.NONE);
-        endpoint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+        endpoint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1));
 
         new Label(settings, SWT.NONE).setText("Порт:");
         portText = new Text(settings, SWT.BORDER);
-        portText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridData portData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        portData.widthHint = 95;
+        portText.setLayoutData(portData);
         new Label(settings, SWT.NONE).setText("Только 127.0.0.1");
+        new Label(settings, SWT.NONE);
         portText.addModifyListener(event -> updateEndpoint());
 
         new Label(settings, SWT.NONE).setText("Токен (необязательно):");
         tokenText = new Text(settings, SWT.BORDER | SWT.PASSWORD);
-        tokenText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridData tokenData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        tokenData.widthHint = 325;
+        tokenText.setLayoutData(tokenData);
         Button toggle = new Button(settings, SWT.PUSH);
         toggle.setText("Показать");
         toggle.addListener(SWT.Selection, event -> {
@@ -75,9 +82,9 @@ final class BridgeMcpPanel extends Composite {
             }
         });
 
-        new Label(settings, SWT.NONE).setText("");
         Button regenerate = new Button(settings, SWT.PUSH);
-        regenerate.setText("Создать новый токен");
+        regenerate.setText("Создать токен");
+        regenerate.setToolTipText("Создать новый токен доступа для защиты MCP-сервера");
         regenerate.addListener(SWT.Selection, event -> {
             if (BridgeMcpServer.INSTANCE.isRunning()
                     && !MessageDialog.openConfirm(getShell(), "Новый токен MCP",
@@ -86,20 +93,18 @@ final class BridgeMcpPanel extends Composite {
                         + "Продолжить?")) return;
             tokenText.setText(BridgeMcpSettings.newToken());
         });
-        new Label(settings, SWT.NONE).setText("");
-
         Label scope = new Label(settings, SWT.WRAP);
-        scope.setText("Сервер общий для рабочей области EDT и слушает только "
-            + "127.0.0.1. Пустой токен позволяет добавить сервер в Codex "
-            + "по одному URL, но любые локальные программы смогут вызывать "
-            + "MCP-инструменты, в том числе изменяющие проект и хранилище. "
-            + "Для дополнительной защиты создайте токен. "
-            + "Порт не должен совпадать с портом другого MCP-сервера.");
-        scope.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 3, 1));
+        scope.setText("Доступ только с этого компьютера (127.0.0.1). "
+            + "Без токена локальные программы могут вызывать MCP-инструменты, "
+            + "включая изменение проекта и хранилища. "
+            + "При необходимости задайте токен.");
+        GridData scopeData = new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1);
+        scopeData.widthHint = DESCRIPTION_WIDTH;
+        scope.setLayoutData(scopeData);
 
         autoStart = new Button(settings, SWT.CHECK);
         autoStart.setText("Автоматически запускать MCP-сервер при старте EDT");
-        autoStart.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1));
+        autoStart.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 4, 1));
         autoStart.setSelection(true);
         autoStart.addListener(SWT.Selection, event -> updateStatus());
 
@@ -125,31 +130,31 @@ final class BridgeMcpPanel extends Composite {
         copy.addListener(SWT.Selection, event -> copyConfiguration());
 
         state = new Label(controls, SWT.WRAP);
-        state.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1));
+        GridData statusData = new GridData(SWT.FILL, SWT.TOP, true, false, 4, 1);
+        statusData.widthHint = DESCRIPTION_WIDTH;
+        state.setLayoutData(statusData);
 
         Group tools = new Group(this, SWT.NONE);
         tools.setText("Инструменты для ИИ-агентов");
         tools.setLayout(new GridLayout(1, false));
         tools.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        Label list = new Label(tools, SWT.WRAP);
-        list.setText("list_projects — открытые проекты\n"
-            + "get_storage_status — состояние версий и синхронизации\n"
-            + "get_pending_changes — необработанные объекты\n"
-            + "check_repository_revision — актуальная версия в 1С\n"
-            + "receive_changes — получить и применить изменения автоматически\n"
-            + "publish_changes — автоматически поместить в хранилище\n"
-            + "get_operation_status — проверить выполнение и результат");
-        list.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        Label list = new Label(tools, SWT.NONE);
+        list.setText("list_projects — проекты EDT\n"
+            + "get_storage_status — состояние синхронизации\n"
+            + "get_pending_changes — ожидающие изменения\n"
+            + "check_repository_revision — версия хранилища 1С\n"
+            + "receive_changes — автоматическое получение\n"
+            + "publish_changes — автоматическое помещение\n"
+            + "get_operation_status — состояние операции");
+        list.setLayoutData(new GridData(SWT.LEFT, SWT.TOP, false, false));
         Label warning = new Label(tools, SWT.WRAP);
-        warning.setText("Команды MCP выполняются без диалогов EDT и используют "
-            + "штатные механизмы автоматического обмена. При получении "
-            + "принимается вариант хранилища; локальные отличия могут быть "
-            + "заменены. Помещение запускает Lock/Load/Commit после проверок "
-            + "Git, ревизии и состава объектов. Установленные ограничения "
-            + "и режим ручной работы в EDT не изменяются.");
-        warning.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        GridData warningData = (GridData) warning.getLayoutData();
-        warningData.widthHint = 580;
+        warning.setText("MCP-команды выполняются без диалогов EDT. "
+            + "Получение принимает вариант хранилища и может заменить "
+            + "локальные отличия. Помещение через Lock/Load/Commit "
+            + "остаётся экспериментальным. Ручной режим EDT не меняется.");
+        GridData warningData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        warningData.widthHint = DESCRIPTION_WIDTH;
+        warning.setLayoutData(warningData);
 
         try {
             var saved = BridgeMcpSettings.load();
@@ -202,12 +207,14 @@ final class BridgeMcpPanel extends Composite {
             MessageDialog.openError(getShell(), "Не удалось запустить MCP",
                 ex.getMessage() == null ? "Проверьте порт и журнал EDT." : ex.getMessage());
             updateStatus();
+            setIndicator("Ошибка запуска MCP: проверьте порт и журнал EDT.",
+                SWT.COLOR_DARK_RED);
         }
     }
 
     private void testServer() {
         test.setEnabled(false);
-        state.setText("Проверка HTTP и MCP initialize / tools/list…");
+        setIndicator("Проверка MCP-сервера…", SWT.COLOR_DARK_YELLOW);
         Display display = getDisplay();
         Job probe = new Job("EDT Storage Bridge — проверка MCP") {
             @Override
@@ -217,7 +224,7 @@ final class BridgeMcpPanel extends Composite {
                     display.asyncExec(() -> {
                         if (!isDisposed()) {
                             updateStatus();
-                            state.setText(result);
+                            setIndicator(result, SWT.COLOR_DARK_GREEN);
                         }
                     });
                     return Status.OK_STATUS;
@@ -225,9 +232,10 @@ final class BridgeMcpPanel extends Composite {
                     display.asyncExec(() -> {
                         if (!isDisposed()) {
                             updateStatus();
-                            state.setText("Проверка не пройдена: " +
+                            setIndicator("Ошибка проверки MCP: " +
                                 (ex instanceof IllegalStateException
-                                    ? "сервер остановлен" : "ошибка HTTP/MCP"));
+                                    ? "сервер остановлен" : "ошибка HTTP/MCP; см. Error Log"),
+                                SWT.COLOR_DARK_RED);
                         }
                     });
                     return new Status(IStatus.WARNING, BridgeActivator.PLUGIN_ID,
@@ -264,8 +272,8 @@ final class BridgeMcpPanel extends Composite {
         }
         MessageDialog.openInformation(getShell(), "Конфигурация скопирована",
             token.isEmpty()
-                ? "JSON для MCP-клиента скопирован. В локальном режиме "
-                    + "токен не требуется. Для Codex достаточно адреса сервера."
+                ? "JSON для MCP-клиента скопирован. Для локального "
+                    + "подключения без токена достаточно адреса сервера."
                 : "JSON для MCP-клиента скопирован в буфер обмена. "
                     + "Он содержит секретный токен доступа. "
                     + "Не публикуйте его в Git или чатах.");
@@ -284,13 +292,24 @@ final class BridgeMcpPanel extends Composite {
         start.setEnabled(canSave && !running);
         stop.setEnabled(running);
         test.setEnabled(running);
-        state.setText(running
-            ? "MCP запущен: " + BridgeMcpSettings.url(BridgeMcpServer.INSTANCE.port())
+        if (running) {
+            setIndicator("MCP запущен: "
+                + BridgeMcpSettings.url(BridgeMcpServer.INSTANCE.port())
                 + (BridgeMcpServer.INSTANCE.requiresAuthentication()
-                    ? " (локально, по токену)" : " (локально, без токена)")
-            : "MCP остановлен. " + (autoStart.getSelection()
-                ? "Автозапуск выбран (сохраните настройки; при следующем старте EDT)."
-                : "Автозапуск отключён (после сохранения настройки)."));
+                    ? " (по токену)" : " (без токена)"),
+                SWT.COLOR_DARK_GREEN);
+        } else {
+            setIndicator("MCP не запущен" + (autoStart.getSelection()
+                ? " (автозапуск при следующем старте EDT)"
+                : " (автозапуск отключён)"),
+                SWT.COLOR_DARK_GRAY);
+        }
+    }
+
+    private void setIndicator(String message, int swtColor) {
+        if (state == null || state.isDisposed()) return;
+        state.setText("● " + message);
+        state.setForeground(getDisplay().getSystemColor(swtColor));
         state.getParent().layout();
     }
 }
