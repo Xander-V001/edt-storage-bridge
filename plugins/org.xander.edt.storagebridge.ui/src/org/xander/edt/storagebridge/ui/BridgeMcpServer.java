@@ -225,17 +225,17 @@ final class BridgeMcpServer implements AutoCloseable {
             || origin.equals("http://localhost" + expectedPort);
         if (!validHost || !validOrigin) return errorHttp(403, "Forbidden");
         if (!request.path().equals("/mcp")) return errorHttp(404, "Not Found");
+        if (request.method().equals("OPTIONS")) {
+            // Browser preflight contains no bearer token. Origin and Host
+            // have already been validated, and preflight executes no tool.
+            return new Response(204, "No Content", "");
+        }
         if (!authorized(request.header("authorization"))) {
             return errorHttp(401, "Unauthorized");
         }
         if (request.method().equals("GET")) {
-            // No server-to-client SSE stream is implemented.
+            // GET SSE is optional for the negotiated sessionless MCP mode.
             return errorHttp(405, "Method Not Allowed");
-        }
-        if (request.method().equals("OPTIONS")) {
-            // Local non-browser clients do not require CORS preflight; the
-            // existing strict Host/Origin check already ran above.
-            return new Response(204, "No Content", "");
         }
         if (!request.method().equals("POST")) return errorHttp(405, "Method Not Allowed");
         String type = request.header("content-type").toLowerCase(Locale.ROOT);
