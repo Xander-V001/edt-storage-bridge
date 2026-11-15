@@ -69,9 +69,19 @@ final class BridgeMcpServer implements AutoCloseable {
 
     private void noteCall(String method) {
         lastMethod = method;
-        if (method.equals("initialize")) initializeCount.incrementAndGet();
-        if (method.equals("tools/list")) toolListCount.incrementAndGet();
-        if (method.equals("tools/call")) toolCallCount.incrementAndGet();
+        if (method.equals("initialize")) {
+            initializeCount.incrementAndGet();
+        } else if (method.equals("tools/list")) {
+            toolListCount.incrementAndGet();
+        } else if (method.equals("tools/call")) {
+            toolCallCount.incrementAndGet();
+        }
+        if (method.equals("initialize") || method.equals("tools/list")) {
+            // Log only the method name, never arguments or authentication.
+            Platform.getLog(BridgeMcpServer.class).log(new Status(
+                IStatus.INFO, BridgeActivator.PLUGIN_ID,
+                "MCP client request: " + method));
+        }
     }
 
     synchronized void start(int port, String token) throws IOException {
