@@ -13,7 +13,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,14 +42,37 @@ final class BridgeMcpServer implements AutoCloseable {
     private static final int MAX_HEADERS = 12 * 1024;
     private static final int MAX_BODY = 256 * 1024;
     private static final String PROTOCOL = "2025-11-25";
+    private static final int MAX_SESSIONS = 64;
+    private static final long SESSION_IDLE_MS = TimeUnit.HOURS.toMillis(2);
     private static final AtomicInteger THREAD_ID = new AtomicInteger();
+    private static final AtomicInteger EVENT_ID = new AtomicInteger();
 
     private volatile HttpServer listener;
     private volatile ThreadPoolExecutor workers;
     private volatile String bearer;
     private volatile int boundPort;
+    private final ConcurrentHashMap<String, Long> sessions = new ConcurrentHashMap<>();
+    private final AtomicInteger initializeCount = new AtomicInteger();
+    private final AtomicInteger toolListCount = new AtomicInteger();
+    private final AtomicInteger toolCallCount = new AtomicInteger();
+    private volatile String lastMethod = "нет запросов";
 
     private BridgeMcpServer() {}
+
+    String connectionDiagnostics() {
+        return "MCP-вызовы с момента запуска: initialize="
+            + initializeCount.get() + ", tools/list=" + toolListCount.get()
+            + ", tools/call=" + toolCallCount.get()
+            + "; последняя команда: " + lastMethod
+            + "; активных сессий: " + sessions.size();
+    }
+
+    private void noteCall(String method) {
+        lastMethod = method;
+        if (method.equals("initialize")) initializeCount.incrementAndGet();
+        if (method.equals("tools/list")) toolListCount.incrementAndGet();
+        if (method.equals("tools/call")) toolCallCount.incrementAndGet();
+    }
 
     synchronized void start(int port, String token) throws IOException {
         BridgeMcpSettings.validate(port, token);
@@ -74,6 +99,11 @@ final class BridgeMcpServer implements AutoCloseable {
         try {
             server.createContext("/mcp", this::serve);
             server.setExecutor(pool);
+            sessions.clear();
+            initializeCount.set(0);
+            toolListCount.set(0);
+            toolCallCount.set(0);
+            lastMethod = "нет запросов";
             bearer = token;
             boundPort = port;
             server.start();
@@ -111,6 +141,7 @@ final class BridgeMcpServer implements AutoCloseable {
         listener = null;
         bearer = null;
         boundPort = 0;
+        sessions.clear();
         if (server != null) server.stop(0);
         ThreadPoolExecutor pool = workers;
         workers = null;
@@ -157,7 +188,18 @@ final class BridgeMcpServer implements AutoCloseable {
         }
     }
 
-    private record Response(int status, String reason, String body) {}
+    private record Response(int status, String reason, String body,
+            String sessionId, boolean sse) {
+        Response(int status, String reason, String body) {
+            this(status, reason, body, null, false);
+        }
+        Response withSession(String newSession) {
+            return new Response(status, reason, body, newSession, sse);
+        }
+        Response withSse() {
+            return new Response(status, reason, body, sessionId, true);
+        }
+    }
 
     private static Request read(HttpExchange exchange) throws IOException {
         Headers source = exchange.getRequestHeaders();
