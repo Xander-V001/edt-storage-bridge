@@ -693,9 +693,65 @@ final class BridgeMcpServer implements AutoCloseable {
             post(port, wrongToken, session, Map.of("jsonrpc", "2.0", "id", 4,
                 "method", "tools/list", "params", Map.of()), 401);
         }
+        try {
+            probeSseGet(port, token, session);
+            probeSessionDelete(port, token, session);
+        } finally {
+            // Also clean up when the GET or DELETE probe fails.
+            sessions.remove(session);
+        }
         return "Проверка успешна: initialize, список " + list.size()
-            + " инструментов, list_projects, chunked и SSE; локальный доступ "
+            + " инструментов, list_projects, chunked, SSE GET/POST "
+            + "и завершение сессии; локальный доступ "
             + (token.isEmpty() ? "без токена." : "с защитой токеном.");
+    }
+
+    private static void probeSseGet(int port, String token, String session)
+            throws IOException {
+        HttpURLConnection connection = (HttpURLConnection)
+            new URL(BridgeMcpSettings.url(port)).openConnection();
+        connection.setConnectTimeout(3000);
+        connection.setReadTimeout(4000);
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("Accept", "text/event-stream");
+        connection.setRequestProperty("Mcp-Session-Id", session);
+        if (!token.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
+        try {
+            if (connection.getResponseCode() != 200
+                    || !connection.getContentType().startsWith("text/event-stream")) {
+                throw new IOException("MCP SSE GET не открыл поток.");
+            }
+            try (InputStream in = connection.getInputStream()) {
+                String frame = new String(in.readNBytes(14), StandardCharsets.UTF_8);
+                if (!frame.startsWith(": keep-alive")) {
+                    throw new IOException("MCP SSE GET не прислал heartbeat.");
+                }
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static void probeSessionDelete(int port, String token, String session)
+            throws IOException {
+        HttpURLConnection connection = (HttpURLConnection)
+            new URL(BridgeMcpSettings.url(port)).openConnection();
+        connection.setConnectTimeout(3000);
+        connection.setReadTimeout(4000);
+        connection.setRequestMethod("DELETE");
+        connection.setRequestProperty("Mcp-Session-Id", session);
+        if (!token.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
+        try {
+            if (connection.getResponseCode() != 200) {
+                throw new IOException("MCP не закрыл сессию по DELETE.");
+            }
+        } finally {
+            connection.disconnect();
+        }
     }
 
     private record ProbeHttpResponse(String body, String sessionId) {}
