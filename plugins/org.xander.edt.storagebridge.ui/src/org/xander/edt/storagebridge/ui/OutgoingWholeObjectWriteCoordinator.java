@@ -252,7 +252,7 @@ public final class OutgoingWholeObjectWriteCoordinator {
                         shell, display, operation);
                 } catch (Exception ex) {
                     return fail(journal, mutationStarted, phase, ex,
-                        shell, display);
+                        shell, display, operation);
                 } finally {
                     try { lease.close(); }
                     catch (Exception ex) {
