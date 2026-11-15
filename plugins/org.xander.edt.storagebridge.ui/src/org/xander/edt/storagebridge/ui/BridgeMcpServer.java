@@ -157,6 +157,8 @@ final class BridgeMcpServer implements AutoCloseable {
         }
     }
 
+    private record Response(int status, String reason, String body) {}
+
     private static Request read(HttpExchange exchange) throws IOException {
         Headers source = exchange.getRequestHeaders();
         Map<String, String> headers = new LinkedHashMap<>();
