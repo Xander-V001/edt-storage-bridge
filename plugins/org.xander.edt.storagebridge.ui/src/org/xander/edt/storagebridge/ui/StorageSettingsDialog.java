@@ -195,7 +195,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "Другие базы, подключённые к проекту EDT, не используются. "
             + "Сохранение полей не запускает Конфигуратор.");
         GridData hintData = new GridData(SWT.FILL, SWT.TOP, true, false);
-        hintData.widthHint = 960;
+        hintData.widthHint = 700;
         hint.setLayoutData(hintData);
 
         Label security = new Label(platform, SWT.WRAP);
@@ -204,7 +204,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "через параметры процесса и могут быть видны администраторам "
             + "компьютера. Учитывайте это при настройке доступа.");
         GridData securityData = new GridData(SWT.FILL, SWT.TOP, true, false);
-        securityData.widthHint = 960;
+        securityData.widthHint = 700;
         security.setLayoutData(securityData);
 
         Group outgoing = new Group(connectionContent, SWT.NONE);
@@ -226,7 +226,7 @@ public final class StorageSettingsDialog extends TitleAreaDialog {
             + "автоматический путь. При установленном флажке запись выполняешь "
             + "сам в Конфигураторе; плагин только готовит файл сравнения.");
         GridData outgoingHintData = new GridData(SWT.FILL, SWT.TOP, true, false);
-        outgoingHintData.widthHint = 960;
+        outgoingHintData.widthHint = 700;
         outgoingHint.setLayoutData(outgoingHintData);
 
         new Label(outgoing, SWT.NONE).setText(
