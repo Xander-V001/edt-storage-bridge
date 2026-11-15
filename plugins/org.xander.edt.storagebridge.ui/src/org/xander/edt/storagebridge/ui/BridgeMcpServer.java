@@ -152,12 +152,19 @@ final class BridgeMcpServer implements AutoCloseable {
         Map<String, String> headers = new LinkedHashMap<>();
         int size = 0;
         for (var entry : source.entrySet()) {
-            if (entry.getValue() == null || entry.getValue().size() != 1) {
-                // Ambiguous authentication, Origin or Host is never admitted.
+            List<String> values = entry.getValue();
+            if (values == null || values.isEmpty()) {
                 throw new HttpRequestFailure(400, "Bad Request");
             }
             String key = entry.getKey().toLowerCase(Locale.ROOT);
-            String value = entry.getValue().get(0);
+            // Accept and other list-valued fields may be sent on multiple
+            // lines. Do not reject legitimate MCP clients for that.
+            // Security-sensitive single-value headers must be unambiguous.
+            if (List.of("host", "origin", "authorization", "content-length")
+                    .contains(key) && values.size() != 1) {
+                throw new HttpRequestFailure(400, "Bad Request");
+            }
+            String value = String.join(",", values);
             size += key.length() + value.length() + 4;
             if (size > MAX_HEADERS) {
                 throw new HttpRequestFailure(431, "Request Header Fields Too Large");
