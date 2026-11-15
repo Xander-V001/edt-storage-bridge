@@ -316,6 +316,8 @@ final class BridgeMcpPanel extends Composite {
         if (state == null || state.isDisposed()) return;
         state.setText("● " + message);
         state.setForeground(getDisplay().getSystemColor(swtColor));
+        state.setToolTipText(BridgeMcpServer.INSTANCE.connectionDiagnostics()
+            + "\nВнутренняя кнопка «Проверить» в счётчики не включается.");
         state.getParent().layout();
     }
 }
