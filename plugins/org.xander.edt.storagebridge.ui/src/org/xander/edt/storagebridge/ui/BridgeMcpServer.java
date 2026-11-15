@@ -277,8 +277,15 @@ final class BridgeMcpServer implements AutoCloseable {
         if (!authorized(request.header("authorization"))) {
             return errorHttp(401, "Unauthorized");
         }
+        if (request.method().equals("DELETE")) {
+            // Client-initiated session shutdown, never runs a storage tool.
+            String id = request.header("mcp-session-id");
+            if (!id.isBlank()) sessions.remove(id);
+            return new Response(200, "OK", "");
+        }
         if (request.method().equals("GET")) {
-            // GET SSE is optional for the negotiated sessionless MCP mode.
+            // Streamable HTTP permits 405 if the server does not offer
+            // unsolicited server-initiated SSE. POST SSE is supported below.
             return errorHttp(405, "Method Not Allowed");
         }
         if (!request.method().equals("POST")) return errorHttp(405, "Method Not Allowed");
@@ -311,13 +318,60 @@ final class BridgeMcpServer implements AutoCloseable {
                         && !(id instanceof String || id instanceof Number))) {
                 return json(jsonError(id, -32600, "Invalid Request"));
             }
+            // Legacy 2025 transport with a 2026-era discovery request:
+            // reply 400 so a modern client can fall back to initialize.
+            if (method.equals("server/discover")
+                    && request.header("mcp-protocol-version")
+                        .equals("2026-07-28")) {
+                return errorHttp(400, "Unsupported Protocol Version");
+            }
+
+            noteCall(method);
+            boolean isInitialize = method.equals("initialize");
+            if (!isInitialize) {
+                String session = request.header("mcp-session-id");
+                if (session.isBlank()) return errorHttp(400, "Missing Mcp-Session-Id");
+                if (!touchSession(session)) return errorHttp(404, "Unknown Mcp-Session-Id");
+            }
             if (isNotification) {
                 return new Response(202, "Accepted", "");
             }
-            return json(dispatch(method, call, id));
+            Map<String, Object> answer = dispatch(method, call, id);
+            Response response = json(answer);
+            if (isInitialize && !answer.containsKey("error")) {
+                String session = createSession();
+                if (session == null) {
+                    response = json(jsonError(id, -32603,
+                        "MCP session limit reached; close old sessions or retry later"));
+                } else {
+                    response = response.withSession(session);
+                }
+            }
+            if (accept.contains("text/event-stream") && response.status() == 200) {
+                response = response.withSse();
+            }
+            return response;
         } catch (RuntimeException ex) {
             return json(jsonError(null, -32603, "Internal error"));
         }
+    }
+
+    private String createSession() {
+        synchronized (sessions) {
+            long now = System.currentTimeMillis();
+            sessions.entrySet().removeIf(entry ->
+                now - entry.getValue() > SESSION_IDLE_MS);
+            if (sessions.size() >= MAX_SESSIONS) return null;
+            String id = UUID.randomUUID().toString();
+            sessions.put(id, now);
+            return id;
+        }
+    }
+
+    private boolean touchSession(String id) {
+        long now = System.currentTimeMillis();
+        return sessions.computeIfPresent(id, (key, lastSeen) ->
+            now - lastSeen > SESSION_IDLE_MS ? null : now) != null;
     }
 
     private boolean authorized(String authorization) {
@@ -435,13 +489,30 @@ final class BridgeMcpServer implements AutoCloseable {
                 "Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id");
         }
         if (response.status() == 405) {
-            headers.set("Allow", "POST, OPTIONS");
+            headers.set("Allow", "POST, DELETE, OPTIONS");
+        }
+        if (response.sessionId() != null) {
+            headers.set("Mcp-Session-Id", response.sessionId());
         }
         if (response.status() == 202 || response.status() == 204) {
             exchange.sendResponseHeaders(response.status(), -1);
             return;
         }
-        headers.set("Content-Type", "application/json; charset=utf-8");
+        if (response.sse()) {
+            // One finite SSE frame for this request's JSON-RPC response.
+            // The client may specify both SSE and JSON in Accept.
+            String frame = "event: message\n"
+                + "id: " + EVENT_ID.incrementAndGet() + "\n"
+                + "data: " + response.body() + "\n\n";
+            body = frame.getBytes(StandardCharsets.UTF_8);
+            headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        } else {
+            headers.set("Content-Type", "application/json; charset=utf-8");
+        }
+        if (body.length == 0) {
+            exchange.sendResponseHeaders(response.status(), -1);
+            return;
+        }
         exchange.sendResponseHeaders(response.status(), body.length);
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(body);
