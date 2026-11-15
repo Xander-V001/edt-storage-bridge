@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,6 +51,7 @@ final class BridgeMcpServer implements AutoCloseable {
 
     private volatile HttpServer listener;
     private volatile ThreadPoolExecutor workers;
+    private volatile ThreadPoolExecutor sseWorkers;
     private volatile String bearer;
     private volatile int boundPort;
     private final ConcurrentHashMap<String, Long> sessions = new ConcurrentHashMap<>();
@@ -106,6 +109,16 @@ final class BridgeMcpServer implements AutoCloseable {
                 return thread;
             },
             new ThreadPoolExecutor.AbortPolicy());
+        // SSE GET connections must never exhaust finite JSON-RPC workers.
+        ThreadPoolExecutor ssePool = new ThreadPoolExecutor(
+            0, 4, 60, TimeUnit.SECONDS,
+            new SynchronousQueue<>(),
+            runnable -> {
+                Thread thread = new Thread(runnable,
+                    "EDT-Storage-MCP-SSE-" + THREAD_ID.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.AbortPolicy());
         try {
             server.createContext("/mcp", this::serve);
             server.setExecutor(pool);
@@ -118,11 +131,13 @@ final class BridgeMcpServer implements AutoCloseable {
             boundPort = port;
             server.start();
             workers = pool;
+            sseWorkers = ssePool;
             listener = server;
         } catch (RuntimeException ex) {
             // Never leave a half-started listener or worker pool behind.
             server.stop(0);
             pool.shutdownNow();
+            ssePool.shutdownNow();
             bearer = null;
             boundPort = 0;
             throw ex;
@@ -156,10 +171,14 @@ final class BridgeMcpServer implements AutoCloseable {
         ThreadPoolExecutor pool = workers;
         workers = null;
         if (pool != null) pool.shutdownNow();
+        ThreadPoolExecutor streams = sseWorkers;
+        sseWorkers = null;
+        if (streams != null) streams.shutdownNow();
     }
 
     private void serve(HttpExchange exchange) throws IOException {
-        try (exchange) {
+        boolean handedToSsePool = false;
+        try {
             Response response;
             try {
                 response = handle(read(exchange));
@@ -169,6 +188,19 @@ final class BridgeMcpServer implements AutoCloseable {
                 // Never disclose tool arguments, bearer or configuration.
                 response = errorHttp(500, "Internal Server Error");
             }
+            if (response.liveSse()) {
+                ThreadPoolExecutor streams = sseWorkers;
+                if (streams != null) {
+                    try {
+                        streams.execute(() -> serveLongLivedSse(exchange));
+                        handedToSsePool = true;
+                        return;
+                    } catch (RejectedExecutionException ex) {
+                        // Bounded SSE pool: a client gets a clear HTTP 503.
+                    }
+                }
+                response = errorHttp(503, "SSE connection limit reached");
+            }
             if (response.status() >= 400 && response.status() != 405) {
                 // No raw headers, credentials, URIs or tool arguments in logs.
                 Platform.getLog(BridgeMcpServer.class).log(new Status(
@@ -176,6 +208,30 @@ final class BridgeMcpServer implements AutoCloseable {
                     "MCP HTTP request rejected, status=" + response.status()));
             }
             write(exchange, response);
+        } finally {
+            if (!handedToSsePool) exchange.close();
+        }
+    }
+
+    private void serveLongLivedSse(HttpExchange exchange) {
+        try (exchange) {
+            Headers headers = exchange.getResponseHeaders();
+            headers.set("Content-Type", "text/event-stream; charset=utf-8");
+            headers.set("Cache-Control", "no-cache");
+            headers.set("X-Content-Type-Options", "nosniff");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream output = exchange.getResponseBody()) {
+                byte[] heartbeat = ": keep-alive\n\n".getBytes(StandardCharsets.UTF_8);
+                while (isRunning() && !Thread.currentThread().isInterrupted()) {
+                    output.write(heartbeat);
+                    output.flush();
+                    Thread.sleep(10_000);
+                }
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (IOException ex) {
+            // Expected on client disconnect. Never log bearer or request data.
         }
     }
 
@@ -199,15 +255,18 @@ final class BridgeMcpServer implements AutoCloseable {
     }
 
     private record Response(int status, String reason, String body,
-            String sessionId, boolean sse) {
+            String sessionId, boolean sse, boolean liveSse) {
         Response(int status, String reason, String body) {
-            this(status, reason, body, null, false);
+            this(status, reason, body, null, false, false);
         }
         Response withSession(String newSession) {
-            return new Response(status, reason, body, newSession, sse);
+            return new Response(status, reason, body, newSession, sse, liveSse);
         }
         Response withSse() {
-            return new Response(status, reason, body, sessionId, true);
+            return new Response(status, reason, body, sessionId, true, liveSse);
+        }
+        static Response sseStream() {
+            return new Response(200, "OK", "", null, false, true);
         }
     }
 
@@ -294,9 +353,16 @@ final class BridgeMcpServer implements AutoCloseable {
             return new Response(200, "OK", "");
         }
         if (request.method().equals("GET")) {
-            // Streamable HTTP permits 405 if the server does not offer
-            // unsolicited server-initiated SSE. POST SSE is supported below.
-            return errorHttp(405, "Method Not Allowed");
+            // A separate bounded executor keeps long-lived SSE connections
+            // from blocking initialize, tools/list or tools/call.
+            if (!request.header("accept").toLowerCase(Locale.ROOT)
+                    .contains("text/event-stream")) {
+                return errorHttp(406, "Not Acceptable");
+            }
+            String session = request.header("mcp-session-id");
+            if (session.isBlank()) return errorHttp(400, "Missing Mcp-Session-Id");
+            if (!touchSession(session)) return errorHttp(404, "Unknown Mcp-Session-Id");
+            return Response.sseStream();
         }
         if (!request.method().equals("POST")) return errorHttp(405, "Method Not Allowed");
         String type = request.header("content-type").toLowerCase(Locale.ROOT);
@@ -503,7 +569,7 @@ final class BridgeMcpServer implements AutoCloseable {
                 "Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id");
         }
         if (response.status() == 405) {
-            headers.set("Allow", "POST, DELETE, OPTIONS");
+            headers.set("Allow", "GET, POST, DELETE, OPTIONS");
         }
         if (response.sessionId() != null) {
             headers.set("Mcp-Session-Id", response.sessionId());
