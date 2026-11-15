@@ -525,12 +525,18 @@ final class BridgeMcpServer implements AutoCloseable {
         int port = port();
         String token = bearer;
         if (token == null) throw new IllegalStateException("MCP не запущен.");
-        Map<String, Object> init = BridgeMcpJson.object(BridgeMcpJson.parse(
-            post(port, token, Map.of("jsonrpc", "2.0", "id", 1,
+        ProbeHttpResponse initHttp = postHttp(port, token, null,
+            Map.of("jsonrpc", "2.0", "id", 1,
                 "method", "initialize", "params",
                 Map.of("protocolVersion", PROTOCOL,
                     "clientInfo", Map.of("name", "edt-mcp-self-test", "version", "1.0"),
-                    "capabilities", Map.of())), 200)));
+                    "capabilities", Map.of())), 200, false, false);
+        Map<String, Object> init =
+            BridgeMcpJson.object(BridgeMcpJson.parse(initHttp.body()));
+        String session = initHttp.sessionId();
+        if (session == null || session.isBlank()) {
+            throw new IOException("MCP initialize не выдал идентификатор сессии.");
+        }
         Map<String, Object> handshake;
         try {
             handshake = BridgeMcpJson.object(init.get("result"));
@@ -540,10 +546,10 @@ final class BridgeMcpServer implements AutoCloseable {
         if (!PROTOCOL.equals(handshake.get("protocolVersion"))) {
             throw new IOException("MCP сообщил неподдерживаемую версию протокола.");
         }
-        post(port, token, Map.of("jsonrpc", "2.0",
+        post(port, token, session, Map.of("jsonrpc", "2.0",
             "method", "notifications/initialized"), 202);
         Map<String, Object> listed = BridgeMcpJson.object(BridgeMcpJson.parse(
-            post(port, token, Map.of("jsonrpc", "2.0", "id", 2,
+            post(port, token, session, Map.of("jsonrpc", "2.0", "id", 2,
                 "method", "tools/list", "params", Map.of()), 200)));
         var result = BridgeMcpJson.object(listed.get("result"));
         if (!(result.get("tools") instanceof List<?> list) || list.isEmpty()) {
@@ -566,7 +572,7 @@ final class BridgeMcpServer implements AutoCloseable {
         // Exercise a read-only tool, not just tool discovery. This never starts
         // 1C and never changes EDT projects.
         Map<String, Object> invoked = BridgeMcpJson.object(BridgeMcpJson.parse(
-            post(port, token, Map.of("jsonrpc", "2.0", "id", 3,
+            post(port, token, session, Map.of("jsonrpc", "2.0", "id", 3,
                 "method", "tools/call", "params", Map.of(
                     "name", "list_projects", "arguments", Map.of())), 200)));
         Map<String, Object> toolResult;
@@ -581,30 +587,47 @@ final class BridgeMcpServer implements AutoCloseable {
         }
         // Exercise a real chunked request: clients may omit Content-Length.
         Map<String, Object> chunkedPing = BridgeMcpJson.object(BridgeMcpJson.parse(
-            post(port, token, Map.of("jsonrpc", "2.0", "id", 6,
-                "method", "ping", "params", Map.of()), 200, true)));
+            postHttp(port, token, session, Map.of("jsonrpc", "2.0", "id", 6,
+                "method", "ping", "params", Map.of()), 200, true, false).body()));
         if (!chunkedPing.containsKey("result")) {
             throw new IOException("MCP HTTP chunked ping не вернул результат.");
+        }
+        // A client may prefer SSE even when a JSON response is available.
+        String sse = postHttp(port, token, session,
+            Map.of("jsonrpc", "2.0", "id", 7, "method", "ping",
+                "params", Map.of()), 200, false, true).body();
+        int dataStart = sse.indexOf("data: ");
+        if (!sse.startsWith("event: message\n") || dataStart < 0) {
+            throw new IOException("MCP не вернул потоковый SSE-ответ.");
+        }
+        int dataEnd = sse.indexOf('\n', dataStart);
+        if (dataEnd < 0 || !BridgeMcpJson.object(
+                BridgeMcpJson.parse(sse.substring(dataStart + 6, dataEnd)))
+                .containsKey("result")) {
+            throw new IOException("MCP вернул некорректный JSON-RPC внутри SSE.");
         }
         if (!token.isEmpty()) {
             // A wrong bearer must be rejected before executing the tool.
             String wrongToken = (token.charAt(0) == '0' ? "1" : "0")
                 + token.substring(1);
-            post(port, wrongToken, Map.of("jsonrpc", "2.0", "id", 4,
+            post(port, wrongToken, session, Map.of("jsonrpc", "2.0", "id", 4,
                 "method", "tools/list", "params", Map.of()), 401);
         }
         return "Проверка успешна: initialize, список " + list.size()
-            + " инструментов, list_projects, chunked ping; локальный доступ "
+            + " инструментов, list_projects, chunked и SSE; локальный доступ "
             + (token.isEmpty() ? "без токена." : "с защитой токеном.");
     }
 
-    private static String post(int port, String token, Object body,
-            int expectedStatus) throws IOException {
-        return post(port, token, body, expectedStatus, false);
+    private record ProbeHttpResponse(String body, String sessionId) {}
+
+    private static String post(int port, String token, String session,
+            Object body, int expectedStatus) throws IOException {
+        return postHttp(port, token, session, body, expectedStatus, false, false).body();
     }
 
-    private static String post(int port, String token, Object body,
-            int expectedStatus, boolean chunked) throws IOException {
+    private static ProbeHttpResponse postHttp(int port, String token, String session,
+            Object body, int expectedStatus, boolean chunked, boolean sse)
+            throws IOException {
         HttpURLConnection connection = (HttpURLConnection)
             new URL(BridgeMcpSettings.url(port)).openConnection();
         connection.setConnectTimeout(3000);
@@ -613,8 +636,13 @@ final class BridgeMcpServer implements AutoCloseable {
         if (!token.isEmpty()) {
             connection.setRequestProperty("Authorization", "Bearer " + token);
         }
+        if (session != null) {
+            connection.setRequestProperty("Mcp-Session-Id", session);
+            connection.setRequestProperty("MCP-Protocol-Version", PROTOCOL);
+        }
         connection.setRequestProperty("Content-Type", "application/json");
-        connection.setRequestProperty("Accept", "application/json, text/event-stream");
+        connection.setRequestProperty("Accept",
+            sse ? "application/json, text/event-stream" : "application/json");
         connection.setDoOutput(true);
         try {
             byte[] bytes = BridgeMcpJson.stringify(body).getBytes(StandardCharsets.UTF_8);
@@ -628,18 +656,21 @@ final class BridgeMcpServer implements AutoCloseable {
             }
             int status = connection.getResponseCode();
             if (status != expectedStatus) {
-                throw new IOException("MCP HTTP status " + status);
+                throw new IOException("MCP HTTP status " + status
+                    + ", expected " + expectedStatus);
             }
-            // HttpURLConnection exposes 4xx bodies via getErrorStream().
-            // A negative authorization test is successful only for HTTP 401.
+            String sessionId = connection.getHeaderField("Mcp-Session-Id");
             InputStream responseStream = status >= 400
                 ? connection.getErrorStream() : connection.getInputStream();
-            if (responseStream == null) return "";
+            if (responseStream == null) return new ProbeHttpResponse("", sessionId);
             try (InputStream input = responseStream) {
-                return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                return new ProbeHttpResponse(
+                    new String(input.readAllBytes(), StandardCharsets.UTF_8),
+                    sessionId);
             }
         } finally {
             connection.disconnect();
         }
     }
+
 }
