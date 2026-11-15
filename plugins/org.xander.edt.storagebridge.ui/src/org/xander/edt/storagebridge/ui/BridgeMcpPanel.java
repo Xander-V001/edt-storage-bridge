@@ -184,15 +184,21 @@ final class BridgeMcpPanel extends Composite {
                 MessageDialog.openError(getShell(), "MCP запущен",
                     "Сначала остановите MCP-сервер, затем сохраните новый "
                     + "порт или токен и запустите сервер снова.");
+                setIndicator("Ошибка настроек MCP: сервер уже запущен с другими параметрами.",
+                    SWT.COLOR_DARK_RED);
                 return false;
             }
             BridgeMcpSettings.save(newPort, newToken, autoStart.getSelection());
             return true;
         } catch (IllegalArgumentException ex) {
             MessageDialog.openError(getShell(), "Неверные настройки MCP", ex.getMessage());
+            setIndicator("Ошибка настроек MCP: некорректный порт или токен.",
+                SWT.COLOR_DARK_RED);
         } catch (StorageException | BackingStoreException | IOException | RuntimeException ex) {
             MessageDialog.openError(getShell(), "MCP",
                 "Не удалось сохранить настройки MCP. Проверьте журнал EDT и Secure Storage.");
+            setIndicator("Ошибка сохранения настроек MCP: проверьте журнал EDT.",
+                SWT.COLOR_DARK_RED);
         }
         return false;
     }
