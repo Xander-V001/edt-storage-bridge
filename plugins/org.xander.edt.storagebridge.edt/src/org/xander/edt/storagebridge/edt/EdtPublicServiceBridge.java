@@ -226,14 +226,18 @@ public final class EdtPublicServiceBridge {
         var converter = ServiceAccess.get(IQualifiedNameFilePathConverter.class);
         var owners = new java.util.LinkedHashSet<String>();
         for (String symlink : nativeIdentities) {
-            if (symlink == null || !symlink.matches(
-                    "[\\p{L}_][\\p{L}\\p{N}_]*(\\.[\\p{L}_][\\p{L}\\p{N}_]*)*")) {
-                throw new IOException("Native comparison returned invalid symlink");
+            // EDT supplies native symbolic identities. Do not second-guess
+            // their syntax using an ad-hoc regex: the official converter is
+            // responsible for interpreting the qualified object name.
+            if (symlink == null || symlink.isBlank()) {
+                throw new IOException("Native comparison has no metadata identity");
             }
-            String[] segments = symlink.split("\\.");
-            // Top configuration is a special single-segment native owner.
-            String nativeTop = segments.length < 2
-                ? segments[0] : segments[0] + "." + segments[1];
+            int firstDot = symlink.indexOf('.');
+            int secondDot = firstDot < 0 ? -1 : symlink.indexOf('.', firstDot + 1);
+            // Resolve the top-level object (or Configuration itself), not a
+            // nested attribute. Its path is supplied by the EDT converter.
+            String nativeTop = secondDot < 0
+                ? symlink : symlink.substring(0, secondDot);
             String filePath = converter.getFilePath(nativeTop);
             if (filePath == null || filePath.isBlank()) {
                 throw new IOException("Cannot resolve changed native metadata object");
@@ -255,19 +259,12 @@ public final class EdtPublicServiceBridge {
                     "Native changed metadata missing in EDT project: " + nativeTop
                     + " (new/deleted objects require separate handling)");
             }
-            var validated = converter.getFqn(descriptor);
-            if (validated == null || !nativeTop.equals(validated.toString())) {
-                throw new IOException("Native metadata symlink/descriptor mismatch");
-            }
             String owner = org.xander.edt.storagebridge.core.EdtPathObjectMapper
                 .topObject(candidate);
             if (owner == null) {
                 throw new IOException("Native metadata owner classification failed");
             }
             owners.add(owner);
-            if (owners.size() > 10_000) {
-                throw new IOException("Native metadata owner limit exceeded");
-            }
         }
         return java.util.List.copyOf(owners);
     }
