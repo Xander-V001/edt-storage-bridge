@@ -1,0 +1,31 @@
+name: Inspect EDT native export API (manual, no build)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.repository == 'Xander-V001/edt-storage-bridge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      P2_USER: ${{ secrets.P2_USER }}
+      P2_TOKEN: ${{ secrets.P2_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '25'
+      - name: Inspect signed-in EDT 2026.2 p2 metadata and native export class signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$P2_USER" || -z "$P2_TOKEN" ]]; then
+            echo "::error::P2_USER/P2_TOKEN are not configured"
+            exit 1
+          fi
+          python3 .github/scripts/inspect-edt-export.py

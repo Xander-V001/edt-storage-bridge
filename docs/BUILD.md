@@ -1,32 +1,20 @@
-# Build and installation
+# Сборка, установка и подтверждение EDT Storage Bridge
 
-## Prototype prerequisites
+Цель — **1C:EDT 2026.2**. Отсутствие явного запроса пользователя = **не запускать** CI, Maven, установленную EDT или 1С. Для документационных правок выполнять только статическую сверку файлов/ссылок.
 
-- JDK 21 for Maven/Tycho build (generated bundles target Java 17).
-- Maven 3.9+.
-- Internet access to public Eclipse p2 site (2024-06).
+## Репозиторий и последняя известная проверка
 
-The CI build is **public Eclipse baseline only**, without proprietary 1C:EDT API bundles. This is intentional: the official EDT p2 target may require partner/ITS authentication. Build success here is **not** proof of compatibility with every EDT version.
+- Рабочая ветка кода: `feature/edt-2026.2-integration` (проверять HEAD перед сборкой).
+- GitHub Actions: **Build and test (manual)** → **Run workflow** → выбрать целевую ветку. Файл `.github/workflows/ci.yml` использует `workflow_dispatch`.
+- Последний отмеченный успешный запуск: [№65, `494ff6b`](https://github.com/Xander-V001/edt-storage-bridge/actions/runs/39469832794). После него в ветке появились изменения как минимум до `4fab919`, включая передачу результатов наблюдателя в локальный журнал; **они ещё не покрыты этим успешным CI**.
+- Для диагностики сбоев CI проверять jobs/logs и артефакты Tycho/JUnit. Success сборки доказывает компиляцию и запущенные тесты **конкретного SHA**, а не функциональный обмен на реальной 1С.
 
-```bash
-mvn -B -ntp clean verify
-```
+## Структура сборки
 
-Artifacts: `repository/org.xander.edt.storagebridge.p2/target/` (p2 ZIP). The CI workflow also publishes a build artifact on success.
+Maven/Tycho, target `targets/edt-2026.2/edt-2026.2.target`, модульные bundles `core`, `platform`, `edt`, `ui`, `feature`, `repository` (p2), `tests`. Конкретные версии JDK/Tycho/Maven сверять с `pom.xml`, workflow и target; не копировать старые предположения из удалённых планов. EDT 2026.2 использует Java 25 / Eclipse 2025-12; документация платформы 1С 8.3 относится к другому продукту.
 
-## Development workspace
+## Установка и проверки вручную
 
-Import projects from `plugins/`, `features/`, `repository/` and `targets/` into an Eclipse PDE workspace and activate `targets/eclipse-baseline/eclipse-baseline.target`.
+После **явного** разрешения и зелёного CI точного HEAD: получить p2-архив артефакта, установить через Help → Install New Software (или настроенный p2 update site), перезапустить EDT; проверить version/bundles. При обновлении UI или команды проверить контекстное меню проекта, настройки, Secure Storage и штатный compare. Только после этого переходить к тестовой ИБ и хранилищу по [VALIDATION.md](VALIDATION.md).
 
-## Installing in 1C:EDT (after CI validation)
-
-1. Unpack the produced p2 ZIP or choose **Archive…** in **Help → Install New Software…**.
-2. Select **EDT Storage Bridge** and complete the normal p2 installation.
-3. Restart EDT and open **EDT Storage Bridge → Inspect selected project**.
-4. Select a workspace project; the dialog must show project name and location.
-
-This is a read-only prototype. It does not communicate with 1C repositories. An official hosted update-site URL will be provided only after publishing and testing one.
-
-## Later: EDT API target
-
-Add an explicit, version-pinned EDT target and credentials in the build environment (not in source control), run verification for each supported EDT release, then enable EDT-specific adapters. No fake dependencies or local binary uploads to Git.
+Отдельная публикация через GitHub Pages и автоматическое обновление p2 зависят от реальных настроек `.github/workflows` и удачного deploy; наличие URL само по себе **не** доказывает доступный update site. Не публиковать test-only запись как стабильно работающую функцию.

@@ -1,5 +1,9 @@
-# Security principles
+# Безопасность обмена
 
-Never store a 1C repository password, ITS credential or session token in project preferences or plaintext source files. Use Eclipse secure storage when implementing secret handling. Redact command arguments, environment secrets, and diagnostic URLs before logging.
-
-Never access a user's working 1C infobase or repository unless explicitly instructed and verified as the intended target. Integration tests must use temporary disposable data. The prototype must not spawn the 1C platform, modify files, or access remote services.
+1. Секреты хранилища 1С и учётной записи ИБ должны храниться раздельно: Eclipse Secure Storage, не файлы EDT-проекта, Git и не plaintext preferences. Native argv содержит пароли — никогда не логировать целиком.
+2. Никогда без отдельного разрешения пользователя не запускать 1С, EDT, CI, сборку, VPS. Не использовать рабочие ИБ/хранилище для экспериментов с импортом, захватом, удалением или Commit.
+3. Входящее `/ConfigurationRepositoryUpdateCfg` **может менять ИБ-посредник**, но не должно перезаписывать проект EDT. Применение к EDT — только штатное контролируемое Merge; локальные коммиты нельзя изменять автоматически.
+4. Тестовый исходящий Lock/Load/Commit **реально меняет базу/хранилище**. Сначала удостовериться в отдельной тестовой копии. После ошибки/таймаута native state неизвестен; не снимать `active.txt`, не делать force/retry/Unlock принудительно.
+5. При добавлении/удалении метаданных parent `Configuration.xml` и рекурсивный захват корня потенциально затрагивают чужой scope — без независимой проверки не разрешать production.
+6. Сохраняемые диагностические копии ограничивать в размере и редактировать. Автоматическое маскирование известных секретов не гарантирует отсутствия исходников, путей, токенов или новых типов конфиденциальных сведений.
+7. Не объявлять `REVIEWED`/`APPLIED` или успешный исходящий Commit только по exit 0, открытому/закрытому редактору или номеру версии. Предпочитать сохранение `PENDING` и явную ошибку ложному успеху.

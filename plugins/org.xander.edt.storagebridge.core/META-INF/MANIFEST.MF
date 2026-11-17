@@ -4,5 +4,6 @@ Bundle-Name: EDT Storage Bridge Core
 Bundle-SymbolicName: org.xander.edt.storagebridge.core
 Bundle-Version: 0.1.0.qualifier
 Bundle-Vendor: Xander-V001
-Bundle-RequiredExecutionEnvironment: JavaSE-17
+Bundle-RequiredExecutionEnvironment: JavaSE-25
+Require-Bundle: org.xander.edt.storagebridge.platform
 Export-Package: org.xander.edt.storagebridge.core
